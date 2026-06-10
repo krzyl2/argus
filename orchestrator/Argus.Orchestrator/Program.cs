@@ -1,7 +1,9 @@
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Detection;
+using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Workers;
 using Grpc.Net.Client;
+using NetDaemon.Client.Extensions;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -55,7 +57,16 @@ builder.Services.AddSingleton<GrpcChannel>(sp =>
 // Register DetectionGateway (holds channel + stubs; INFRA-07 health gate)
 builder.Services.AddSingleton<DetectionGateway>();
 
-// Register HA listener worker (stub — Plan 05 fills the subscription body)
+// Register NetDaemon.Client DI (IHomeAssistantClient, IHomeAssistantRunner) — D-06
+builder.Services.AddHomeAssistantClient();
+
+// Register ReconnectCooldown (60s post-reconnect binary_sensor suppression — D-07)
+builder.Services.AddSingleton<ReconnectCooldown>();
+
+// Register HA event source (NetDaemon.Client WebSocket subscription — STRM-01/STRM-02)
+builder.Services.AddSingleton<IHaEventSource, NetDaemonHaEventSource>();
+
+// Register HA listener worker (consumes IHaEventSource after health gate)
 builder.Services.AddHostedService<HaListenerWorker>();
 
 // TODO(plan06): register MqttPublisher
