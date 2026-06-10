@@ -1,0 +1,31 @@
+# Argus Orchestrator — multi-stage build
+# Base image: mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled (INFRA-03, D-17)
+# Build stage: mcr.microsoft.com/dotnet/sdk:8.0 (Grpc.Tools generates C# stubs from argus.proto)
+
+# ---- BUILD STAGE ----
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Copy proto first — Grpc.Tools needs argus.proto at build time
+COPY proto/ proto/
+
+# Copy orchestrator source
+COPY orchestrator/ orchestrator/
+
+# Restore + publish
+RUN dotnet restore orchestrator/Argus.Orchestrator/Argus.Orchestrator.csproj
+RUN dotnet publish orchestrator/Argus.Orchestrator/Argus.Orchestrator.csproj \
+    -c Release \
+    -o /app/publish \
+    --no-restore
+
+# ---- FINAL STAGE ----
+FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled AS final
+WORKDIR /app
+
+# Copy published output from build stage
+COPY --from=build /app/publish .
+
+# Non-root user is the default in jammy-chiseled; no USER directive needed
+
+ENTRYPOINT ["dotnet", "Argus.Orchestrator.dll"]
