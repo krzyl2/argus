@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Argus.Orchestrator.Tests/Argus.Orchestrator.Tests.csproj" />
+  <Project Path="Argus.Orchestrator/Argus.Orchestrator.csproj" />
+</Solution>
