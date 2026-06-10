@@ -38,18 +38,12 @@ class DetectorRegistry:
         params: dict[str, str] | None,
     ) -> EntityDetector:
         key = (entity_id, detector)
-        # Fast path: already exists (no lock needed for read after creation)
-        det = self._detectors.get(key)
-        if det is not None:
-            return det
-        # Slow path: create under lock (T-06-01)
+        # T-06-01: always hold the lock for both read and write to avoid
+        # unsafe concurrent dict access during a resize (WR-01).
         with self._lock:
-            # Re-check after acquiring lock (double-checked locking)
-            det = self._detectors.get(key)
-            if det is None:
-                det = EntityDetector.from_params(params or {})
-                self._detectors[key] = det
-        return det
+            if key not in self._detectors:
+                self._detectors[key] = EntityDetector.from_params(params or {})
+            return self._detectors[key]
 
     def score_one(
         self,
