@@ -1,0 +1,40 @@
+syntax = "proto3";
+package argus.v1;
+option csharp_namespace = "Argus.Detector.V1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+message Point {
+  string entity_id = 1;
+  google.protobuf.DoubleValue value = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+message Verdict {
+  string entity_id = 1;
+  google.protobuf.DoubleValue score = 2;
+  google.protobuf.DoubleValue expected = 3;
+  google.protobuf.DoubleValue lower = 4;
+  google.protobuf.DoubleValue upper = 5;
+  bool is_anomaly = 6;
+  string detector = 7;
+  google.protobuf.Timestamp timestamp = 8;
+}
+
+message FitRequest {
+  string entity_id = 1;
+  string detector = 2;
+  map<string, string> params = 3;
+  repeated Point window = 4;
+}
+
+message FitResponse {
+  bool ok = 1;
+  string error = 2;
+}
+
+service DetectorService {
+  rpc ScoreStream(stream Point) returns (stream Verdict);
+  rpc Fit(FitRequest) returns (FitResponse);
+}

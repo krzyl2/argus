@@ -1,1 +1,21 @@
 .planning/
+
+# .NET build output
+bin/
+obj/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Generated proto stubs (never commit — generated from proto/argus.proto)
+*_pb2.py
+*_pb2_grpc.py
+*_pb2.pyi
+detector/argus_detector/proto/argus_pb2*.py
+
+# mTLS certificates (private key material must never be committed)
+deploy/certs/*.key
+deploy/certs/*.crt
+deploy/certs/*.srl
