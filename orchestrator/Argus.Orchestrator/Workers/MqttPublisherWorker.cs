@@ -54,7 +54,7 @@ public sealed class MqttPublisherWorker : BackgroundService
             await _statePublisher.PublishAvailabilityAsync(entity.EntityId, online: true, stoppingToken);
         }
 
-        _logger.LogInformation(LogEvents.MqttWorkerStarted, "MqttPublisherWorker ready — discovery + availability published");
+        _logger.LogInformation(LogEvents.MqttWorkerReady, "MqttPublisherWorker ready — discovery + availability published");
 
         // Keep alive until cancellation
         await Task.Delay(Timeout.Infinite, stoppingToken).ContinueWith(_ => Task.CompletedTask);

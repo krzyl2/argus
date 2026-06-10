@@ -33,4 +33,5 @@ public static class LogEvents
     public static readonly EventId MqttReconnecting = new(4004, nameof(MqttReconnecting));
     public static readonly EventId MqttDiscoveryPublished = new(4005, nameof(MqttDiscoveryPublished));
     public static readonly EventId MqttWorkerStarted = new(4006, nameof(MqttWorkerStarted));
+    public static readonly EventId MqttWorkerReady = new(4007, nameof(MqttWorkerReady));
 }
