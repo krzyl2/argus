@@ -120,11 +120,24 @@ class DetectorRegistry:
         Snapshots the current model under the entity lock, deep-copies it
         (or creates a fresh one), trains outside the lock, then swaps atomically.
 
+        StlDetector is stateless and has no fit() method — for "stl", this method
+        registers the detector instance without fitting (WR-01).
+
         Args:
             entity_id: HA entity ID.
             detector: Detector name ("mad", "robust_zscore", "stl", "hst").
             values: Training values.
         """
+        # WR-01: StlDetector is stateless; it has no fit() method.
+        # Register it as-is so score_batch can use it.
+        if detector == "stl":
+            key = (entity_id, detector)
+            lock = self._entity_lock(key)
+            with lock:
+                if key not in self._detectors:
+                    self._detectors[key] = self._create_detector(detector)
+            return
+
         key = (entity_id, detector)
         lock = self._entity_lock(key)
 
