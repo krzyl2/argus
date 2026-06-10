@@ -39,7 +39,10 @@ public static class DetectorChannelFactory
         var caCert = new X509Certificate2(settings.TlsCa);
 
         // Load client cert + key (PEM pair)
-        var clientCert = X509Certificate2.CreateFromPemFile(settings.TlsCert, settings.TlsKey);
+        // .NET 8 safe pattern: export to PKCS12 so the private key is persisted into the
+        // cert object and not subject to GC before TLS handshake (Linux ephemeral key issue).
+        using var tempCert = X509Certificate2.CreateFromPemFile(settings.TlsCert, settings.TlsKey);
+        var clientCert = new X509Certificate2(tempCert.Export(X509ContentType.Pkcs12));
 
         var handler = new HttpClientHandler();
 
