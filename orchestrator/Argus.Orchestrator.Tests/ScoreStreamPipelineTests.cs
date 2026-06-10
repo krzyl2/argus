@@ -3,7 +3,6 @@ using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Detection;
 using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Mqtt;
-using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.Generic;
@@ -29,7 +28,7 @@ public class ScoreStreamPipelineTests
         => new Verdict
         {
             EntityId = entityId,
-            Score = Google.Protobuf.WellKnownTypes.DoubleValue.ForNumber(score),
+            Score = score,
         };
 
     private static EntitiesConfig MakeEntitiesConfig(string entityId = "sensor.test")
@@ -228,7 +227,7 @@ public class ScoreStreamPipelineTests
 // ─── Fakes ────────────────────────────────────────────────────────────────────
 
 /// <summary>Fake StatePublisher that records calls without a live broker.</summary>
-internal sealed class FakeStatePublisher : StatePublisher
+internal sealed class FakeStatePublisher : IStatePublisher
 {
     public bool FlagPublished { get; private set; }
     public bool LastFlagValue { get; private set; }
@@ -236,20 +235,20 @@ internal sealed class FakeStatePublisher : StatePublisher
     public bool AvailabilityPublished { get; private set; }
     public bool LastAvailabilityOnline { get; private set; }
 
-    public new Task PublishFlagAsync(string entityId, bool on, CancellationToken ct)
+    public Task PublishFlagAsync(string entityId, bool on, CancellationToken ct)
     {
         FlagPublished = true;
         LastFlagValue = on;
         return Task.CompletedTask;
     }
 
-    public new Task PublishScoreAsync(string entityId, double score, CancellationToken ct)
+    public Task PublishScoreAsync(string entityId, double score, CancellationToken ct)
     {
         ScorePublished = true;
         return Task.CompletedTask;
     }
 
-    public new Task PublishAvailabilityAsync(string entityId, bool online, CancellationToken ct)
+    public Task PublishAvailabilityAsync(string entityId, bool online, CancellationToken ct)
     {
         AvailabilityPublished = true;
         LastAvailabilityOnline = online;
