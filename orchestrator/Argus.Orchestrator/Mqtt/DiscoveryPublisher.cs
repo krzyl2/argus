@@ -98,8 +98,21 @@ public class DiscoveryPublisher
     /// <summary>
     /// Publishes discovery configs for all entities with retain=true and QoS AtLeastOnce (MQTT-01, MQTT-03).
     /// </summary>
-    public static async Task PublishAllAsync(
+    public static Task PublishAllAsync(
         MqttConnection mqtt,
+        IEnumerable<EntityConfig> entities,
+        CancellationToken ct)
+        => PublishAllAsync(
+            (topic, payload, retain, token) => mqtt.PublishAsync(topic, payload, retain, token),
+            entities,
+            ct);
+
+    /// <summary>
+    /// Testable overload: accepts a publish delegate instead of a live MqttConnection.
+    /// Production code uses the MqttConnection overload above.
+    /// </summary>
+    public static async Task PublishAllAsync(
+        Func<string, string, bool, CancellationToken, Task> publish,
         IEnumerable<EntityConfig> entities,
         CancellationToken ct)
     {
@@ -109,16 +122,16 @@ public class DiscoveryPublisher
             var anomalyId = UniqueId.AnomalyId(entity.EntityId, detector);
             var scoreId   = UniqueId.ScoreId(entity.EntityId, detector);
 
-            await mqtt.PublishAsync(
+            await publish(
                 $"homeassistant/binary_sensor/{anomalyId}/config",
                 BuildBinarySensorConfig(entity),
-                retain: true,
+                true,
                 ct);
 
-            await mqtt.PublishAsync(
+            await publish(
                 $"homeassistant/sensor/{scoreId}/config",
                 BuildSensorConfig(entity),
-                retain: true,
+                true,
                 ct);
         }
     }
