@@ -84,6 +84,22 @@ builder.Services.AddSingleton<ScoreStreamPipeline>();
 builder.Services.AddSingleton<InfluxDBClient>(_ =>
     new InfluxDBClient(connectionSettings.InfluxUrl ?? string.Empty, connectionSettings.InfluxToken));
 builder.Services.AddSingleton<InfluxDbReader>();
+// IInfluxDataSource resolves to the same singleton InfluxDbReader (for BatchSchedulerWorker injection)
+builder.Services.AddSingleton<IInfluxDataSource>(sp => sp.GetRequiredService<InfluxDbReader>());
+
+// Register batch detector client adapter (wraps DetectionGateway for IBatchDetectorClient)
+builder.Services.AddSingleton<IBatchDetectorClient, BatchDetectorClientAdapter>();
+
+// Register BatchSchedulerWorker as hosted service (Plan 02-04 / BTCH-03)
+// Uses factory to inject DetectionGateway directly for INFRA-07 health gate
+builder.Services.AddHostedService<BatchSchedulerWorker>(sp => new BatchSchedulerWorker(
+    sp.GetRequiredService<ConnectionSettings>(),
+    sp.GetRequiredService<IInfluxDataSource>(),
+    sp.GetRequiredService<IBatchDetectorClient>(),
+    sp.GetRequiredService<IStatePublisher>(),
+    sp.GetRequiredService<EntitiesConfig>(),
+    sp.GetRequiredService<DetectionGateway>(),
+    sp.GetRequiredService<ILogger<BatchSchedulerWorker>>()));
 
 var host = builder.Build();
 host.Run();
