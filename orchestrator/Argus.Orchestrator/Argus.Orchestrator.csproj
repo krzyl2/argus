@@ -17,6 +17,7 @@
     <PackageReference Include="Grpc.Tools" Version="2.80.0" PrivateAssets="All" />
     <PackageReference Include="Google.Protobuf" Version="3.31.1" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
+    <PackageReference Include="InfluxDB.Client" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup>

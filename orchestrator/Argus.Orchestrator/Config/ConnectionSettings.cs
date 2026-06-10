@@ -16,6 +16,14 @@ namespace Argus.Orchestrator.Config;
 ///   ARGUS_TLS_CERT            -> TlsCert (path to client.crt)
 ///   ARGUS_TLS_KEY             -> TlsKey (path to client.key)
 ///   ARGUS_ENTITIES_PATH       -> EntitiesPath (default: entities.yaml)
+///   ARGUS_INFLUX_URL          -> InfluxUrl
+///   ARGUS_INFLUX_TOKEN        -> InfluxToken
+///   ARGUS_INFLUX_ORG          -> InfluxOrg
+///   ARGUS_INFLUX_BUCKET       -> InfluxBucket
+///   ARGUS_INFLUX_MEASUREMENT  -> InfluxMeasurement (default: homeassistant)
+///   ARGUS_INFLUX_VALUE_FIELD  -> InfluxValueField (default: value)
+///   ARGUS_BATCH_INTERVAL_MIN  -> BatchIntervalMinutes (default: 10)
+///   ARGUS_NIGHTLY_FIT_HOUR    -> NightlyFitHour (default: 2)
 /// </summary>
 public class ConnectionSettings
 {
@@ -39,4 +47,18 @@ public class ConnectionSettings
 
     // entities.yaml path
     public string EntitiesPath { get; set; } = "entities.yaml";
+
+    // InfluxDB v2 (BTCH-01 / CONF-03)
+    public string? InfluxUrl { get; set; }
+    public string? InfluxToken { get; set; }
+    public string? InfluxOrg { get; set; }
+    public string? InfluxBucket { get; set; }
+
+    // Configurable measurement/field names (A4 mitigation — HA InfluxDB defaults may vary)
+    public string InfluxMeasurement { get; set; } = "homeassistant";
+    public string InfluxValueField { get; set; } = "value";
+
+    // Batch scheduler (BTCH-03)
+    public int BatchIntervalMinutes { get; set; } = 10;
+    public int NightlyFitHour { get; set; } = 2;
 }
