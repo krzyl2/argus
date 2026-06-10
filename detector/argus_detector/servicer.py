@@ -172,9 +172,14 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
             return
 
     def SaveModel(self, request, context):  # noqa: N802
-        """Serialize fitted model from registry and return bytes in response."""
+        """Persist fitted model from registry to disk (WR-03).
+
+        Uses model_store.save_pyod / save_river to write the model file.
+        Returns ok=False if no model is registered for the entity/detector.
+        """
         entity_id = request.entity_id
         detector = request.detector
+        entity_slug = entity_id.replace(".", "_")
 
         # WR-02: use get_model() to respect the per-entity lock
         model = self._registry.get_model(entity_id, detector)
@@ -182,8 +187,8 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
             return argus_pb2.SaveModelResponse(ok=False, error="no model for entity/detector")
 
         try:
-            # Validate the model is serializable (serialize to verify; bytes not in response proto)
-            self._serialize_model(model)
+            version = self._model_store.next_version(entity_slug, detector)
+            self._save_model_to_store(entity_slug, detector, version, model, entity_id=entity_id)
             return argus_pb2.SaveModelResponse(ok=True)
         except Exception as e:
             logger.exception("SaveModel failed for %s/%s", entity_id, detector)
