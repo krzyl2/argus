@@ -5,6 +5,7 @@ using Argus.Orchestrator.Logging;
 using Argus.Orchestrator.Mqtt;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
+using System.Threading.Channels;
 
 namespace Argus.Orchestrator.Detection;
 
@@ -78,11 +79,27 @@ public sealed class ScoreStreamPipeline
         // Build per-entity state keyed by entity_id
         var entityStates = BuildEntityStates();
 
-        // Start one stream per entity
-        var tasks = entityStates.Select(kvp =>
-            RunEntityStreamAsync(kvp.Key, kvp.Value, readings, ct));
+        // WR-03: fan-out — create one bounded channel per entity so each entity stream
+        // has its own enumerator. A single shared IAsyncEnumerable cannot be iterated
+        // concurrently (MoveNextAsync is not thread-safe).
+        var entityChannels = entityStates.Keys.ToDictionary(
+            id => id,
+            _ => Channel.CreateBounded<HaReading>(500));
 
-        await Task.WhenAll(tasks);
+        // Fan-out task: read once, route to matching per-entity channel
+        var fanOutTask = Task.Run(async () =>
+        {
+            await foreach (var r in readings.WithCancellation(ct))
+                if (entityChannels.TryGetValue(r.EntityId, out var ch))
+                    await ch.Writer.WriteAsync(r, ct);
+            foreach (var ch in entityChannels.Values)
+                ch.Writer.Complete();
+        }, ct);
+
+        var tasks = entityStates.Select(kvp =>
+            RunEntityStreamAsync(kvp.Key, kvp.Value, entityChannels[kvp.Key].Reader.ReadAllAsync(ct), ct));
+
+        await Task.WhenAll(tasks.Append(fanOutTask));
     }
 
     /// <summary>
