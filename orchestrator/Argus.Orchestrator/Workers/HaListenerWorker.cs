@@ -3,37 +3,29 @@ using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Logging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using System.Threading.Channels;
 
 namespace Argus.Orchestrator.Workers;
 
 /// <summary>
 /// BackgroundService that gates on detector health (INFRA-07) then consumes the HA event
-/// stream via IHaEventSource and forwards readings to the scoring pipeline.
-/// Plan 07 replaces the TODO body with the full ScoreStream + frozen/hysteresis/MQTT path.
+/// stream via IHaEventSource and forwards readings to ScoreStreamPipeline (Plan 08).
 /// </summary>
 public class HaListenerWorker : BackgroundService
 {
     private readonly IHaEventSource _haEventSource;
     private readonly DetectionGateway _gateway;
+    private readonly ScoreStreamPipeline _scoreStreamPipeline;
     private readonly ILogger<HaListenerWorker> _logger;
-
-    // Bounded channel: buffers HaReadings between ingestion and scoring (Plan 07 consumer)
-    private readonly Channel<HaReading> _readingChannel = Channel.CreateBounded<HaReading>(
-        new BoundedChannelOptions(1000)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleWriter = true,
-            SingleReader = false,
-        });
 
     public HaListenerWorker(
         IHaEventSource haEventSource,
         DetectionGateway gateway,
+        ScoreStreamPipeline scoreStreamPipeline,
         ILogger<HaListenerWorker> logger)
     {
         _haEventSource = haEventSource ?? throw new ArgumentNullException(nameof(haEventSource));
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
+        _scoreStreamPipeline = scoreStreamPipeline ?? throw new ArgumentNullException(nameof(scoreStreamPipeline));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -49,27 +41,11 @@ public class HaListenerWorker : BackgroundService
             return;
 
         _logger.Log(LogLevel.Information, LogEvents.HaListenerDetectorHealthy,
-            "Detector healthy — starting HA event source");
+            "Detector healthy — starting ScoreStreamPipeline (Plan 08)");
 
-        await foreach (var reading in _haEventSource.ReadAllAsync(stoppingToken))
-        {
-            _logger.LogDebug(
-                "HA reading: entity={EntityId} value={Value} suppress={Suppress}",
-                reading.EntityId, reading.Value, reading.SuppressBinarySensor);
-
-            // Forward to the scoring pipeline channel
-            if (!_readingChannel.Writer.TryWrite(reading))
-            {
-                _logger.LogWarning(
-                    "Reading channel full — dropping {EntityId}", reading.EntityId);
-            }
-
-            // TODO(plan07): forward reading to ScoreStream + frozen/hysteresis/MQTT pipeline
-        }
+        // Run the end-to-end pipeline: HA reading -> bidi ScoreStream -> hysteresis/frozen -> MQTT
+        // On RpcException the pipeline marks entities unavailable and the exception propagates here;
+        // BackgroundService will log and respect cancellation on host shutdown.
+        await _scoreStreamPipeline.RunAsync(_haEventSource.ReadAllAsync(stoppingToken), stoppingToken);
     }
-
-    /// <summary>
-    /// Exposes the reading channel reader for Plan 07's scoring pipeline to consume.
-    /// </summary>
-    public ChannelReader<HaReading> Readings => _readingChannel.Reader;
 }

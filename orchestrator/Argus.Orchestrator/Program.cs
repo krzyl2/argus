@@ -75,7 +75,12 @@ builder.Services.AddHostedService<HaListenerWorker>();
 builder.Services.AddSingleton<MqttConnection>(sp =>
     new MqttConnection(connectionSettings, sp.GetRequiredService<ILogger<MqttConnection>>()));
 builder.Services.AddSingleton<StatePublisher>();
+// IStatePublisher resolves to the same singleton StatePublisher (for ScoreStreamPipeline injection)
+builder.Services.AddSingleton<IStatePublisher>(sp => sp.GetRequiredService<StatePublisher>());
 builder.Services.AddHostedService<MqttPublisherWorker>();
+
+// Register ScoreStreamPipeline (Plan 08): bidi ScoreStream loop with hysteresis/frozen/MQTT
+builder.Services.AddSingleton<ScoreStreamPipeline>();
 
 var host = builder.Build();
 host.Run();
