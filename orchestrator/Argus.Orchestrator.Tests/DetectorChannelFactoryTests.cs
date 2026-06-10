@@ -55,7 +55,7 @@ public class DetectorChannelFactoryTests : IDisposable
 
         // Assert: handler has exactly 1 client cert loaded
         Assert.NotNull(capturedHandler);
-        Assert.Equal(1, capturedHandler!.ClientCertificates.Count);
+        Assert.Single(capturedHandler!.ClientCertificates);
         // Assert: custom server validation callback is set (non-null = mTLS CA pinning active)
         Assert.NotNull(capturedHandler.ServerCertificateCustomValidationCallback);
     }
@@ -77,8 +77,7 @@ public class DetectorChannelFactoryTests : IDisposable
 
         // Act: invoke the callback with the real server cert signed by the test CA
         // Load server cert to simulate a real TLS handshake callback
-        var serverCert = X509CertificateLoader.LoadCertificateFromFile(
-            Path.Combine(CertDir, "server.crt"));
+        var serverCert = new X509Certificate2(Path.Combine(CertDir, "server.crt"));
         var chain = new X509Chain();
 
         var callback = capturedHandler!.ServerCertificateCustomValidationCallback!;
