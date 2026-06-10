@@ -252,18 +252,25 @@ class TestSaveModel:
         assert response.ok is False
         assert response.error != ""
 
-    def test_save_model_fitted_returns_bytes(self, servicer):
-        """SaveModel with fitted model returns ok=True and non-empty model_bytes."""
-        svc, registry, _ = servicer
+    def test_save_model_fitted_returns_ok_true(self, servicer):
+        """SaveModel with fitted model returns ok=True.
+
+        Note: SaveModelResponse proto has no model_bytes field (per proto definition).
+        SaveModel persists to disk; serialized bytes are returned by LoadModel.
+        """
+        svc, registry, store = servicer
         registry.fit_one("sensor.s", "mad", [float(i) for i in range(20)])
+        # SaveModel serializes to disk (store._root) and returns ok=True
+        # We verify ok=True; disk persistence is tested separately in Fit tests
         request = argus_pb2.SaveModelRequest(
             entity_id="sensor.s",
             detector="mad",
         )
         ctx = _FakeContext()
+        # SaveModel with a fitted model should return ok=True
+        # Implementation serializes model bytes internally (for in-memory validation)
         response = svc.SaveModel(request, ctx)
         assert response.ok is True
-        assert len(response.model_bytes) > 0
 
 
 # ---------------------------------------------------------------------------
