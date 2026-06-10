@@ -42,7 +42,7 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
                 return
 
             if not point.entity_id:
-                logger.warning("received Point with empty entity_id — skipping")
+                logger.warning("received Point with empty entity_id - skipping")
                 continue
 
             try:
