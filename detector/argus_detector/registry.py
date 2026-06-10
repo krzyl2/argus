@@ -196,6 +196,16 @@ class DetectorRegistry:
         """True if a model exists for (entity_id, detector)."""
         return (entity_id, detector) in self._detectors
 
+    def get_model(self, entity_id: str, detector: str) -> object | None:
+        """Return the model for (entity_id, detector), or None if not present.
+
+        Reads under the per-entity lock to avoid TOCTOU races with fit_one (WR-02).
+        """
+        key = (entity_id, detector)
+        lock = self._entity_lock(key)
+        with lock:
+            return self._detectors.get(key)
+
     def register(self, entity_id: str, detector: str, model_obj: object) -> None:
         """Directly set a model in the registry (used by ModelStore.load_all_into).
 

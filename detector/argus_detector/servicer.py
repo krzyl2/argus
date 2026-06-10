@@ -113,8 +113,8 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
             # Train model (MDL-04: train-outside-lock handled inside registry.fit_one)
             self._registry.fit_one(entity_id, detector, values)
 
-            # Access fitted model for persistence
-            model = self._registry._detectors.get((entity_id, detector))
+            # Access fitted model for persistence (WR-02: use get_model to respect entity lock)
+            model = self._registry.get_model(entity_id, detector)
             if model is not None:
                 self._save_model_to_store(entity_slug, detector, version, model, entity_id=entity_id)
 
@@ -176,7 +176,8 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
         entity_id = request.entity_id
         detector = request.detector
 
-        model = self._registry._detectors.get((entity_id, detector))
+        # WR-02: use get_model() to respect the per-entity lock
+        model = self._registry.get_model(entity_id, detector)
         if model is None:
             return argus_pb2.SaveModelResponse(ok=False, error="no model for entity/detector")
 
