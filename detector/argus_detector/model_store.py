@@ -161,6 +161,9 @@ class ModelStore:
         """
         v = version if version is not None else self._read_latest(entity_slug, detector)
         with open(self._model_dir(entity_slug, detector, v) / "model.pkl", "rb") as f:
+            # T-02-03-01 (accepted risk): pickle.load executes arbitrary Python embedded in
+            # the file. This is accepted for the single-operator self-hosted deployment where
+            # /var/argus/models is writable only by the detector process. See threat model.
             return pickle.load(f)
 
     def next_version(self, entity_slug: str, detector: str) -> int:
@@ -206,6 +209,7 @@ class ModelStore:
                     model = joblib.load(model_dir / "model.joblib")
                 elif (model_dir / "model.pkl").exists():
                     with open(model_dir / "model.pkl", "rb") as f:
+                        # T-02-03-01 (accepted risk): see load_river for rationale.
                         model = pickle.load(f)
                 else:
                     logger.warning(
