@@ -1,6 +1,7 @@
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Detection;
 using Argus.Orchestrator.Ha;
+using Argus.Orchestrator.Mqtt;
 using Argus.Orchestrator.Workers;
 using Grpc.Net.Client;
 using NetDaemon.Client.Extensions;
@@ -69,9 +70,12 @@ builder.Services.AddSingleton<IHaEventSource, NetDaemonHaEventSource>();
 // Register HA listener worker (consumes IHaEventSource after health gate)
 builder.Services.AddHostedService<HaListenerWorker>();
 
-// TODO(plan06): register MqttPublisher
-// builder.Services.AddSingleton<MqttPublisher>();
-// builder.Services.AddHostedService<MqttPublisherWorker>();
+// Register MQTT stack (Plan 07): MqttConnection (LWT), StatePublisher, MqttPublisherWorker
+// DiscoveryPublisher is static — no DI registration needed
+builder.Services.AddSingleton<MqttConnection>(sp =>
+    new MqttConnection(connectionSettings, sp.GetRequiredService<ILogger<MqttConnection>>()));
+builder.Services.AddSingleton<StatePublisher>();
+builder.Services.AddHostedService<MqttPublisherWorker>();
 
 var host = builder.Build();
 host.Run();
