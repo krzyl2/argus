@@ -35,6 +35,16 @@ if [[ -z "${GPU_HOST_NAME}" ]]; then
   exit 1
 fi
 
+# On Windows Git Bash, the shell performs MSYS path conversion on openssl -subj
+# arguments, turning /CN=ArgusCA into C:/Program Files/Git/CN=ArgusCA.
+# We use the //CN= prefix (double forward slash), which signals to Git Bash "do not
+# convert this path". On Linux/macOS the leading // is normalised to / by the kernel
+# and openssl sees the correct /CN= form. This is the standard workaround for CI on
+# Windows runners. See: https://github.com/openssl/openssl/issues/8795
+SUBJ_CA="//CN=ArgusCA"
+SUBJ_SERVER="//CN=${GPU_HOST_NAME}"
+SUBJ_CLIENT="//CN=edge-host"
+
 # ---------------------------------------------------------------------------
 # Output directory — always relative to this script's location
 # ---------------------------------------------------------------------------
@@ -60,7 +70,7 @@ openssl req -new -x509 \
   -key "${CERTS_DIR}/ca.key" \
   -out "${CERTS_DIR}/ca.crt" \
   -days 730 \
-  -subj "/CN=ArgusCA"
+  -subj "${SUBJ_CA}"
 
 # ---------------------------------------------------------------------------
 # 2. GPU host server certificate (SAN includes BOTH IP and DNS — CRITICAL)
@@ -72,12 +82,14 @@ openssl genrsa -out "${CERTS_DIR}/server.key" 4096
 openssl req -new \
   -key "${CERTS_DIR}/server.key" \
   -out "${CERTS_DIR}/server.csr" \
-  -subj "/CN=${GPU_HOST_NAME}"
+  -subj "${SUBJ_SERVER}"
 
-# Write the SAN extension config inline (not from template) so the real values land here.
-# server-ext.cnf in this directory is a template with placeholders — this file overwrites it
-# with the real values for the duration of the signing step.
-cat > "${CERTS_DIR}/server-ext.cnf" <<EOF
+# Write the SAN extension config to a temporary file (not the committed template).
+# deploy/certs/server-ext.cnf is a placeholder template committed to the repo;
+# this script uses a separate _san_work.cnf so the template is never modified.
+# The work file is deleted after signing.
+SAN_WORK="${CERTS_DIR}/_san_work.cnf"
+cat > "${SAN_WORK}" <<EOF
 subjectAltName=IP:${GPU_HOST_IP},DNS:${GPU_HOST_NAME}
 EOF
 
@@ -89,7 +101,7 @@ openssl x509 -req \
   -CAcreateserial \
   -out "${CERTS_DIR}/server.crt" \
   -days 730 \
-  -extfile "${CERTS_DIR}/server-ext.cnf"
+  -extfile "${SAN_WORK}"
 
 # ---------------------------------------------------------------------------
 # 3. Edge host client certificate (no SAN required — client identity only)
@@ -99,7 +111,7 @@ openssl genrsa -out "${CERTS_DIR}/client.key" 4096
 openssl req -new \
   -key "${CERTS_DIR}/client.key" \
   -out "${CERTS_DIR}/client.csr" \
-  -subj "/CN=edge-host"
+  -subj "${SUBJ_CLIENT}"
 openssl x509 -req \
   -in "${CERTS_DIR}/client.csr" \
   -CA "${CERTS_DIR}/ca.crt" \
@@ -109,9 +121,9 @@ openssl x509 -req \
   -days 730
 
 # ---------------------------------------------------------------------------
-# Clean up CSR files — not needed after signing
+# Clean up working files — not needed after signing
 # ---------------------------------------------------------------------------
-rm -f "${CERTS_DIR}/server.csr" "${CERTS_DIR}/client.csr"
+rm -f "${CERTS_DIR}/server.csr" "${CERTS_DIR}/client.csr" "${CERTS_DIR}/_san_work.cnf"
 
 # ---------------------------------------------------------------------------
 # Verification summary

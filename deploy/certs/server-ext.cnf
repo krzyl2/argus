@@ -1,10 +1,8 @@
 # deploy/certs/server-ext.cnf — Server certificate SAN extension template
 #
 # This file is committed to version control with PLACEHOLDER values only.
-# The generate-certs.sh script overwrites this file with real values at signing time.
-# The overwritten version (with real IP/hostname) is gitignored via deploy/certs/*.cnf — wait,
-# actually *.cnf is NOT gitignored — the script writes the real-values version here and
-# it gets replaced. Do NOT commit the generated version; use `git diff` to confirm.
+# The generate-certs.sh script writes the real values to a separate working
+# file (_san_work.cnf) during signing — this template is never modified.
 #
 # Placeholders:
 #   __GPU_HOST_IP__   — replace with GPU host static LAN IP (e.g., 192.168.1.100)
