@@ -8,22 +8,6 @@ using NetDaemon.Client.Extensions;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Bind ConnectionSettings from environment variables (CONF-03 — no credentials in source)
-builder.Services.Configure<ConnectionSettings>(o =>
-{
-    o.HaUrl = builder.Configuration["ARGUS_HA_URL"];
-    o.HaToken = builder.Configuration["ARGUS_HA_TOKEN"];
-    o.MqttHost = builder.Configuration["ARGUS_MQTT_HOST"];
-    if (int.TryParse(builder.Configuration["ARGUS_MQTT_PORT"], out var port)) o.MqttPort = port;
-    o.MqttUser = builder.Configuration["ARGUS_MQTT_USER"];
-    o.MqttPassword = builder.Configuration["ARGUS_MQTT_PASSWORD"];
-    o.DetectorEndpoint = builder.Configuration["ARGUS_DETECTOR_ENDPOINT"];
-    o.TlsCa = builder.Configuration["ARGUS_TLS_CA"];
-    o.TlsCert = builder.Configuration["ARGUS_TLS_CERT"];
-    o.TlsKey = builder.Configuration["ARGUS_TLS_KEY"];
-    o.EntitiesPath = builder.Configuration["ARGUS_ENTITIES_PATH"] ?? "entities.yaml";
-});
-
 // Load entities.yaml (CONF-01/CONF-02)
 var entitiesPath = builder.Configuration["ARGUS_ENTITIES_PATH"] ?? "entities.yaml";
 var entitiesLoggerFactory = LoggerFactory.Create(b => b.AddConsole());
@@ -31,12 +15,15 @@ var entitiesLogger = entitiesLoggerFactory.CreateLogger<EntitiesConfigLoader>();
 var entitiesConfig = EntitiesConfigLoader.Load(entitiesPath, entitiesLogger);
 builder.Services.AddSingleton(entitiesConfig);
 
-// Build mTLS ConnectionSettings eagerly for singleton registration
+// Build one authoritative ConnectionSettings instance from environment (CONF-03, WR-06).
+// Single AddSingleton registration — DI consumers receive this instance directly.
+// (Removed duplicate Configure<ConnectionSettings> that never reached constructor-injected consumers.)
 var connectionSettings = new ConnectionSettings
 {
     HaUrl = builder.Configuration["ARGUS_HA_URL"],
     HaToken = builder.Configuration["ARGUS_HA_TOKEN"],
     MqttHost = builder.Configuration["ARGUS_MQTT_HOST"],
+    MqttPort = int.TryParse(builder.Configuration["ARGUS_MQTT_PORT"], out var mqttPort) ? mqttPort : 1883,
     MqttUser = builder.Configuration["ARGUS_MQTT_USER"],
     MqttPassword = builder.Configuration["ARGUS_MQTT_PASSWORD"],
     DetectorEndpoint = builder.Configuration["ARGUS_DETECTOR_ENDPOINT"],
