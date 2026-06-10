@@ -24,6 +24,13 @@ public sealed class EntityRuntimeState
     /// <summary>Last flag value published to MQTT (for change detection).</summary>
     public bool LastPublishedFlag { get; set; }
 
+    /// <summary>
+    /// Tracks whether the binary_sensor flag should be suppressed for the current reading
+    /// (post-reconnect cooldown D-07 or warm-up PITFALL 8). Updated in the write loop so
+    /// the verdict read loop can use it via a synthetic reading.
+    /// </summary>
+    public bool SuppressBinarySensor { get; set; }
+
     private int _readingCount;
     private readonly int _warmUpWindow;
 

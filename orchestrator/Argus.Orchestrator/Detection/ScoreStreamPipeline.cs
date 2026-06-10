@@ -102,12 +102,12 @@ public sealed class ScoreStreamPipeline
         {
             await foreach (var verdict in call.ReadAllVerdictsAsync(ct))
             {
-                // We don't have the originating reading here for the response side;
-                // use a synthetic reading with suppress=false — the reading's SuppressBinarySensor
-                // is tracked per-entity in entityState for the verdict path via ProcessVerdictAsync.
-                // In the full pipeline, readings and verdicts are correlated by entity_id.
-                var syntheticReading = new Ha.HaReading(entityId, 0.0, DateTimeOffset.UtcNow, false);
-                await ProcessVerdictAsync(syntheticReading, verdict, entityState, ct);
+                // SuppressBinarySensor is tracked per-entity in entityState (updated in write loop).
+                // Use entityState value so post-reconnect cooldown (D-07) and warm-up (PITFALL 8)
+                // suppression is correctly forwarded to ProcessVerdictAsync.
+                await ProcessVerdictAsync(
+                    new Ha.HaReading(entityId, 0.0, DateTimeOffset.UtcNow, entityState.SuppressBinarySensor),
+                    verdict, entityState, ct);
             }
         }, ct);
 
@@ -119,6 +119,7 @@ public sealed class ScoreStreamPipeline
 
             entityState.FrozenDetector.AddReading(reading.Value);
             entityState.RecordReading();
+            entityState.SuppressBinarySensor = reading.SuppressBinarySensor;
 
             if (entityState.FrozenDetector.IsFrozen)
             {
