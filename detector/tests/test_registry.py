@@ -1,11 +1,11 @@
 """
-Tests for DetectorRegistry per-entity isolation.
-
-RED phase: these tests MUST fail before implementation.
-GREEN phase: all pass after registry.py is updated to use EntityDetector.
+Tests for DetectorRegistry per-entity isolation and batch methods.
 
 T-06-01: per-entity state is isolated (scoring sensor.a does not advance sensor.b's n_seen).
+MDL-04: fit_one trains outside entity lock; score_batch reads ref under lock.
 """
+import threading
+
 import pytest
 
 from argus_detector.registry import DetectorRegistry
@@ -60,3 +60,151 @@ class TestRegistryPerEntityIsolation:
         det = registry._detectors[("sensor.p", "hst")]
         assert det.is_warmed_up
         assert det._model.window_size == 50
+
+
+class TestRegistryFitOne:
+    """fit_one trains a model and makes has_model return True (MDL-04)."""
+
+    def test_fit_one_makes_has_model_true(self):
+        """After fit_one, has_model returns True for that (entity_id, detector)."""
+        registry = DetectorRegistry()
+        assert not registry.has_model("sensor.test", "mad")
+        registry.fit_one("sensor.test", "mad", [1.0] * 10)
+        assert registry.has_model("sensor.test", "mad")
+
+    def test_fit_one_model_can_score(self):
+        """After fit_one, score_batch succeeds (no NotFittedError)."""
+        registry = DetectorRegistry()
+        registry.fit_one("sensor.test", "mad", [1.0] * 10)
+        scores, error = registry.score_batch("sensor.test", "mad", [1.0] * 5)
+        assert error is None
+        assert len(scores) == 5
+        assert all(isinstance(s, float) for s in scores)
+
+    def test_fit_one_robust_zscore_alias(self):
+        """fit_one with 'robust_zscore' creates a PyODDetector (alias for MAD)."""
+        registry = DetectorRegistry()
+        registry.fit_one("sensor.test", "robust_zscore", [1.0] * 10)
+        assert registry.has_model("sensor.test", "robust_zscore")
+
+    def test_fit_one_concurrent_no_exception(self):
+        """Concurrent fit_one and score_batch for same entity must not raise or deadlock.
+
+        MDL-04: training runs outside lock; scoring holds a snapshot ref.
+        """
+        registry = DetectorRegistry()
+        registry.fit_one("sensor.c", "mad", [float(i) for i in range(20)])
+
+        errors = []
+
+        def do_fit():
+            try:
+                registry.fit_one("sensor.c", "mad", [float(i) for i in range(30)])
+            except Exception as e:
+                errors.append(e)
+
+        def do_score():
+            try:
+                registry.score_batch("sensor.c", "mad", [1.0] * 5)
+            except Exception as e:
+                errors.append(e)
+
+        t1 = threading.Thread(target=do_fit)
+        t2 = threading.Thread(target=do_score)
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        assert not errors, f"Concurrent fit/score raised: {errors}"
+
+
+class TestRegistryScoreBatch:
+    """score_batch returns (scores, error); raises ValueError when no model exists."""
+
+    def test_score_batch_no_model_raises_value_error(self):
+        """score_batch with no prior fit_one raises ValueError (cold-start is servicer's job)."""
+        registry = DetectorRegistry()
+        with pytest.raises(ValueError, match="No model"):
+            registry.score_batch("sensor.missing", "mad", [1.0] * 5)
+
+    def test_score_batch_stl_insufficient_history_returns_error_string(self):
+        """score_batch on StlDetector returns ([], error_string) when values insufficient."""
+        registry = DetectorRegistry()
+        # Inject a StlDetector directly (no fit_one needed for stateless STL)
+        from argus_detector.stl_detector import StlDetector
+        registry.register("sensor.stl", "stl", StlDetector())
+        scores, error = registry.score_batch("sensor.stl", "stl", [1.0] * 5)
+        assert scores == []
+        assert error is not None
+        assert "insufficient" in error
+
+    def test_score_batch_pyod_returns_list_none(self):
+        """score_batch on PyODDetector returns (list[float], None)."""
+        registry = DetectorRegistry()
+        registry.fit_one("sensor.x", "mad", [float(i) for i in range(20)])
+        scores, error = registry.score_batch("sensor.x", "mad", [1.0, 2.0, 3.0])
+        assert error is None
+        assert len(scores) == 3
+
+
+class TestRegistryCreateDetector:
+    """_create_detector maps detector names to correct classes."""
+
+    def test_create_detector_mad(self):
+        """'mad' -> PyODDetector instance."""
+        registry = DetectorRegistry()
+        det = registry._create_detector("mad")
+        from argus_detector.pyod_detector import PyODDetector
+        assert isinstance(det, PyODDetector)
+
+    def test_create_detector_robust_zscore_alias(self):
+        """'robust_zscore' -> PyODDetector instance (same as 'mad')."""
+        registry = DetectorRegistry()
+        det = registry._create_detector("robust_zscore")
+        from argus_detector.pyod_detector import PyODDetector
+        assert isinstance(det, PyODDetector)
+
+    def test_create_detector_stl(self):
+        """'stl' -> StlDetector instance."""
+        registry = DetectorRegistry()
+        det = registry._create_detector("stl")
+        from argus_detector.stl_detector import StlDetector
+        assert isinstance(det, StlDetector)
+
+    def test_create_detector_hst(self):
+        """'hst' -> EntityDetector instance."""
+        registry = DetectorRegistry()
+        det = registry._create_detector("hst")
+        from argus_detector.hst_detector import EntityDetector
+        assert isinstance(det, EntityDetector)
+
+    def test_create_detector_unknown_raises(self):
+        """Unknown detector name raises ValueError."""
+        registry = DetectorRegistry()
+        with pytest.raises(ValueError, match="Unknown detector"):
+            registry._create_detector("nonexistent_detector")
+
+
+class TestRegistryRegister:
+    """register() allows direct model injection (used by ModelStore.load_all_into)."""
+
+    def test_register_sets_has_model_true(self):
+        """After register(), has_model returns True."""
+        from argus_detector.pyod_detector import PyODDetector
+        registry = DetectorRegistry()
+        model = PyODDetector()
+        registry.register("sensor.test", "hst", model)
+        assert registry.has_model("sensor.test", "hst")
+
+    def test_register_injected_model_is_used(self):
+        """score_batch uses the injected model (not a new one)."""
+        from argus_detector.pyod_detector import PyODDetector
+        registry = DetectorRegistry()
+        model = PyODDetector()
+        model.fit([float(i) for i in range(15)])
+        registry.register("sensor.r", "mad", model)
+        # score_batch should succeed because model is already fitted
+        scores, error = registry.score_batch("sensor.r", "mad", [1.0, 2.0])
+        assert error is None
+        assert len(scores) == 2
