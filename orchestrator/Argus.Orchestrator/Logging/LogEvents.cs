@@ -29,4 +29,8 @@ public static class LogEvents
     // MQTT publisher
     public static readonly EventId MqttConnected = new(4001, nameof(MqttConnected));
     public static readonly EventId MqttDisconnected = new(4002, nameof(MqttDisconnected));
+    public static readonly EventId MqttBridgeOnline = new(4003, nameof(MqttBridgeOnline));
+    public static readonly EventId MqttReconnecting = new(4004, nameof(MqttReconnecting));
+    public static readonly EventId MqttDiscoveryPublished = new(4005, nameof(MqttDiscoveryPublished));
+    public static readonly EventId MqttWorkerStarted = new(4006, nameof(MqttWorkerStarted));
 }
