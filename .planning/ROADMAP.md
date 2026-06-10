@@ -11,7 +11,7 @@
 ## Phases
 
 - [x] **Phase 1: Foundations + Streaming** — Scaffold, proto contract, gRPC skeleton with mTLS, HA WebSocket → ScoreStream → MQTT end-to-end streaming path including hysteresis, frozen detection, and graceful degradation
-- [ ] **Phase 2: Batch Path + Model Lifecycle** — InfluxDB reader, ScoreBatch/Fit RPCs with PyOD detectors, versioned model store, batch scheduler, STL detection, restart resilience
+- [x] **Phase 2: Batch Path + Model Lifecycle** — InfluxDB reader, ScoreBatch/Fit RPCs with PyOD detectors, versioned model store, batch scheduler, STL detection, restart resilience
 
 ---
 
@@ -50,12 +50,12 @@ Plans:
   5. A Fit RPC call and a concurrent ScoreStream call for the same entity do not corrupt model state — training runs outside the lock and swaps atomically
 **Plans**: 6 plans
 Plans:
-- [ ] 02-01-PLAN.md — Proto extensions (ScoreBatch, SaveModel, LoadModel) + stub regen
-- [ ] 02-02-PLAN.md — ConnectionSettings + LogEvents + InfluxDbReader (orchestrator)
-- [ ] 02-03-PLAN.md — PyODDetector + StlDetector + ModelStore (Python detector)
-- [ ] 02-04-PLAN.md — BatchSchedulerWorker + Program.cs wiring (orchestrator)
-- [ ] 02-05-PLAN.md — Fit/ScoreBatch/SaveModel/LoadModel RPCs + startup model load gate (Python)
-- [ ] 02-06-PLAN.md — RES-02 resilience tests + full regression sweep
+- [x] 02-01-PLAN.md — Proto extensions (ScoreBatch, SaveModel, LoadModel) + stub regen
+- [x] 02-02-PLAN.md — ConnectionSettings + LogEvents + InfluxDbReader (orchestrator)
+- [x] 02-03-PLAN.md — PyODDetector + StlDetector + ModelStore (Python detector)
+- [x] 02-04-PLAN.md — BatchSchedulerWorker + Program.cs wiring (orchestrator)
+- [x] 02-05-PLAN.md — Fit/ScoreBatch/SaveModel/LoadModel RPCs + startup model load gate (Python)
+- [x] 02-06-PLAN.md — RES-02 resilience tests + full regression sweep
 
 ---
 
@@ -64,8 +64,8 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations + Streaming | 8/8 | Complete   | 2026-06-10 |
-| 2. Batch Path + Model Lifecycle | 0/6 | Not started | - |
+| 2. Batch Path + Model Lifecycle | 6/6 | Complete | 2026-06-10 |
 
 ---
 
-*Last updated: 2026-06-10 — Phase 2 planned (6 plans in 4 waves)*
+*Last updated: 2026-06-10 — Phase 2 complete (6/6 plans, all code review findings fixed)*

@@ -2,42 +2,42 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: phase-1-complete
-last_updated: "2026-06-10T14:20:00.000Z"
+status: milestone-complete
+last_updated: "2026-06-10T18:30:00.000Z"
 progress:
   total_phases: 2
-  completed_phases: 1
-  total_plans: 8
-  completed_plans: 8
-  percent: 50
+  completed_phases: 2
+  total_plans: 14
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State: Argus
 
 ## Current Status
 
-- Phase: Phase 1 COMPLETE (8/8 plans complete)
-- Active phase: 02-batch-model-lifecycle (not started)
-- Last action: Completed 01-08 ScoreStreamPipeline end-to-end — 2026-06-10
+- Phase: Phase 2 COMPLETE (6/6 plans complete)
+- Active phase: None — all milestone phases complete
+- Last action: Completed 02-06 RES-02 resilience tests + code review fix pass — 2026-06-10
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** Anomalies on v1 environmental sensors appear in HA as live binary_sensor + score entities within 2 seconds.
-**Current focus:** Phase 01 — foundations-streaming
+**Current focus:** Milestone v1 complete — ready for deployment
 
 ## Phase Status
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 1 | Foundations + Streaming | Planned (8 plans) |
-| 2 | Batch Path + Model Lifecycle | Not started |
+| 1 | Foundations + Streaming | Complete (8/8 plans) |
+| 2 | Batch Path + Model Lifecycle | Complete (6/6 plans) |
 
 ## Performance Metrics
 
-- Plans completed: 8 (01-01 through 01-08)
-- Phases completed: 1 (Phase 1)
+- Plans completed: 14 (01-01 through 02-06)
+- Phases completed: 2 (Phase 1 + Phase 2)
 - Requirements covered: 34/34
 
 ## Accumulated Context
@@ -47,42 +47,42 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 - .NET 8 orchestrator + Python gRPC detector (locked D2)
 - gRPC with mTLS for edge-to-detector transport (locked D4)
 - MQTT discovery for HA entity creation (locked D6)
-- PyOD + River + Darts as detection engines (locked D10)
-- Per-entity models on GPU host disk, joblib/pickle serialization (locked D7)
+- PyOD MAD + STL + River HST as detection engines
+- Per-entity models on detector host disk, joblib (PyOD) / pickle (River) serialization
+- entity_id.txt sidecar for unambiguous slug→entity_id reconstruction (CR-02 fix)
+- Model store: models/{slug}/{detector}/v{N}/; atomic latest file; retain 3 versions; prune on save
+- BatchSchedulerWorker: PeriodicTimer, 10-min default, nightly Fit at hour 2
+- Fit RPC saves model internally in Python (no separate SaveModel call from orchestrator)
+- threading.Lock per-(entity_id, detector) for MDL-04; train outside lock on deepcopy, atomic swap
+- MDL-03 gate: NOT_SERVING before load_all_into; SERVING after
+- StlDetector is stateless (no fit); fit_one skips fit for stl detector type (WR-01 fix)
 - Mono-repo: proto/, orchestrator/, detector/, deploy/ (locked)
 - Phase 1-2 are CPU-only; GPU work is v2 (Phase 4)
-- mTLS certs use placeholder values (GPU_HOST_IP=192.168.1.100, GPU_HOST_NAME=gpu-host) — must regenerate with real values before deployment (01-03)
-- One bidi stream per entity for isolation — RpcException on one entity only marks that entity offline (01-08)
-- ScoreStreamPipeline: CompleteAsync BEFORE await readTask (PITFALL 3 mitigated)
-- binary_sensor suppressed during warm-up (WarmedUp check) and reconnect cooldown (SuppressBinarySensor) — PITFALL 8/D-07
 
-### Open Questions (must resolve before execution)
+### Critical Pitfalls (resolved)
 
-- Q1: Exact HA entity_ids for entities.yaml and unique_id generation (Phase 1 blocked for integration testing)
-- Q2: InfluxDB location, version (v1/v2/v3), and retention (Phase 2 blocked without this)
-- Q3: GPU host static LAN IP or hostname (needed for mTLS SAN) — RESOLVED with placeholders for dev; real values needed before deployment
+- RobustZScore does NOT exist in PyOD 3.6.0 — use MAD (pyod.models.mad.MAD)
+- River HST to_dict/from_dict do NOT exist — use pickle for River model persistence
+- STL 24h window (1440 points) always triggers insufficient-history guard (needs 2880 / 48h for daily period)
+- google.protobuf wrappers generate as double?/float? in C# with Grpc.Tools 2.80.0 — not as wrapper objects
+- IInfluxDataSource and IBatchDetectorClient extracted as seams (no mocking library in test project)
+- entity_id.txt sidecar required to avoid lossy slug→entity_id reconstruction
+
+### Open Questions (deferred to deployment)
+
+- Q1: Exact HA entity_ids for entities.yaml (needed for integration testing)
+- Q2: InfluxDB location/auth (needed for batch path to actually query)
+- Q3: GPU host static LAN IP/hostname (mTLS SAN placeholders in dev certs)
 - Q4: MQTT broker auth — username/password or client cert?
-
-### Critical Pitfalls (from research)
-
-- Hysteresis must be Phase 1 — HST scores are uncalibrated; flat threshold oscillates
-- proto3 silently drops score 0.0 — use FloatValue wrapper or explicit has_score bool; test in Phase 1
-- MQTT unique_id formula must be locked before first publish: argus_{entity_slug}_{detector}_{suffix}
-- mTLS SAN must include both GPU host LAN IP and hostname; validate with Health RPC first
-- HA WebSocket reconnect: call get_states (not replay burst), suppress binary_sensor for 60s cooldown
-
-### Todos
-
-- Resolve Q1-Q4 before starting Phase 1 plans
 
 ### Blockers
 
-- None currently
+- None
 
 ## Session Continuity
 
-- Last session: 2026-06-10 (Completed 01-08 ScoreStreamPipeline end-to-end)
-- Resume point: Phase 2 — 02-batch-model-lifecycle (not yet planned)
+- Last session: 2026-06-10 (Completed Phase 2 — all 14 milestone plans done)
+- Resume point: Deployment configuration (replace placeholder mTLS certs, configure entities.yaml, set ARGUS_INFLUX_* env vars)
 
 ---
-*Last updated: 2026-06-10 after 01-08 complete — Phase 1 all 8 plans done*
+*Last updated: 2026-06-10 after 02-06 complete — Milestone v1 all 14 plans done, code review clean*
