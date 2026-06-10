@@ -27,7 +27,16 @@
   3. Shutting down the detector container causes all anomaly sensors to show as `unavailable` in HA (not `off`); restarting the detector restores them
   4. A sensor sending an identical value repeatedly is flagged as frozen; a single spike value is flagged as anomalous by MAD/RobustZScore point detection
   5. The binary_sensor does not flap on borderline readings — hysteresis prevents rapid on/off toggling
-**Plans**: TBD
+**Plans**: 8 plans
+Plans:
+- [x] 01-01-PLAN.md — Mono-repo scaffold, proto contract, .NET + Python stubs
+- [x] 01-02-PLAN.md — mTLS cert generation, DetectorChannelFactory
+- [x] 01-03-PLAN.md — Python gRPC server skeleton with health service
+- [x] 01-04-PLAN.md — entities.yaml parser, ConnectionSettings, EntitiesConfig
+- [x] 01-05-PLAN.md — HA WebSocket client, NetDaemonHaEventSource
+- [x] 01-06-PLAN.md — River HST streaming detector, DetectorRegistry, proto wiring
+- [x] 01-07-PLAN.md — MQTT stack: MqttConnection, StatePublisher, DiscoveryPublisher
+- [x] 01-08-PLAN.md — ScoreStreamPipeline: bidi loop, hysteresis, frozen, MQTT publish
 
 ### Phase 2: Batch Path + Model Lifecycle
 **Goal**: Batch detectors score historical sensor windows on a schedule, per-entity models persist across restarts, and all components can restart independently without losing state or duplicating HA entities.
@@ -39,7 +48,14 @@
   3. Restarting the detector service loads previously trained models from disk before accepting any scoring connections — no cold-start on restart
   4. Restarting the orchestrator re-publishes MQTT discovery without creating duplicate or orphaned HA entities
   5. A Fit RPC call and a concurrent ScoreStream call for the same entity do not corrupt model state — training runs outside the lock and swaps atomically
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+- [ ] 02-01-PLAN.md — Proto extensions (ScoreBatch, SaveModel, LoadModel) + stub regen
+- [ ] 02-02-PLAN.md — ConnectionSettings + LogEvents + InfluxDbReader (orchestrator)
+- [ ] 02-03-PLAN.md — PyODDetector + StlDetector + ModelStore (Python detector)
+- [ ] 02-04-PLAN.md — BatchSchedulerWorker + Program.cs wiring (orchestrator)
+- [ ] 02-05-PLAN.md — Fit/ScoreBatch/SaveModel/LoadModel RPCs + startup model load gate (Python)
+- [ ] 02-06-PLAN.md — RES-02 resilience tests + full regression sweep
 
 ---
 
@@ -47,9 +63,9 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations + Streaming | 8/8 | Complete | 2026-06-10 |
-| 2. Batch Path + Model Lifecycle | 0/0 | Not started | - |
+| 1. Foundations + Streaming | 8/8 | Complete   | 2026-06-10 |
+| 2. Batch Path + Model Lifecycle | 0/6 | Not started | - |
 
 ---
 
-*Last updated: 2026-06-10 after 01-08 complete (Phase 1 all 8 plans done)*
+*Last updated: 2026-06-10 — Phase 2 planned (6 plans in 4 waves)*
