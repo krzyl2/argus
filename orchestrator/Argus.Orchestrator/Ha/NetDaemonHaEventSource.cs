@@ -68,12 +68,15 @@ public class NetDaemonHaEventSource : IHaEventSource
         });
 
         // Run the HA connection + backoff loop on a background task
-        _ = Task.Run(() => RunConnectionLoopAsync(channel.Writer, ct), ct);
+        var loopTask = Task.Run(() => RunConnectionLoopAsync(channel.Writer, ct), ct);
 
         await foreach (var reading in channel.Reader.ReadAllAsync(ct).ConfigureAwait(false))
         {
             yield return reading;
         }
+
+        // Propagate any exception from the background task
+        await loopTask; // throws if RunConnectionLoopAsync faulted
     }
 
     /// <summary>
