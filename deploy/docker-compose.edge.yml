@@ -1,0 +1,49 @@
+# Argus Edge Host — docker-compose.edge.yml
+#
+# This runs on the EDGE host (D-17 two-host architecture):
+#   - Edge host: Home Assistant + Orchestrator
+#   - GPU host:  Python detector (see docker-compose.gpu.yml)
+#
+# Secrets are supplied via env_file or environment — NEVER committed to source (CONF-03).
+# Create a .env file (not committed) with the variables listed below before running.
+#
+# Usage:
+#   cp .env.example .env && vi .env
+#   docker compose -f deploy/docker-compose.edge.yml up -d
+
+services:
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.orchestrator
+    image: argus-orchestrator:latest
+    restart: unless-stopped
+
+    # Volume mounts:
+    #   certs/  — mTLS certs (gitignored; distribute from GPU host via scp)
+    #   entities.yaml — monitored entity config (tracked in repo root)
+    volumes:
+      - ./certs:/certs:ro
+      - ../entities.yaml:/app/entities.yaml:ro
+
+    environment:
+      # Home Assistant WebSocket
+      ARGUS_HA_URL: ${ARGUS_HA_URL}
+      ARGUS_HA_TOKEN: ${ARGUS_HA_TOKEN}
+
+      # MQTT broker (Zigbee2MQTT reuse)
+      ARGUS_MQTT_HOST: ${ARGUS_MQTT_HOST}
+      ARGUS_MQTT_PORT: ${ARGUS_MQTT_PORT:-1883}
+      ARGUS_MQTT_USER: ${ARGUS_MQTT_USER}
+      ARGUS_MQTT_PASSWORD: ${ARGUS_MQTT_PASSWORD}
+
+      # Detector gRPC endpoint on GPU host (D-17)
+      ARGUS_DETECTOR_ENDPOINT: ${ARGUS_DETECTOR_ENDPOINT:-https://gpu-host:50051}
+
+      # mTLS cert paths inside the container (mounted from ./certs/)
+      ARGUS_TLS_CA: /certs/ca.crt
+      ARGUS_TLS_CERT: /certs/client.crt
+      ARGUS_TLS_KEY: /certs/client.key
+
+      # entities.yaml path inside the container
+      ARGUS_ENTITIES_PATH: /app/entities.yaml

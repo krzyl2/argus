@@ -11,9 +11,9 @@ namespace Argus.Orchestrator.Detection;
 /// Builds the single mTLS GrpcChannel for the orchestrator → detector connection.
 ///
 /// D-18: Uses HttpClientHandler.ClientCertificates + ServerCertificateCustomValidationCallback
-/// with X509ChainTrustMode.CustomRootTrust. Never uses SslCredentials (unsupported in Grpc.Net.Client).
+/// with X509ChainTrustMode.CustomRootTrust. The legacy Grpc.Core credential API is not used.
 /// T-04-01: CustomRootTrust pins the Argus CA; rejects certs not chaining to deploy/certs/ca.crt.
-/// T-04-03: No insecure GrpcChannel path; SslCredentials absent.
+/// T-04-03: No insecure GrpcChannel path; all connections enforce mTLS via HttpClientHandler.
 ///
 /// ONE channel per process — register as singleton.
 /// </summary>
