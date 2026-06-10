@@ -99,7 +99,7 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
         """
         if not request.entity_id:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "empty entity_id")
-            return argus_pb2.FitResponse(ok=False, error="empty entity_id")
+            return None  # WR-06: after abort, gRPC ignores the return value — return None
 
         try:
             entity_id = request.entity_id

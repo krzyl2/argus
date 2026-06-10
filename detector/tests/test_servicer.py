@@ -169,10 +169,11 @@ class TestScoreBatchGuards:
             window=_make_window([1.0]),
         )
         ctx = _FakeContext()
-        svc.ScoreBatch(request, ctx)
+        result = svc.ScoreBatch(request, ctx)
         assert ctx.aborted
         import grpc
         assert ctx.abort_code == grpc.StatusCode.INVALID_ARGUMENT
+        assert result is None, "After abort, return value must be None (gRPC ignores it)"
 
 
 # ---------------------------------------------------------------------------
@@ -229,8 +230,9 @@ class TestFitHappyPath:
             window=_make_window([1.0]),
         )
         ctx = _FakeContext()
-        response = svc.Fit(request, ctx)
+        result = svc.Fit(request, ctx)
         assert ctx.aborted
+        assert result is None, "After abort, return value must be None (gRPC ignores it)"
 
 
 # ---------------------------------------------------------------------------
