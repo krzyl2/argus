@@ -15,6 +15,7 @@ Threat mitigations:
 import logging
 import time
 
+import grpc
 from google.protobuf import timestamp_pb2, wrappers_pb2
 
 from argus_detector.proto import argus_pb2, argus_pb2_grpc
@@ -40,38 +41,47 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
             if not context.is_active():
                 return
 
-            t_start = time.monotonic()
+            if not point.entity_id:
+                logger.warning("received Point with empty entity_id — skipping")
+                continue
 
-            entity_id: str = point.entity_id
-            value: float = point.value.value  # unwrap DoubleValue
+            try:
+                t_start = time.monotonic()
 
-            score: float = self._registry.score_one(entity_id, value)
+                entity_id: str = point.entity_id
+                value: float = point.value.value  # unwrap DoubleValue
 
-            ts = timestamp_pb2.Timestamp()
-            ts.GetCurrentTime()
+                score: float = self._registry.score_one(entity_id, value)
 
-            verdict = argus_pb2.Verdict(
-                entity_id=entity_id,
-                score=wrappers_pb2.DoubleValue(value=score),
-                is_anomaly=False,
-                detector="hst",
-                timestamp=ts,
-            )
+                ts = timestamp_pb2.Timestamp()
+                ts.GetCurrentTime()
 
-            latency_ms = (time.monotonic() - t_start) * 1000
+                verdict = argus_pb2.Verdict(
+                    entity_id=entity_id,
+                    score=wrappers_pb2.DoubleValue(value=score),
+                    is_anomaly=False,
+                    detector="hst",
+                    timestamp=ts,
+                )
 
-            # T-02-03: log only safe fields
-            logger.info(
-                "scored",
-                extra={
-                    "entity_id": entity_id,
-                    "score": score,
-                    "latency_ms": round(latency_ms, 3),
-                    "detector": "hst",
-                },
-            )
+                latency_ms = (time.monotonic() - t_start) * 1000
 
-            yield verdict
+                # T-02-03: log only safe fields
+                logger.info(
+                    "scored",
+                    extra={
+                        "entity_id": entity_id,
+                        "score": score,
+                        "latency_ms": round(latency_ms, 3),
+                        "detector": "hst",
+                    },
+                )
+
+                yield verdict
+            except Exception:
+                logger.exception("unexpected error scoring point for %s", point.entity_id)
+                context.abort(grpc.StatusCode.INTERNAL, "scoring error")
+                return
 
     def Fit(self, request, context):  # noqa: N802
         """Batch fit â€” not implemented in Phase 1."""
