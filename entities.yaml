@@ -1,0 +1,27 @@
+# Argus monitored entities configuration
+# Q1: replace placeholder entity_ids with real HA entity_ids before integration testing
+# See: .planning/STATE.md open question Q1
+
+entities:
+  - entity_id: sensor.salon_temperatura
+    friendly_name: "Salon temperatura"
+    detectors:
+      - name: hst
+        params:
+          window: "250"
+          n_trees: "25"
+          high_threshold: "0.7"
+          low_threshold: "0.3"
+          min_consecutive: "3"
+
+  - entity_id: sensor.outdoor_temperature
+    friendly_name: "Zewnatrz temperatura"
+    detectors:
+      - name: hst
+        params: {}  # use all defaults per D-09/D-11/D-12
+
+  - entity_id: sensor.outdoor_humidity
+    friendly_name: "Zewnatrz wilgotnosc"
+    detectors:
+      - name: hst
+        params: {}  # use all defaults per D-09/D-11/D-12
