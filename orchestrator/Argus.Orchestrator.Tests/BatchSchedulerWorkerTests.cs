@@ -2,7 +2,6 @@ using Argus.Detector.V1;
 using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Mqtt;
-using Google.Protobuf.WellKnownTypes;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.Generic;
 using System.Threading;
@@ -49,7 +48,7 @@ public class BatchSchedulerWorkerTests
                 resp.Verdicts.Add(new Verdict
                 {
                     EntityId = request.EntityId,
-                    Score = new DoubleValue { Value = 0.5 },
+                    Score = 0.5,  // double? — google.protobuf.DoubleValue maps to double? in C#
                     IsAnomaly = false,
                 });
             }
