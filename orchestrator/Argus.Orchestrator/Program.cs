@@ -1,9 +1,11 @@
+using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Detection;
 using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Mqtt;
 using Argus.Orchestrator.Workers;
 using Grpc.Net.Client;
+using InfluxDB.Client;
 using NetDaemon.Client.Extensions;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -31,6 +33,14 @@ var connectionSettings = new ConnectionSettings
     TlsCert = builder.Configuration["ARGUS_TLS_CERT"],
     TlsKey = builder.Configuration["ARGUS_TLS_KEY"],
     EntitiesPath = entitiesPath,
+    InfluxUrl = builder.Configuration["ARGUS_INFLUX_URL"],
+    InfluxToken = builder.Configuration["ARGUS_INFLUX_TOKEN"],
+    InfluxOrg = builder.Configuration["ARGUS_INFLUX_ORG"],
+    InfluxBucket = builder.Configuration["ARGUS_INFLUX_BUCKET"],
+    InfluxMeasurement = builder.Configuration["ARGUS_INFLUX_MEASUREMENT"] ?? "homeassistant",
+    InfluxValueField = builder.Configuration["ARGUS_INFLUX_VALUE_FIELD"] ?? "value",
+    BatchIntervalMinutes = int.TryParse(builder.Configuration["ARGUS_BATCH_INTERVAL_MIN"], out var bim) ? bim : 10,
+    NightlyFitHour = int.TryParse(builder.Configuration["ARGUS_NIGHTLY_FIT_HOUR"], out var nfh) ? nfh : 2,
 };
 builder.Services.AddSingleton(connectionSettings);
 
@@ -68,6 +78,12 @@ builder.Services.AddHostedService<MqttPublisherWorker>();
 
 // Register ScoreStreamPipeline (Plan 08): bidi ScoreStream loop with hysteresis/frozen/MQTT
 builder.Services.AddSingleton<ScoreStreamPipeline>();
+
+// Register InfluxDB batch reader (Plan 02-02 / BTCH-01)
+// InfluxDBClient is a singleton; QueryApi obtained per-call inside InfluxDbReader
+builder.Services.AddSingleton<InfluxDBClient>(_ =>
+    new InfluxDBClient(connectionSettings.InfluxUrl ?? string.Empty, connectionSettings.InfluxToken));
+builder.Services.AddSingleton<InfluxDbReader>();
 
 var host = builder.Build();
 host.Run();
