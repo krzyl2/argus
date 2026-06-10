@@ -116,7 +116,7 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
             # Access fitted model for persistence
             model = self._registry._detectors.get((entity_id, detector))
             if model is not None:
-                self._save_model_to_store(entity_slug, detector, version, model)
+                self._save_model_to_store(entity_slug, detector, version, model, entity_id=entity_id)
 
             return argus_pb2.FitResponse(ok=True)
 
@@ -216,14 +216,15 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
         detector: str,
         version: int,
         model: object,
+        entity_id: str | None = None,
     ) -> None:
         """Persist model to disk. Uses joblib for PyOD, pickle for River."""
         from argus_detector.pyod_detector import PyODDetector
         if isinstance(model, PyODDetector):
-            self._model_store.save_pyod(entity_slug, detector, version, model)
+            self._model_store.save_pyod(entity_slug, detector, version, model, entity_id=entity_id)
         else:
             # River HST or other — use pickle
-            self._model_store.save_river(entity_slug, detector, version, model)
+            self._model_store.save_river(entity_slug, detector, version, model, entity_id=entity_id)
 
     def _serialize_model(self, model: object) -> bytes:
         """Serialize a model to bytes for in-band gRPC transport (SaveModel)."""

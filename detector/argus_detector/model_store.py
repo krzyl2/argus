@@ -66,22 +66,29 @@ class ModelStore:
         detector: str,
         version: int,
         model: object,
+        entity_id: str | None = None,
     ) -> None:
         """Persist a PyOD model (joblib format) with version sidecar.
 
         Creates the versioned directory, dumps the model, writes version.json,
-        updates the latest pointer atomically, and prunes old versions.
+        writes entity_id.txt sidecar (for unambiguous key reconstruction in
+        load_all_into — CR-02), updates the latest pointer atomically, and prunes
+        old versions.
 
         Args:
             entity_slug: entity_id with '.' replaced by '_'.
             detector: Detector name (e.g. "mad").
             version: Integer version number (monotonically increasing).
             model: Fitted PyOD model instance.
+            entity_id: Original entity_id (dots intact). When provided, written as
+                       a sidecar so load_all_into can reconstruct the correct key.
+                       Falls back to entity_slug when None (backwards compatibility).
         """
         d = self._model_dir(entity_slug, detector, version)
         d.mkdir(parents=True, exist_ok=True)
         joblib.dump(model, d / "model.joblib")
         self._write_version_json(d, entity_slug, detector, version)
+        self._write_entity_id(d, entity_id if entity_id is not None else entity_slug)
         self._update_latest(entity_slug, detector, version)
         self._prune(entity_slug, detector)
 
@@ -91,6 +98,7 @@ class ModelStore:
         detector: str,
         version: int,
         model: object,
+        entity_id: str | None = None,
     ) -> None:
         """Persist a River model (pickle format) with version sidecar.
 
@@ -99,6 +107,9 @@ class ModelStore:
             detector: Detector name (e.g. "hst").
             version: Integer version number.
             model: River model instance (e.g. HalfSpaceTrees).
+            entity_id: Original entity_id (dots intact). When provided, written as
+                       a sidecar so load_all_into can reconstruct the correct key.
+                       Falls back to entity_slug when None (backwards compatibility).
 
         Note:
             River to_dict()/from_dict() do NOT exist for anomaly detectors (RESEARCH.md
@@ -109,6 +120,7 @@ class ModelStore:
         with open(d / "model.pkl", "wb") as f:
             pickle.dump(model, f)
         self._write_version_json(d, entity_slug, detector, version)
+        self._write_entity_id(d, entity_id if entity_id is not None else entity_slug)
         self._update_latest(entity_slug, detector, version)
         self._prune(entity_slug, detector)
 
@@ -185,6 +197,11 @@ class ModelStore:
                 version = int(latest_file.read_text().strip())
                 model_dir = self._model_dir(slug, detector, version)
 
+                # CR-02: read the entity_id sidecar to get the unambiguous registry key.
+                # Falls back to slug for models saved before this sidecar was introduced.
+                entity_id_file = model_dir / "entity_id.txt"
+                entity_id = entity_id_file.read_text().strip() if entity_id_file.exists() else slug
+
                 if (model_dir / "model.joblib").exists():
                     model = joblib.load(model_dir / "model.joblib")
                 elif (model_dir / "model.pkl").exists():
@@ -197,9 +214,9 @@ class ModelStore:
                     )
                     continue
 
-                registry.register(slug, detector, model)
+                registry.register(entity_id, detector, model)
                 logger.info(
-                    "Loaded model: slug=%s detector=%s version=%d", slug, detector, version
+                    "Loaded model: entity_id=%s detector=%s version=%d", entity_id, detector, version
                 )
             except Exception:
                 logger.warning(
@@ -214,6 +231,10 @@ class ModelStore:
 
     def _model_dir(self, slug: str, detector: str, version: int) -> pathlib.Path:
         return self._root / slug / detector / f"v{version}"
+
+    def _write_entity_id(self, d: pathlib.Path, entity_id: str) -> None:
+        """Write entity_id sidecar for unambiguous key reconstruction on load (CR-02)."""
+        (d / "entity_id.txt").write_text(entity_id)
 
     def _write_version_json(
         self,
