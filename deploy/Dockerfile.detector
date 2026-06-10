@@ -1,0 +1,37 @@
+# Argus detector gRPC server — CPU-only Phase 1/2 image
+# Base: python:3.12-slim-bookworm (Debian 12 slim, no CUDA)
+# Produces a self-contained image with proto stubs baked in at build time.
+
+FROM python:3.12-slim-bookworm
+
+# Prevent Python from buffering stdout/stderr so logs stream immediately
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install Python dependencies before copying source so Docker can cache this layer
+COPY detector/requirements.txt ./detector/requirements.txt
+RUN pip install --no-cache-dir -r detector/requirements.txt
+
+# Copy proto definition and detector source
+COPY proto/ ./proto/
+COPY detector/ ./detector/
+
+# Bake proto stubs into the image so the container has no runtime codegen dependency
+# gen_proto.py writes to detector/argus_detector/proto/
+RUN python detector/scripts/gen_proto.py
+
+EXPOSE 50051
+
+# HEALTHCHECK using grpcio-health-checking (already installed via requirements.txt)
+# Checks argus.v1.DetectorService health on localhost:50051
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "\
+import grpc; \
+from grpc_health.v1 import health_pb2, health_pb2_grpc; \
+ch = grpc.insecure_channel('localhost:50051'); \
+stub = health_pb2_grpc.HealthStub(ch); \
+resp = stub.Check(health_pb2.HealthCheckRequest(service='argus.v1.DetectorService'), timeout=4); \
+exit(0 if resp.status == health_pb2.HealthCheckResponse.SERVING else 1)"
+
+ENTRYPOINT ["python", "-m", "argus_detector.server"]
