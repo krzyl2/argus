@@ -42,6 +42,16 @@ var connectionSettings = new ConnectionSettings
     BatchIntervalMinutes = int.TryParse(builder.Configuration["ARGUS_BATCH_INTERVAL_MIN"], out var bim) ? bim : 10,
     NightlyFitHour = int.TryParse(builder.Configuration["ARGUS_NIGHTLY_FIT_HOUR"], out var nfh) ? nfh : 2,
 };
+// WR-04: validate BatchIntervalMinutes — zero or negative causes a tight spin loop or crash
+if (connectionSettings.BatchIntervalMinutes <= 0)
+    throw new InvalidOperationException(
+        $"ARGUS_BATCH_INTERVAL_MIN must be > 0, got {connectionSettings.BatchIntervalMinutes}");
+
+// WR-05: validate NightlyFitHour — out-of-range silently disables nightly fit
+if (connectionSettings.NightlyFitHour < 0 || connectionSettings.NightlyFitHour > 23)
+    throw new InvalidOperationException(
+        $"ARGUS_NIGHTLY_FIT_HOUR must be in [0, 23], got {connectionSettings.NightlyFitHour}");
+
 builder.Services.AddSingleton(connectionSettings);
 
 // Register the single mTLS GrpcChannel as a singleton (D-18 — one channel per process)
