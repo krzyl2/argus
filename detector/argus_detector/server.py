@@ -86,6 +86,9 @@ def create_server(
     health_servicer.set("argus.v1.DetectorService", health_pb2.HealthCheckResponse.SERVING)
     health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
 
+    # Expose registry for test introspection (RES-02: verify startup model load)
+    server._argus_registry = registry
+
     if use_tls:
         # T-02-01: mTLS — load certs and require client certificate auth
         with open(config.tls_key, "rb") as f:
