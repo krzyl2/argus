@@ -67,7 +67,6 @@ public class MqttConnectionTests
     [Fact]
     public void StatePublisher_BridgeAvailabilityTopic_Constant()
     {
-        var publisher = new StatePublisher();
-        Assert.Equal("argus/bridge/availability", publisher.BridgeAvailabilityTopic);
+        Assert.Equal("argus/bridge/availability", StatePublisher.BridgeAvailabilityTopic);
     }
 }
