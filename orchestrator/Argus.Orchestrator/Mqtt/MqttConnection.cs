@@ -20,6 +20,7 @@ public sealed class MqttConnection : IAsyncDisposable
     private readonly ILogger<MqttConnection> _logger;
     private readonly IMqttClient _client;
     private readonly MqttClientOptions _connectOptions;
+    private readonly CancellationTokenSource _cts = new();
 
     public MqttConnection(ConnectionSettings settings, ILogger<MqttConnection> logger)
     {
@@ -97,11 +98,11 @@ public sealed class MqttConnection : IAsyncDisposable
                 var jitter = TimeSpan.FromMilliseconds(delay.TotalMilliseconds * 0.1 * (Random.Shared.NextDouble() * 2 - 1));
                 var totalDelay = delay + jitter;
                 _logger.LogInformation(LogEvents.MqttReconnecting, "MQTT reconnecting in {Delay:F1}s...", totalDelay.TotalSeconds);
-                await Task.Delay(totalDelay);
+                await Task.Delay(totalDelay, _cts.Token);
 
-                await _client.ConnectAsync(_connectOptions, CancellationToken.None);
+                await _client.ConnectAsync(_connectOptions, _cts.Token);
                 _logger.LogInformation(LogEvents.MqttConnected, "MQTT reconnected to {Host}:{Port}", _settings.MqttHost, _settings.MqttPort);
-                await PublishOnlineAsync(CancellationToken.None);
+                await PublishOnlineAsync(_cts.Token);
                 return;
             }
             catch (Exception ex)
@@ -114,6 +115,7 @@ public sealed class MqttConnection : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _cts.Cancel();
         _client.DisconnectedAsync -= OnDisconnectedAsync;
         if (_client.IsConnected)
         {
