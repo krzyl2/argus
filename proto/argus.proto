@@ -34,7 +34,47 @@ message FitResponse {
   string error = 2;
 }
 
+message ScoreBatchRequest {
+  string entity_id = 1;
+  string detector = 2;
+  map<string, string> params = 3;
+  repeated Point window = 4;
+}
+
+message ScoreBatchResponse {
+  repeated Verdict verdicts = 1;
+  bool ok = 2;
+  string error = 3;
+}
+
+message SaveModelRequest {
+  string entity_id = 1;
+  string detector = 2;
+  int32 version = 3;
+  bytes model_bytes = 4;
+}
+
+message SaveModelResponse {
+  bool ok = 1;
+  string error = 2;
+}
+
+message LoadModelRequest {
+  string entity_id = 1;
+  string detector = 2;
+  int32 version = 3;
+}
+
+message LoadModelResponse {
+  bool ok = 1;
+  bytes model_bytes = 2;
+  string error = 3;
+}
+
 service DetectorService {
   rpc ScoreStream(stream Point) returns (stream Verdict);
   rpc Fit(FitRequest) returns (FitResponse);
+  rpc ScoreBatch(ScoreBatchRequest) returns (ScoreBatchResponse);
+  rpc SaveModel(SaveModelRequest) returns (SaveModelResponse);
+  rpc LoadModel(LoadModelRequest) returns (LoadModelResponse);
 }
