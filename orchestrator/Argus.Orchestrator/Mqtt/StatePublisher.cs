@@ -8,7 +8,7 @@ namespace Argus.Orchestrator.Mqtt;
 /// Injected into MqttPublisherWorker; Plan 08 can call PublishFlagAsync/PublishScoreAsync
 /// to push detection results over the same MqttConnection.
 /// </summary>
-public sealed class StatePublisher
+public sealed class StatePublisher : IStatePublisher
 {
     public const string BridgeAvailabilityTopic = MqttConnection.BridgeAvailabilityTopic;
 
