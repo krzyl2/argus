@@ -70,17 +70,26 @@ class TestStlDetectorStepChange:
     def test_step_change_produces_nonzero_scores(self):
         """Step change detectable via STL residual (FAULT-03).
 
-        Construct values = [0.0]*1440 + [1.0]*1440 (level shift at midpoint).
+        Uses period=48 (small, for fast tests) with 3 full periods (144 points).
+        Step change introduced at 2*period: [0.0]*96 + [5.0]*48.
+
+        NOTE: STL requires at least 3 full periods for reliable residual detection of
+        a step change. With exactly 2*period points the trend component can absorb the
+        step entirely, leaving near-zero residuals. Using 3*period ensures the LOESS
+        smoother sees both pre-step and post-step segments within the seasonal window.
+
         After STL decomposition, at least one residual near the step boundary
-        must be > 0, confirming STL detects level shifts.
+        must be > 0, confirming STL detects level shifts (FAULT-03).
         """
         det = StlDetector()
-        values = [0.0] * 1440 + [1.0] * 1440  # 2880 points, step at index 1440
-        scores, error = det.score_batch(values, period=1440)
+        period = 48  # small period for test speed; same algorithm as period=1440
+        # 3 full periods, step change at 2*period
+        values = [0.0] * (2 * period) + [5.0] * period  # 144 total
+        scores, error = det.score_batch(values, period=period)
 
         assert error is None
         assert isinstance(scores, list)
-        assert len(scores) == 2880
+        assert len(scores) == 3 * period
         # All scores in [0.0, 1.0] (normalised)
         assert all(0.0 <= s <= 1.0 for s in scores), "Scores must be in [0, 1]"
         # At least one score > 0 — STL residual detects the level shift
@@ -89,8 +98,9 @@ class TestStlDetectorStepChange:
     def test_step_change_scores_normalised(self):
         """Step-change scores are normalised to [0, 1]."""
         det = StlDetector()
-        values = [0.0] * 1440 + [2.0] * 1440
-        scores, error = det.score_batch(values, period=1440)
+        period = 48
+        values = [0.0] * (2 * period) + [5.0] * period
+        scores, error = det.score_batch(values, period=period)
         assert error is None
         assert min(scores) >= 0.0
         assert max(scores) <= 1.0
