@@ -23,4 +23,11 @@
     <Protobuf Include="..\..\proto\argus.proto" GrpcServices="Client" ProtoRoot="..\..\proto" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Allow test assembly to call internal members (e.g. NetDaemonHaEventSource.TryMap) -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Argus.Orchestrator.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>
