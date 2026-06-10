@@ -12,6 +12,12 @@ import logging
 import time
 from typing import Any
 
+# Build the set of standard LogRecord attributes from a reference instance (WR-02).
+# Using the class __dict__ misses instance attributes set in __init__ (e.g. name, levelname).
+_STANDARD_ATTRS: frozenset[str] = frozenset(
+    logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()
+) | {"message", "asctime"}
+
 
 class _JsonFormatter(logging.Formatter):
     """Format each log record as a compact JSON line."""
@@ -28,14 +34,8 @@ class _JsonFormatter(logging.Formatter):
         }
 
         # Merge any extra fields the caller passed in via logging.xxx(extra={...})
-        skip = logging.LogRecord.__dict__.keys() | {
-            "message", "asctime", "args", "msg", "created", "relativeCreated",
-            "thread", "threadName", "process", "processName", "filename",
-            "module", "funcName", "lineno", "pathname", "exc_info", "exc_text",
-            "stack_info", "name", "levelname", "levelno", "msecs",
-        }
         for key, value in record.__dict__.items():
-            if key not in skip:
+            if key not in _STANDARD_ATTRS:
                 payload[key] = value
 
         if record.exc_info:
