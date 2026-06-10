@@ -1,22 +1,38 @@
 using Argus.Orchestrator.Detection;
+using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Logging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Threading.Channels;
 
 namespace Argus.Orchestrator.Workers;
 
 /// <summary>
-/// BackgroundService stub that gates on detector health before starting HA subscription.
-/// Plan 05 replaces the TODO body with real HA WebSocket subscription logic.
-/// Constructor signature is stable — Program.cs DI wiring does not change in Plan 05.
+/// BackgroundService that gates on detector health (INFRA-07) then consumes the HA event
+/// stream via IHaEventSource and forwards readings to the scoring pipeline.
+/// Plan 07 replaces the TODO body with the full ScoreStream + frozen/hysteresis/MQTT path.
 /// </summary>
 public class HaListenerWorker : BackgroundService
 {
+    private readonly IHaEventSource _haEventSource;
     private readonly DetectionGateway _gateway;
     private readonly ILogger<HaListenerWorker> _logger;
 
-    public HaListenerWorker(DetectionGateway gateway, ILogger<HaListenerWorker> logger)
+    // Bounded channel: buffers HaReadings between ingestion and scoring (Plan 07 consumer)
+    private readonly Channel<HaReading> _readingChannel = Channel.CreateBounded<HaReading>(
+        new BoundedChannelOptions(1000)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleWriter = true,
+            SingleReader = false,
+        });
+
+    public HaListenerWorker(
+        IHaEventSource haEventSource,
+        DetectionGateway gateway,
+        ILogger<HaListenerWorker> logger)
     {
+        _haEventSource = haEventSource ?? throw new ArgumentNullException(nameof(haEventSource));
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -33,13 +49,27 @@ public class HaListenerWorker : BackgroundService
             return;
 
         _logger.Log(LogLevel.Information, LogEvents.HaListenerDetectorHealthy,
-            "Detector healthy — HA subscription will start");
+            "Detector healthy — starting HA event source");
 
-        // TODO(plan05): subscribe to HA state_changed events
-        // Plan 05 replaces this loop with NetDaemon.Client IHomeAssistantRunner subscription
-        while (!stoppingToken.IsCancellationRequested)
+        await foreach (var reading in _haEventSource.ReadAllAsync(stoppingToken))
         {
-            await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+            _logger.LogDebug(
+                "HA reading: entity={EntityId} value={Value} suppress={Suppress}",
+                reading.EntityId, reading.Value, reading.SuppressBinarySensor);
+
+            // Forward to the scoring pipeline channel
+            if (!_readingChannel.Writer.TryWrite(reading))
+            {
+                _logger.LogWarning(
+                    "Reading channel full — dropping {EntityId}", reading.EntityId);
+            }
+
+            // TODO(plan07): forward reading to ScoreStream + frozen/hysteresis/MQTT pipeline
         }
     }
+
+    /// <summary>
+    /// Exposes the reading channel reader for Plan 07's scoring pipeline to consume.
+    /// </summary>
+    public ChannelReader<HaReading> Readings => _readingChannel.Reader;
 }
