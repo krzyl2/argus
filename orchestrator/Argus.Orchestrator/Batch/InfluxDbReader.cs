@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Logging;
 using InfluxDB.Client;
@@ -11,6 +12,12 @@ namespace Argus.Orchestrator.Batch;
 /// </summary>
 public sealed class InfluxDbReader : IInfluxDataSource
 {
+    // T-02-02-02: allowlist guard — reject values that contain double-quote or backslash
+    // which would allow Flux string-literal injection. Entity IDs and config field names
+    // are operator-controlled (accepted risk), but must not contain these characters.
+    private static readonly Regex _safeFluxString =
+        new(@"^[^""\\]+$", RegexOptions.Compiled);
+
     private readonly IInfluxQueryApi _queryApi;
     private readonly ConnectionSettings _settings;
     private readonly ILogger<InfluxDbReader> _logger;
@@ -57,6 +64,17 @@ public sealed class InfluxDbReader : IInfluxDataSource
                 "InfluxBucket not configured — skipping query for {EntityId}", entityId);
             return Array.Empty<(DateTime, double)>();
         }
+
+        // T-02-02-02: validate interpolated values to prevent Flux string-literal injection.
+        // Values containing " or \ would terminate the Flux string and inject operators.
+        if (!_safeFluxString.IsMatch(entityId))
+            throw new ArgumentException($"Unsafe entityId for Flux query: {entityId}", nameof(entityId));
+        if (!_safeFluxString.IsMatch(_settings.InfluxBucket))
+            throw new ArgumentException($"Unsafe InfluxBucket for Flux query: {_settings.InfluxBucket}");
+        if (!string.IsNullOrEmpty(_settings.InfluxMeasurement) && !_safeFluxString.IsMatch(_settings.InfluxMeasurement))
+            throw new ArgumentException($"Unsafe InfluxMeasurement for Flux query: {_settings.InfluxMeasurement}");
+        if (!string.IsNullOrEmpty(_settings.InfluxValueField) && !_safeFluxString.IsMatch(_settings.InfluxValueField))
+            throw new ArgumentException($"Unsafe InfluxValueField for Flux query: {_settings.InfluxValueField}");
 
         var flux = $"""
             from(bucket: "{_settings.InfluxBucket}")
