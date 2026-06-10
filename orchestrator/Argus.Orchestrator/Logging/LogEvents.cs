@@ -34,4 +34,17 @@ public static class LogEvents
     public static readonly EventId MqttDiscoveryPublished = new(4005, nameof(MqttDiscoveryPublished));
     public static readonly EventId MqttWorkerStarted = new(4006, nameof(MqttWorkerStarted));
     public static readonly EventId MqttWorkerReady = new(4007, nameof(MqttWorkerReady));
+
+    // Batch scheduler (5xxx)
+    public static readonly EventId BatchSchedulerStarted   = new(5001, nameof(BatchSchedulerStarted));
+    public static readonly EventId BatchSchedulerStopped   = new(5002, nameof(BatchSchedulerStopped));
+    public static readonly EventId BatchSchedulerError     = new(5003, nameof(BatchSchedulerError));
+    public static readonly EventId BatchEntityNoData       = new(5004, nameof(BatchEntityNoData));
+    public static readonly EventId BatchColdStartFit       = new(5005, nameof(BatchColdStartFit));
+    public static readonly EventId BatchScoredEntity       = new(5006, nameof(BatchScoredEntity));
+    public static readonly EventId NightlyFitStarted       = new(5007, nameof(NightlyFitStarted));
+    public static readonly EventId NightlyFitCompleted     = new(5008, nameof(NightlyFitCompleted));
+    public static readonly EventId ModelSaved              = new(5009, nameof(ModelSaved));
+    public static readonly EventId ModelLoaded             = new(5010, nameof(ModelLoaded));
+    public static readonly EventId ModelVersionMismatch    = new(5011, nameof(ModelVersionMismatch));
 }
