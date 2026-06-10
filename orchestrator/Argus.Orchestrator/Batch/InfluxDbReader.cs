@@ -9,7 +9,7 @@ namespace Argus.Orchestrator.Batch;
 /// Queries InfluxDB for a rolling 24-hour window of sensor readings per entity (BTCH-01).
 /// Returns an empty list (never throws) when config is absent or InfluxDB returns no records.
 /// </summary>
-public sealed class InfluxDbReader
+public sealed class InfluxDbReader : IInfluxDataSource
 {
     private readonly IInfluxQueryApi _queryApi;
     private readonly ConnectionSettings _settings;
