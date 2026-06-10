@@ -40,9 +40,12 @@ public class DiscoveryPublisher
             object_id = uniqueId,   // D-14: prevents HA mangling Polish chars
             name = friendlyName,
             state_topic = $"argus/{slug}/flag/state",
-            availability_topic = BridgeAvailabilityTopic,  // bridge-level (D-15)
-            payload_available = "online",
-            payload_not_available = "offline",
+            // Per-entity availability list (HA 2022.9+): bridge-level + per-entity (CR-05)
+            availability = new object[]
+            {
+                new { topic = BridgeAvailabilityTopic, payload_available = "online", payload_not_available = "offline" },
+                new { topic = $"argus/{slug}/availability", payload_available = "online", payload_not_available = "offline" },
+            },
             payload_on = "ON",
             payload_off = "OFF",
             device_class = "problem",
@@ -74,9 +77,12 @@ public class DiscoveryPublisher
             object_id = uniqueId,   // D-14
             name = friendlyName,
             state_topic = $"argus/{slug}/score/state",
-            availability_topic = BridgeAvailabilityTopic,
-            payload_available = "online",
-            payload_not_available = "offline",
+            // Per-entity availability list (HA 2022.9+): bridge-level + per-entity (CR-05)
+            availability = new object[]
+            {
+                new { topic = BridgeAvailabilityTopic, payload_available = "online", payload_not_available = "offline" },
+                new { topic = $"argus/{slug}/availability", payload_available = "online", payload_not_available = "offline" },
+            },
             device = new
             {
                 identifiers = new[] { slug },
