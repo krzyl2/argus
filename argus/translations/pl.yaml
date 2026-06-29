@@ -1,0 +1,48 @@
+configuration:
+  entities:
+    name: Monitorowane encje
+    description: >-
+      Identyfikatory encji HA do monitorowania pod kątem anomalii
+      (np. sensor.salon_temperatura). Jeden na wiersz.
+  include_patterns:
+    name: Wzorce dołączania
+    description: >-
+      Wzorce glob filtrujące encje (np. sensor.outdoor_*).
+      Pozostaw puste, aby używać listy jawnej.
+  exclude_patterns:
+    name: Wzorce wykluczania
+    description: Wzorce glob wykluczające encje z monitorowania.
+  influx_url:
+    name: URL InfluxDB
+    description: >-
+      Adres serwera InfluxDB v2 (np. http://192.168.1.10:8086).
+      Pozostaw puste, aby wyłączyć wykrywanie wsadowe.
+  influx_token:
+    name: Token InfluxDB
+    description: Token API InfluxDB v2 z dostępem do bucketa.
+  influx_org:
+    name: Organizacja InfluxDB
+    description: Nazwa organizacji InfluxDB.
+  influx_bucket:
+    name: Bucket InfluxDB
+    description: Bucket InfluxDB zawierający historię sensorów HA.
+  influx_measurement:
+    name: Nazwa pomiaru
+    description: Nazwa pomiaru InfluxDB dla stanów HA (domyślnie homeassistant).
+  influx_value_field:
+    name: Pole wartości
+    description: Klucz pola InfluxDB dla wartości sensorów (domyślnie value).
+  detector_endpoint:
+    name: Endpoint detektora
+    description: >-
+      URL zdalnego detektora gRPC (np. https://gpu-host:50051).
+      Pozostaw puste, aby uruchomić lokalny detektor.
+  batch_interval_minutes:
+    name: Interwał wsadowy (minuty)
+    description: "Częstotliwość wykrywania wsadowego. Zakres: 1-1440."
+  nightly_fit_hour:
+    name: Godzina nocnego dopasowania modelu
+    description: "Godzina UTC (0-23) nocnego przepasowania modelu."
+  log_level:
+    name: Poziom logowania
+    description: Szczegółowość logowania dla detektora i orchestratora.
