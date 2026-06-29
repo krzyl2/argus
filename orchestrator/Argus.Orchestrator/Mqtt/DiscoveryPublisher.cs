@@ -1,0 +1,141 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Argus.Orchestrator.Config;
+using MQTTnet;
+using MQTTnet.Protocol;
+
+namespace Argus.Orchestrator.Mqtt;
+
+/// <summary>
+/// Builds and publishes retained MQTT discovery payloads for HA entities (MQTT-01, MQTT-03).
+/// Each entity produces two HA entities (binary_sensor + sensor) under one HA device.
+/// Idempotency (MQTT-04) is inherent: deterministic unique_id + retain=true; republish is safe.
+/// </summary>
+public class DiscoveryPublisher
+{
+    private const string BridgeAvailabilityTopic = "argus/bridge/availability";
+    private const string Manufacturer = "Argus";
+    private const string Model = "Argus Anomaly Detector";
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        WriteIndented = false,
+    };
+
+    /// <summary>
+    /// Builds the binary_sensor discovery JSON payload for an entity.
+    /// Uses the first configured detector name, defaulting to "hst".
+    /// </summary>
+    public static string BuildBinarySensorConfig(EntityConfig entity)
+    {
+        var detector = GetDetectorName(entity);
+        var slug = UniqueId.Slug(entity.EntityId);
+        var uniqueId = UniqueId.AnomalyId(entity.EntityId, detector);
+        var friendlyName = FriendlyName.ForAnomaly(entity.FriendlyName);
+
+        var payload = new
+        {
+            unique_id = uniqueId,
+            object_id = uniqueId,   // D-14: prevents HA mangling Polish chars
+            name = friendlyName,
+            state_topic = $"argus/{slug}/flag/state",
+            // Per-entity availability list (HA 2022.9+): bridge-level + per-entity (CR-05)
+            availability = new object[]
+            {
+                new { topic = BridgeAvailabilityTopic, payload_available = "online", payload_not_available = "offline" },
+                new { topic = $"argus/{slug}/availability", payload_available = "online", payload_not_available = "offline" },
+            },
+            payload_on = "ON",
+            payload_off = "OFF",
+            device_class = "problem",
+            device = new
+            {
+                identifiers = new[] { slug },
+                name = $"Argus {slug}",
+                model = Model,
+                manufacturer = Manufacturer,
+            }
+        };
+
+        return JsonSerializer.Serialize(payload, JsonOptions);
+    }
+
+    /// <summary>
+    /// Builds the sensor discovery JSON payload for an entity's score.
+    /// </summary>
+    public static string BuildSensorConfig(EntityConfig entity)
+    {
+        var detector = GetDetectorName(entity);
+        var slug = UniqueId.Slug(entity.EntityId);
+        var uniqueId = UniqueId.ScoreId(entity.EntityId, detector);
+        var friendlyName = $"{FriendlyName.ForAnomaly(entity.FriendlyName)} score";
+
+        var payload = new
+        {
+            unique_id = uniqueId,
+            object_id = uniqueId,   // D-14
+            name = friendlyName,
+            state_topic = $"argus/{slug}/score/state",
+            // Per-entity availability list (HA 2022.9+): bridge-level + per-entity (CR-05)
+            availability = new object[]
+            {
+                new { topic = BridgeAvailabilityTopic, payload_available = "online", payload_not_available = "offline" },
+                new { topic = $"argus/{slug}/availability", payload_available = "online", payload_not_available = "offline" },
+            },
+            device = new
+            {
+                identifiers = new[] { slug },
+                name = $"Argus {slug}",
+                model = Model,
+                manufacturer = Manufacturer,
+            }
+        };
+
+        return JsonSerializer.Serialize(payload, JsonOptions);
+    }
+
+    /// <summary>
+    /// Publishes discovery configs for all entities with retain=true and QoS AtLeastOnce (MQTT-01, MQTT-03).
+    /// </summary>
+    public static Task PublishAllAsync(
+        MqttConnection mqtt,
+        IEnumerable<EntityConfig> entities,
+        CancellationToken ct)
+        => PublishAllAsync(
+            (topic, payload, retain, token) => mqtt.PublishAsync(topic, payload, retain, token),
+            entities,
+            ct);
+
+    /// <summary>
+    /// Testable overload: accepts a publish delegate instead of a live MqttConnection.
+    /// Production code uses the MqttConnection overload above.
+    /// </summary>
+    public static async Task PublishAllAsync(
+        Func<string, string, bool, CancellationToken, Task> publish,
+        IEnumerable<EntityConfig> entities,
+        CancellationToken ct)
+    {
+        foreach (var entity in entities)
+        {
+            var detector = GetDetectorName(entity);
+            var anomalyId = UniqueId.AnomalyId(entity.EntityId, detector);
+            var scoreId   = UniqueId.ScoreId(entity.EntityId, detector);
+
+            await publish(
+                $"homeassistant/binary_sensor/{anomalyId}/config",
+                BuildBinarySensorConfig(entity),
+                true,
+                ct);
+
+            await publish(
+                $"homeassistant/sensor/{scoreId}/config",
+                BuildSensorConfig(entity),
+                true,
+                ct);
+        }
+    }
+
+    private static string GetDetectorName(EntityConfig entity)
+        => entity.Detectors.Count > 0 ? entity.Detectors[0].Name : "hst";
+}

@@ -1,0 +1,19 @@
+# deploy/certs/server-ext.cnf — Server certificate SAN extension template
+#
+# This file is committed to version control with PLACEHOLDER values only.
+# The generate-certs.sh script writes the real values to a separate working
+# file (_san_work.cnf) during signing — this template is never modified.
+#
+# Placeholders:
+#   __GPU_HOST_IP__   — replace with GPU host static LAN IP (e.g., 192.168.1.100)
+#   __GPU_HOST_NAME__ — replace with GPU host hostname (e.g., gpu-host)
+#
+# CRITICAL: The server cert SAN must include BOTH the IP and the DNS name.
+#   If the orchestrator dials by IP, the IP SAN must match.
+#   If the orchestrator dials by hostname, the DNS SAN must match.
+#   A mismatch causes SSL handshake failure on every gRPC call (PITFALL 2).
+#
+# To regenerate with real values:
+#   GPU_HOST_IP=192.168.1.100 GPU_HOST_NAME=gpu-host bash deploy/generate-certs.sh
+
+subjectAltName=IP:__GPU_HOST_IP__,DNS:__GPU_HOST_NAME__
