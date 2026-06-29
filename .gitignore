@@ -2,6 +2,10 @@
 bin/
 obj/
 
+# Unignore add-on rootfs helper scripts that live under a 'bin' path
+!argus/rootfs/usr/local/bin/
+!argus/rootfs/usr/local/bin/**
+
 # Python
 __pycache__/
 *.pyc
