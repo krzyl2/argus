@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-06-29T11:14:57.463Z"
 last_activity: 2026-06-29
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,9 +17,9 @@ progress:
 
 ## Current Status
 
-- Milestone: v2.0 Home Assistant Add-on — defining requirements
-- Phase: Not started (roadmap pending)
-- Last action: Archived v1.0, started v2.0 — 2026-06-29
+- Milestone: v2.0 Home Assistant Add-on — roadmap approved (4 phases)
+- Phase: 1 (Add-on Skeleton + Config-Gen) — ready to plan
+- Last action: Created and approved v2.0 roadmap — 2026-06-29
 
 ## Project Reference
 
@@ -32,7 +32,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 | Phase | Name | Status |
 |-------|------|--------|
-| — | v2.0 phases | Pending roadmap |
+| 1 | Add-on Skeleton + Config-Gen | Not started |
+| 2 | v1 Code Changes | Not started |
+| 3 | Process Supervision + Runtime Integration | Not started |
+| 4 | Multi-Arch CI + Integration + Documentation | Not started |
 
 v1.0 phases archived under `.planning/archive/v1.0/`.
 

@@ -78,4 +78,29 @@ Status legend: `[ ]` planned · `[x]` validated. REQ-IDs are stable references f
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| _(filled by roadmap)_ | | |
+| ADDON-01 | Phase 1 | Pending |
+| ADDON-02 | Phase 4 | Pending |
+| ADDON-03 | Phase 1 | Pending |
+| ADDON-04 | Phase 4 | Pending |
+| ADDON-05 | Phase 1 | Pending |
+| SUPV-01 | Phase 1 | Pending |
+| SUPV-02 | Phase 1 | Pending |
+| SUPV-03 | Phase 3 | Pending |
+| UICFG-01 | Phase 1 | Pending |
+| UICFG-02 | Phase 1 | Pending |
+| UICFG-03 | Phase 1 | Pending |
+| UICFG-04 | Phase 1 | Pending |
+| UICFG-05 | Phase 3 | Pending |
+| UICFG-06 | Phase 1 | Pending |
+| UICFG-07 | Phase 1 | Pending |
+| UICFG-08 | Phase 1 | Pending |
+| PROC-01 | Phase 3 | Pending |
+| PROC-02 | Phase 3 | Pending |
+| PROC-03 | Phase 3 | Pending |
+| PROC-04 | Phase 3 | Pending |
+| PROC-05 | Phase 3 | Pending |
+| CODE-01 | Phase 2 | Pending |
+| CODE-02 | Phase 2 | Pending |
+| CODE-03 | Phase 2 | Pending |
+| HEALTH-01 | Phase 3 | Pending |
+| DOCS-01 | Phase 4 | Pending |
