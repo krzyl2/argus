@@ -32,6 +32,7 @@ All 14 plans complete, 34 requirements covered. Code review clean. Artifacts arc
 **Goal**: The add-on schema is Supervisor-valid and the config-gen integration seam converts options.json to env vars and /data/entities.yaml before any process starts.
 **Depends on**: Nothing (first v2.0 phase)
 **Requirements**: ADDON-01, ADDON-03, ADDON-05, SUPV-01, SUPV-02, UICFG-01, UICFG-02, UICFG-03, UICFG-04, UICFG-06, UICFG-07, UICFG-08
+**Requirement → plan map**: 01-01 [ADDON-01, UICFG-01/02/03/04/06/07] · 01-02 [SUPV-01, SUPV-02, UICFG-08] · 01-03 [ADDON-03, ADDON-05]
 **Success Criteria** (what must be TRUE):
   1. User can add the Argus repository URL to HA and see "Argus" appear as an installable add-on in the store (repository.yaml + addon/config.yaml valid).
   2. The add-on Configuration tab shows all fields (entity list, InfluxDB settings, detector_endpoint, batch schedule, include/exclude patterns) with English and Polish field labels from translations/.
@@ -39,6 +40,11 @@ All 14 plans complete, 34 requirements covered. Code review clean. Artifacts arc
   4. Running the config-gen script against a sample options.json produces a valid /data/entities.yaml matching the orchestrator's expected schema and writes all required s6 environment variables (ARGUS_* and Supervisor auth vars) without error.
   5. The Dockerfile builds on the Debian bookworm base (amd64); `ldd` confirms glibc-linked .NET 8 runtime; `python -c "import torch"` fails inside the built image confirming no PyTorch present; compressed image is under 2 GB.
 **Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 01-01-PLAN.md — Add-on metadata: repository.yaml + config.yaml schema + EN/PL translations + icons (Wave 1)
+- [ ] 01-02-PLAN.md — Config-gen seam: gen-entities.py + cont-init.d env materialization + tests (Wave 1)
+- [ ] 01-03-PLAN.md — Add-on Dockerfile (Debian bookworm, torch-free) + image-facts gate (Wave 2)
 **UI hint**: yes
 **Research flag**: Read `EntitiesConfigLoader` source before implementing gen-entities.py — the generated YAML must match the loader's expected structure exactly. Also resolve whether the orchestrator reads `ARGUS_HA_URL`/`ARGUS_HA_TOKEN` directly or only through `HomeAssistant__*` configuration keys (determines which env vars config-gen must write).
 
@@ -85,7 +91,7 @@ All 14 plans complete, 34 requirements covered. Code review clean. Artifacts arc
 |-------|-----------|----------------|--------|-----------|
 | 1. Foundations + Streaming | v1.0 | 8/8 | Complete | 2026-06-10 |
 | 2. Batch Path + Model Lifecycle | v1.0 | 6/6 | Complete | 2026-06-10 |
-| 1. Add-on Skeleton + Config-Gen | v2.0 | 0/TBD | Not started | - |
+| 1. Add-on Skeleton + Config-Gen | v2.0 | 0/3 | Planned | - |
 | 2. v1 Code Changes | v2.0 | 0/TBD | Not started | - |
 | 3. Process Supervision + Runtime Integration | v2.0 | 0/TBD | Not started | - |
 | 4. Multi-Arch CI + Integration + Documentation | v2.0 | 0/TBD | Not started | - |
