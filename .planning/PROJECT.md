@@ -8,6 +8,21 @@ A self-hosted, extensible anomaly-detection system for Home Assistant sensor dat
 
 Anomalies on v1 environmental sensors appear in HA as live binary_sensor + score entities within 2 seconds of a state_changed event, with no manual entity creation and no HA restart required.
 
+## Current Milestone: v2.0 Home Assistant Add-on
+
+**Goal:** Argus installable via HA add-on store ("custom repository") — install and configure entirely through the UI, with no manual tokens, `.env` files, or config-file editing.
+
+**Target features:**
+- Add-on packaging: `repository.yaml` + add-on folder (`config.yaml` + options schema), HA base image with s6 running both processes in one container, multi-arch build (amd64 + aarch64).
+- Local detector by default (loopback, no mTLS); optional external detector via configurable `detector_endpoint` URL (mTLS retained for the remote path). Single add-on, not two.
+- UI-driven config: list of `entity_id` in the options form; InfluxDB settings (url/token/org/bucket + measurement/value_field); streaming + batch both in scope.
+- Auto auth: HA via `SUPERVISOR_TOKEN` (`homeassistant_api`), MQTT via Supervisor service discovery; `entities.yaml` generated at startup from `options.json`.
+
+**Milestone decisions (override locked v1 constraints — intentional):**
+- **D4 (mTLS):** now conditional — bypassed on loopback (local detector), retained for the remote `detector_endpoint` path.
+- **D2/D17 (two-host):** default is a single container; host↔detector split remains available via `detector_endpoint`.
+- **Distribution:** the add-on requires HA OS / Supervised; the existing `docker compose` path stays for HA Container/Core and for a remote detector.
+
 ## Requirements
 
 ### Validated
@@ -85,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-09 after initialization*
+*Last updated: 2026-06-29 — milestone v2.0 (Home Assistant Add-on) started*

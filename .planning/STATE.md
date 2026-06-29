@@ -1,46 +1,45 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: milestone-complete
-last_updated: "2026-06-10T18:30:00.000Z"
+milestone: v2.0
+milestone_name: Home Assistant Add-on
+status: planning
+last_updated: "2026-06-29T11:14:57.463Z"
+last_activity: 2026-06-29
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 14
-  completed_plans: 14
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: Argus
 
 ## Current Status
 
-- Phase: Phase 2 COMPLETE (6/6 plans complete)
-- Active phase: None — all milestone phases complete
-- Last action: Completed 02-06 RES-02 resilience tests + code review fix pass — 2026-06-10
+- Milestone: v2.0 Home Assistant Add-on — defining requirements
+- Phase: Not started (roadmap pending)
+- Last action: Archived v1.0, started v2.0 — 2026-06-29
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-09)
+See: .planning/PROJECT.md (updated 2026-06-29)
 
-**Core value:** Anomalies on v1 environmental sensors appear in HA as live binary_sensor + score entities within 2 seconds.
-**Current focus:** Milestone v1 complete — ready for deployment
+**Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds.
+**Current focus:** Repackage Argus as an installable, UI-configurable HA add-on.
 
 ## Phase Status
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 1 | Foundations + Streaming | Complete (8/8 plans) |
-| 2 | Batch Path + Model Lifecycle | Complete (6/6 plans) |
+| — | v2.0 phases | Pending roadmap |
 
-## Performance Metrics
-
-- Plans completed: 14 (01-01 through 02-06)
-- Phases completed: 2 (Phase 1 + Phase 2)
-- Requirements covered: 34/34
+v1.0 phases archived under `.planning/archive/v1.0/`.
 
 ## Accumulated Context
+
+> v1.0 decisions/pitfalls below are retained as historical reference. v2.0 overrides
+> (mTLS conditional, single-container default) are recorded in PROJECT.md.
 
 ### Decisions
 
@@ -81,8 +80,15 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Session Continuity
 
-- Last session: 2026-06-10 (Completed Phase 2 — all 14 milestone plans done)
-- Resume point: Deployment configuration (replace placeholder mTLS certs, configure entities.yaml, set ARGUS_INFLUX_* env vars)
+- Last session: 2026-06-29 (Archived v1.0, started v2.0 milestone)
+- Resume point: Research HA add-on ecosystem → define v2.0 requirements → roadmap
+
+## Current Position
+
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-29 — Milestone v2.0 started
 
 ---
-*Last updated: 2026-06-10 after 02-06 complete — Milestone v1 all 14 plans done, code review clean*
+*Last updated: 2026-06-29 — Milestone v2.0 (Home Assistant Add-on) started*
