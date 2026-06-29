@@ -1,0 +1,44 @@
+name: "Argus Anomaly Detection"
+description: "Streaming + batch anomaly detection for Home Assistant sensors."
+version: "2.0.0"
+slug: argus
+url: "https://github.com/krzyl2/argus"
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+homeassistant_api: true
+services:
+  - mqtt:need
+map:
+  - type: data
+
+options:
+  entities: []
+  include_patterns: []
+  exclude_patterns: []
+  influx_measurement: "homeassistant"
+  influx_value_field: "value"
+  batch_interval_minutes: 10
+  nightly_fit_hour: 2
+  log_level: "info"
+
+schema:
+  entities:
+    - str
+  include_patterns:
+    - str
+  exclude_patterns:
+    - str
+  influx_url: url?
+  influx_token: password?
+  influx_org: str?
+  influx_bucket: str?
+  influx_measurement: str
+  influx_value_field: str
+  detector_endpoint: str?
+  batch_interval_minutes: int(1,1440)
+  nightly_fit_hour: int(0,23)
+  log_level: list(debug|info|warning)
