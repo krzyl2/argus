@@ -58,7 +58,11 @@ Plans:
   2. The orchestrator connects to a remote detector at `https://host:50051` using the existing mTLS path unchanged from v1.
   3. The detector binds to `127.0.0.1` when `ARGUS_GRPC_BIND=127.0.0.1` and to `[::]` when unset (backward-compatible default).
   4. The detector saves and loads model files from the path set in `ARGUS_MODEL_ROOT`; when unset it defaults to the v1 path (`/var/argus/models`).
-**Plans**: TBD
+**Requirement → plan map**: 02-01 [CODE-01] · 02-02 [CODE-02, CODE-03]
+**Plans**: 2 plans
+Plans:
+- [ ] 02-01-PLAN.md — Orchestrator conditional channel factory: http→insecure loopback / https→mTLS unchanged + zero-cert regression test (Wave 1)
+- [ ] 02-02-PLAN.md — Detector configurable ARGUS_GRPC_BIND + ARGUS_MODEL_ROOT in config.py/server.py + tests (Wave 1)
 
 ### Phase 3: Process Supervision + Runtime Integration
 **Goal**: Both processes run as supervised s6 longrun services; the orchestrator starts only after the detector is healthy; MQTT credentials are fetched live from the Supervisor; an add-on health entity is published to HA.
@@ -92,6 +96,6 @@ Plans:
 | 1. Foundations + Streaming | v1.0 | 8/8 | Complete | 2026-06-10 |
 | 2. Batch Path + Model Lifecycle | v1.0 | 6/6 | Complete | 2026-06-10 |
 | 1. Add-on Skeleton + Config-Gen | v2.0 | 0/3 | Planned | - |
-| 2. v1 Code Changes | v2.0 | 0/TBD | Not started | - |
+| 2. v1 Code Changes | v2.0 | 0/2 | Planned | - |
 | 3. Process Supervision + Runtime Integration | v2.0 | 0/TBD | Not started | - |
 | 4. Multi-Arch CI + Integration + Documentation | v2.0 | 0/TBD | Not started | - |
