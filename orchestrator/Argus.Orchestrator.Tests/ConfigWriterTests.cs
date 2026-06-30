@@ -61,4 +61,23 @@ public class ConfigWriterTests
         // Cleanup
         File.Delete(target);
     }
+
+    [Fact]
+    public async Task WriteAsync_FailedMove_LeavesNoOrphanTempFile()
+    {
+        // Arrange — target path has a null byte in the filename, which causes File.Move to
+        // throw ArgumentException AFTER WriteAllTextAsync has already created the temp file.
+        // This exercises the WR-01 cleanup path: temp file must be deleted in finally.
+        var dir = Path.GetTempPath();
+        var invalidTarget = Path.Combine(dir, "entities-invalid\0.yaml"); // \0 triggers ArgumentException in Move
+        var writer = new ConfigWriter();
+
+        // Act — must throw (invalid target path)
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            writer.WriteAsync(invalidTarget, "entities: []\n"));
+
+        // Assert — no .entities.tmp.*.yaml orphan remains in the temp directory
+        var orphans = Directory.GetFiles(dir, ".entities.tmp.*.yaml");
+        Assert.Empty(orphans);
+    }
 }
