@@ -7,7 +7,6 @@ using Argus.Orchestrator.Mqtt;
 using Argus.Orchestrator.Workers;
 using Grpc.Net.Client;
 using InfluxDB.Client;
-using NetDaemon.Client.Extensions;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -66,8 +65,8 @@ builder.Services.AddSingleton<GrpcChannel>(sp =>
 // Register DetectionGateway (holds channel + stubs; INFRA-07 health gate)
 builder.Services.AddSingleton<DetectionGateway>();
 
-// Register NetDaemon.Client DI (IHomeAssistantClient, IHomeAssistantRunner) — D-06
-builder.Services.AddHomeAssistantClient();
+// HA connection is handled by HaWebSocketClient (raw WebSocket with the Supervisor-proxy
+// Bearer header) inside NetDaemonHaEventSource — no NetDaemon.Client DI needed.
 
 // Register ReconnectCooldown (60s post-reconnect binary_sensor suppression — D-07)
 builder.Services.AddSingleton<ReconnectCooldown>();

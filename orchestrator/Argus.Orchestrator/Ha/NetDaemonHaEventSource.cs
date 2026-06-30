@@ -1,8 +1,6 @@
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Health;
 using Argus.Orchestrator.Logging;
-using NetDaemon.Client;
-using NetDaemon.Client.HomeAssistant.Extensions;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
@@ -10,17 +8,21 @@ using System.Threading.Channels;
 namespace Argus.Orchestrator.Ha;
 
 /// <summary>
-/// IHaEventSource implemented with NetDaemon.Client 23.46.0 (D-06).
+/// IHaEventSource backed by a raw HA WebSocket client (<see cref="HaWebSocketClient"/>).
+///
+/// Originally implemented with NetDaemon.Client, but the HA add-on must reach HA through the
+/// Supervisor proxy <c>ws://supervisor/core/websocket</c>, which requires an
+/// <c>Authorization: Bearer</c> header on the WS upgrade. NetDaemon.Client cannot set that header
+/// (its WS factory is internal) and direct HA-core access is blocked for add-ons, so the connection
+/// is handled by <see cref="HaWebSocketClient"/> instead. The streaming/filtering/health behaviour
+/// below is unchanged. (Class name kept for DI + test stability.)
 ///
 /// Responsibilities:
-///   - Connects to HA WebSocket using HaUrl + HaToken from ConnectionSettings
-///   - Subscribes to state_changed events
-///   - Filters to the configured entity set (O(1) HashSet lookup)
-///   - On every successful reconnection (after the first): calls GetStatesAsync (D-07)
-///     and feeds current values; suppresses binary_sensor publication for 60s
-///   - Reconnects with exponential backoff: 1s → 2s → 4s → 8s → ... → cap 60s (STRM-01)
-///   - Logs connect/reconnect/backoff attempts and dropped events (OBS-01)
-///   - HA token never logged (T-05-05)
+///   - Connects to HA WebSocket using HaUrl + HaToken from ConnectionSettings (token never logged)
+///   - Subscribes to state_changed events, filtered to the configured entity set (O(1) HashSet)
+///   - On every reconnection (after the first): get_states snapshot (D-07), 60s binary_sensor suppress
+///   - First connect: logs unconfigured numeric sensors (UICFG-05)
+///   - Reconnect with exponential backoff: 1s → 2s → 4s → … → cap 60s (STRM-01)
 /// </summary>
 public class NetDaemonHaEventSource : IHaEventSource
 {
@@ -31,7 +33,6 @@ public class NetDaemonHaEventSource : IHaEventSource
     private readonly ConnectionSettings _settings;
     private readonly EntitiesConfig _entitiesConfig;
     private readonly ReconnectCooldown _cooldown;
-    private readonly IHomeAssistantClient _haClient;
     private readonly ArgusHealthSignals _signals;
     private readonly ILogger<NetDaemonHaEventSource> _logger;
 
@@ -42,14 +43,12 @@ public class NetDaemonHaEventSource : IHaEventSource
         ConnectionSettings settings,
         EntitiesConfig entitiesConfig,
         ReconnectCooldown cooldown,
-        IHomeAssistantClient haClient,
         ArgusHealthSignals signals,
         ILogger<NetDaemonHaEventSource> logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _entitiesConfig = entitiesConfig ?? throw new ArgumentNullException(nameof(entitiesConfig));
         _cooldown = cooldown ?? throw new ArgumentNullException(nameof(cooldown));
-        _haClient = haClient ?? throw new ArgumentNullException(nameof(haClient));
         _signals = signals ?? throw new ArgumentNullException(nameof(signals));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -90,6 +89,7 @@ public class NetDaemonHaEventSource : IHaEventSource
     {
         var backoffSeconds = BackoffInitialSeconds;
         var isFirstConnection = true;
+        var wsUri = BuildWsUri(_settings.HaUrl);
 
         try
         {
@@ -98,19 +98,14 @@ public class NetDaemonHaEventSource : IHaEventSource
                 try
                 {
                     _logger.LogInformation(LogEvents.HaListenerStarting,
-                        "Connecting to HA WebSocket at {HaUrl}", _settings.HaUrl);
+                        "Connecting to HA WebSocket at {HaUrl}", wsUri);
 
-                    // Parse host/port/ssl/path from HaUrl. Add-on uses the Supervisor proxy
-                    // (ws://supervisor/core/websocket); standalone uses ws://host:8123 (/api/websocket).
-                    var (host, port, ssl, path) = ParseHaUrl(_settings.HaUrl);
-
-                    var connection = await _haClient.ConnectAsync(
-                        host, port, ssl, _settings.HaToken ?? string.Empty, path, ct)
+                    await using var client = new HaWebSocketClient();
+                    await client.ConnectAndAuthAsync(wsUri, _settings.HaToken ?? string.Empty, ct)
                         .ConfigureAwait(false);
 
                     _logger.LogInformation(LogEvents.ChannelEstablished,
-                        "Connected to HA WebSocket (host={Host} port={Port} ssl={Ssl})",
-                        host, port, ssl);
+                        "Connected and authenticated to HA WebSocket at {HaUrl}", wsUri);
 
                     // Signal HA connectivity (HEALTH-01 composite health)
                     _signals.HaConnected = true;
@@ -118,17 +113,19 @@ public class NetDaemonHaEventSource : IHaEventSource
                     // Reset backoff on successful connection
                     backoffSeconds = BackoffInitialSeconds;
 
-                    // On FIRST connect: log discovered numeric sensors not yet configured (UICFG-05)
+                    // get_states snapshot must happen BEFORE subscribe (no events interleave).
+                    var states = await client.GetStatesAsync(ct).ConfigureAwait(false);
+
                     if (isFirstConnection)
                     {
-                        await LogDiscoverableSensorsAsync(connection, ct).ConfigureAwait(false);
+                        // First connect: log unconfigured numeric sensors (UICFG-05)
+                        LogDiscoverableSensors(states);
                     }
-
-                    // On reconnect (not first connect): snapshot get_states + mark cooldown (D-07)
-                    if (!isFirstConnection)
+                    else
                     {
-                        _logger.LogInformation("HA reconnect: calling get_states snapshot (D-07, PITFALL 4)");
-                        await FeedGetStatesAsync(connection, writer, ct).ConfigureAwait(false);
+                        // Reconnect: feed current values + start binary_sensor suppression (D-07)
+                        _logger.LogInformation("HA reconnect: feeding get_states snapshot (D-07, PITFALL 4)");
+                        await FeedStatesAsync(states, writer, ct).ConfigureAwait(false);
                         _cooldown.MarkReconnect(DateTimeOffset.UtcNow);
                         _logger.LogInformation(
                             "ReconnectCooldown started — binary_sensor suppressed for {Seconds}s",
@@ -137,14 +134,15 @@ public class NetDaemonHaEventSource : IHaEventSource
 
                     isFirstConnection = false;
 
-                    // Subscribe to state_changed stream
-                    await SubscribeAndForwardAsync(connection, writer, ct).ConfigureAwait(false);
+                    await client.SubscribeStateChangedAsync(ct).ConfigureAwait(false);
 
-                    // Subscribe returned (connection closed cleanly, no exception):
-                    // HA is no longer connected, so clear the signal before the next
-                    // reconnect attempt. Without this, a clean WS close would leave
-                    // HaConnected=true and HealthPublisherWorker would report healthy
-                    // while HA is actually down (WR-01, HEALTH-01).
+                    // Stream state_changed events until the socket closes or CT fires.
+                    await client.ReceiveEventsAsync(dto => OnStateChanged(dto, writer), ct)
+                        .ConfigureAwait(false);
+
+                    // Clean close (ReceiveEventsAsync returned without throwing): clear the
+                    // signal before the next reconnect so HealthPublisherWorker does not report
+                    // healthy while HA is down (WR-01, HEALTH-01).
                     _signals.HaConnected = false;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -180,25 +178,19 @@ public class NetDaemonHaEventSource : IHaEventSource
         }
     }
 
-    /// <summary>
-    /// Calls GetStatesAsync once and feeds current values into the channel (D-07 snapshot).
-    /// </summary>
-    private async Task FeedGetStatesAsync(
-        IHomeAssistantConnection connection,
+    /// <summary>Feeds a get_states snapshot into the channel (D-07 reconnect snapshot).</summary>
+    private async Task FeedStatesAsync(
+        IReadOnlyList<HaStateDto> states,
         ChannelWriter<HaReading> writer,
         CancellationToken ct)
     {
-        // get_states: extension method from HomeAssistantConnectionExtensions (D-07)
-        var states = await connection.GetStatesAsync(ct).ConfigureAwait(false);
-        if (states is null) return;
-
         var now = DateTimeOffset.UtcNow;
         var suppress = _cooldown.IsSuppressed(now);
         var count = 0;
 
         foreach (var state in states)
         {
-            if (TryMap(state.EntityId, state.State, state.LastChanged, _configuredEntities, suppress, out var reading))
+            if (TryMap(state.EntityId, state.State, state.LastChangedUtc, _configuredEntities, suppress, out var reading))
             {
                 await writer.WriteAsync(reading!, ct).ConfigureAwait(false);
                 count++;
@@ -209,75 +201,33 @@ public class NetDaemonHaEventSource : IHaEventSource
             "get_states snapshot fed {Count} configured entities to pipeline", count);
     }
 
-    /// <summary>
-    /// Subscribes to state_changed and forwards matching events until the connection closes or CT fires.
-    /// </summary>
-    private async Task SubscribeAndForwardAsync(
-        IHomeAssistantConnection connection,
-        ChannelWriter<HaReading> writer,
-        CancellationToken ct)
+    /// <summary>Maps and forwards a single state_changed new_state (best-effort, non-blocking).</summary>
+    private void OnStateChanged(HaStateDto dto, ChannelWriter<HaReading> writer)
     {
-        var events = await connection.SubscribeToHomeAssistantEventsAsync("state_changed", ct)
-            .ConfigureAwait(false);
-
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        using var sub = events.Subscribe(
-            onNext: hassEvent =>
+        try
+        {
+            var suppress = _cooldown.IsSuppressed(DateTimeOffset.UtcNow);
+            if (TryMap(dto.EntityId, dto.State, dto.LastChangedUtc, _configuredEntities, suppress, out var reading))
             {
-                try
+                if (!writer.TryWrite(reading!))
                 {
-                    // ToStateChangedEvent returns HassStateChangedEventData directly
-                    var stateChanged = hassEvent.ToStateChangedEvent();
-                    var newState = stateChanged?.NewState;
-                    if (newState is null) return;
-
-                    var now = DateTimeOffset.UtcNow;
-                    var suppress = _cooldown.IsSuppressed(now);
-
-                    if (TryMap(newState.EntityId, newState.State, newState.LastChanged,
-                        _configuredEntities, suppress, out var reading))
-                    {
-                        // Best-effort write; channel is bounded so we don't block the Rx callback
-                        if (!writer.TryWrite(reading!))
-                        {
-                            _logger.LogWarning(
-                                "HaReading channel full — dropping event for {EntityId}", newState.EntityId);
-                        }
-                    }
+                    _logger.LogWarning(
+                        "HaReading channel full — dropping event for {EntityId}", dto.EntityId);
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Error processing state_changed event");
-                }
-            },
-            onError: ex => tcs.TrySetException(ex),
-            onCompleted: () => tcs.TrySetResult(true));
-
-        // Register CT so we unblock when cancellation is requested
-        using var reg = ct.Register(() => tcs.TrySetCanceled(ct));
-
-        // Wait for whichever happens first: the WS connection closes, or the Rx
-        // subscription signals onError/onCompleted. Awaiting only the WS close
-        // would silently discard a stream-level error that does not close the
-        // socket, leaving a broken event stream on a still-open connection that
-        // never triggers reconnect (WR-05). The faulted tcs.Task rethrows here so
-        // the outer loop's catch backs off and reconnects.
-        var closeTask = connection.WaitForConnectionToCloseAsync(ct);
-        var completed = await Task.WhenAny(closeTask, tcs.Task).ConfigureAwait(false);
-        await completed.ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error processing state_changed event");
+        }
     }
 
     /// <summary>
     /// Logs discovered numeric sensors (UICFG-05) on the FIRST successful HA connect.
-    /// One INFO line per unconfigured numeric sensor (entity_id + last value),
-    /// followed by a total-count line.
+    /// One INFO line per unconfigured numeric sensor, then a total-count line.
     /// </summary>
-    private async Task LogDiscoverableSensorsAsync(IHomeAssistantConnection connection, CancellationToken ct)
+    private void LogDiscoverableSensors(IReadOnlyList<HaStateDto> states)
     {
-        var states = await connection.GetStatesAsync(ct).ConfigureAwait(false);
-        if (states is null) return;
-
         var discoverable = SelectDiscoverableSensors(
             states.Select(s => (s.EntityId, s.State)),
             _configuredEntities);
@@ -348,41 +298,17 @@ public class NetDaemonHaEventSource : IHaEventSource
     }
 
     /// <summary>
-    /// Parses an HA WebSocket URL into (host, port, ssl, path) components.
-    /// Supports ws://, wss://, http://, https:// schemes.
-    /// Port: an explicit port always wins. For a default port, a direct HA-core
-    /// connection (path /api/websocket) defaults to 8123, while the add-on
-    /// Supervisor proxy (path /core/websocket) defaults to 80/443. .NET treats
-    /// ws://host:80 as IsDefaultPort=true, so the proxy must resolve to 80 here —
-    /// the previous unconditional 8123 fallback connected the add-on to an
-    /// unreachable supervisor:8123.
-    /// Path: the URL path (e.g. /core/websocket for the Supervisor proxy),
-    /// defaulting to /api/websocket for a direct HA core connection.
+    /// Builds the WebSocket URI from the configured HA URL. Converts http/https → ws/wss,
+    /// preserves an explicit port, and defaults a root path to /api/websocket (direct HA core).
+    /// The add-on supplies ws://supervisor/core/websocket (Supervisor proxy) verbatim.
     /// </summary>
-    private static (string host, int port, bool ssl, string path) ParseHaUrl(string? url)
+    private static Uri BuildWsUri(string? haUrl)
     {
-        if (string.IsNullOrEmpty(url))
-            return ("localhost", 8123, false, "/api/websocket");
-
-        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
-        {
-            var ssl = uri.Scheme is "wss" or "https";
-            var path = string.IsNullOrEmpty(uri.AbsolutePath) || uri.AbsolutePath == "/"
-                ? "/api/websocket"
-                : uri.AbsolutePath;
-
-            int port;
-            if (!uri.IsDefaultPort)
-                port = uri.Port;                 // explicit port always wins
-            else if (path == "/api/websocket")
-                port = ssl ? 443 : 8123;         // direct HA core default
-            else
-                port = ssl ? 443 : 80;           // Supervisor proxy / custom-path default
-
-            return (uri.Host, port, ssl, path);
-        }
-
-        // Fallback: treat as plain hostname (direct HA core)
-        return (url, 8123, false, "/api/websocket");
+        var raw = string.IsNullOrEmpty(haUrl) ? "ws://supervisor/core/websocket" : haUrl;
+        var uri = new Uri(raw, UriKind.Absolute);
+        var scheme = uri.Scheme is "https" or "wss" ? "wss" : "ws";
+        var path = uri.AbsolutePath is "" or "/" ? "/api/websocket" : uri.AbsolutePath;
+        var portPart = uri.IsDefaultPort ? string.Empty : $":{uri.Port}";
+        return new Uri($"{scheme}://{uri.Host}{portPart}{path}");
     }
 }

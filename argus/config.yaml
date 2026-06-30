@@ -1,6 +1,6 @@
 name: "Argus Anomaly Detection"
 description: "Streaming + batch anomaly detection for Home Assistant sensors."
-version: "2.0.4"
+version: "2.0.5"
 slug: argus
 url: "https://github.com/krzyl2/argus"
 image: "ghcr.io/krzyl2/argus"
