@@ -48,7 +48,9 @@ else
     printf "/data/certs/client.crt" > /var/run/s6/container_environment/ARGUS_TLS_CERT
     printf "/data/certs/client.key" > /var/run/s6/container_environment/ARGUS_TLS_KEY
     printf "remote"                 > /run/argus/mode
-    # Phase 3: touch /etc/services.d/detector/down to disable local detector in remote mode
+    # PROC-04: write the down file so s6 does not start the local detector in remote mode.
+    # The detector/run script is never reached; only the orchestrator starts.
+    touch /etc/services.d/detector/down
 fi
 mkdir -p /data/models
 printf "/data/models" > /var/run/s6/container_environment/ARGUS_MODEL_ROOT

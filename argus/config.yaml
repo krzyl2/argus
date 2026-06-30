@@ -8,6 +8,11 @@ arch:
   - aarch64
 startup: application
 boot: auto
+# PROC-05: declare gRPC port as the liveness probe.  HA Supervisor restarts a
+# hung add-on when this TCP port stops responding.  NOTE: in remote mode no
+# local process listens on 50051 — this watchdog interaction should be revisited
+# for remote-only deployments (deferred to live-HA verification).
+watchdog: "tcp://[HOST]:50051"
 init: false
 homeassistant_api: true
 services:
