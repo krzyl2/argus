@@ -77,10 +77,22 @@ builder.Services.AddSingleton<IHaEventSource, NetDaemonHaEventSource>();
 // Register HA listener worker (consumes IHaEventSource after health gate)
 builder.Services.AddHostedService<HaListenerWorker>();
 
+// Register MQTT credential source (Plan 03-02 / SUPV-03):
+// SupervisorMqttCredentialSource fetches fresh credentials on every connect/reconnect attempt.
+// Uses SUPERVISOR_TOKEN env var when running as HA add-on; falls back to ARGUS_MQTT_* env vars
+// for docker-compose / remote-detector deployments.
+builder.Services.AddSingleton<IMqttCredentialSource>(sp =>
+    new SupervisorMqttCredentialSource(
+        new HttpClient(),
+        connectionSettings,
+        sp.GetRequiredService<ILogger<SupervisorMqttCredentialSource>>()));
+
 // Register MQTT stack (Plan 07): MqttConnection (LWT), StatePublisher, MqttPublisherWorker
 // DiscoveryPublisher is static — no DI registration needed
 builder.Services.AddSingleton<MqttConnection>(sp =>
-    new MqttConnection(connectionSettings, sp.GetRequiredService<ILogger<MqttConnection>>()));
+    new MqttConnection(
+        sp.GetRequiredService<IMqttCredentialSource>(),
+        sp.GetRequiredService<ILogger<MqttConnection>>()));
 builder.Services.AddSingleton<StatePublisher>();
 // IStatePublisher resolves to the same singleton StatePublisher (for ScoreStreamPipeline injection)
 builder.Services.AddSingleton<IStatePublisher>(sp => sp.GetRequiredService<StatePublisher>());

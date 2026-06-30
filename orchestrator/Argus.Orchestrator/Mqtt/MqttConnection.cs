@@ -1,5 +1,4 @@
 using System.Text;
-using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Logging;
 using MQTTnet;
 using MQTTnet.Protocol;
@@ -7,39 +6,34 @@ using MQTTnet.Protocol;
 namespace Argus.Orchestrator.Mqtt;
 
 /// <summary>
-/// MQTTnet 5 client wrapper with LWT-before-connect (PITFALL 6) and exponential backoff reconnect.
+/// MQTTnet 5 client wrapper with per-attempt credential fetch (SUPV-03),
+/// LWT-before-connect (PITFALL 6), and exponential backoff reconnect.
 /// Uses MqttClientFactory (NOT MqttFactory — D-17/RESEARCH state-of-art).
-/// Bridge-level LWT: argus/bridge/availability → offline configured in connect options
-/// BEFORE ConnectAsync, so an orchestrator crash marks ALL sensors unavailable (RES-01).
+///
+/// Bridge-level LWT: argus/bridge/availability → offline is set in the
+/// options built by BuildConnectOptionsAsync BEFORE every ConnectAsync call,
+/// so an orchestrator crash marks ALL sensors unavailable (RES-01).
+///
+/// Credentials are fetched fresh from IMqttCredentialSource on each
+/// (re)connect attempt — never cached — so re-provisioning the Mosquitto
+/// add-on survives a reconnect without restarting Argus (SUPV-03).
 /// </summary>
 public sealed class MqttConnection : IAsyncDisposable
 {
     public const string BridgeAvailabilityTopic = "argus/bridge/availability";
 
-    private readonly ConnectionSettings _settings;
+    private readonly IMqttCredentialSource _credentialSource;
     private readonly ILogger<MqttConnection> _logger;
     private readonly IMqttClient _client;
-    private readonly MqttClientOptions _connectOptions;
     private readonly CancellationTokenSource _cts = new();
 
-    public MqttConnection(ConnectionSettings settings, ILogger<MqttConnection> logger)
+    public MqttConnection(IMqttCredentialSource credentialSource, ILogger<MqttConnection> logger)
     {
-        _settings = settings;
+        _credentialSource = credentialSource;
         _logger = logger;
 
         var factory = new MqttClientFactory();
         _client = factory.CreateMqttClient();
-
-        // LWT configured in options BEFORE ConnectAsync is ever called (PITFALL 6, D-15)
-        // Bridge-level availability: one LWT covers all entities; orchestrator crash → all unavailable
-        _connectOptions = new MqttClientOptionsBuilder()
-            .WithTcpServer(_settings.MqttHost ?? "localhost", _settings.MqttPort)
-            .WithCredentials(_settings.MqttUser, _settings.MqttPassword)
-            .WithWillTopic(BridgeAvailabilityTopic)
-            .WithWillPayload("offline")
-            .WithWillRetain(true)
-            .WithWillQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-            .Build();
 
         // Wire reconnect handler
         _client.DisconnectedAsync += OnDisconnectedAsync;
@@ -47,11 +41,14 @@ public sealed class MqttConnection : IAsyncDisposable
 
     /// <summary>
     /// Connects to the broker, then immediately publishes "online" to availability topic.
+    /// Credentials are fetched fresh on every call — never reused from a prior attempt (SUPV-03).
+    /// LWT is configured in the options BEFORE ConnectAsync is called (PITFALL 6, RES-01).
     /// </summary>
     public async Task ConnectAsync(CancellationToken ct)
     {
-        await _client.ConnectAsync(_connectOptions, ct);
-        _logger.LogInformation(LogEvents.MqttConnected, "MQTT connected to {Host}:{Port}", _settings.MqttHost, _settings.MqttPort);
+        var options = await BuildConnectOptionsAsync(ct);
+        await _client.ConnectAsync(options, ct);
+        _logger.LogInformation(LogEvents.MqttConnected, "MQTT connected");
         await PublishOnlineAsync(ct);
     }
 
@@ -70,8 +67,31 @@ public sealed class MqttConnection : IAsyncDisposable
         await _client.PublishAsync(message, ct);
     }
 
-    /// <summary>Exposes the raw MqttClientOptions for test assertions (no live broker needed).</summary>
-    public MqttClientOptions ConnectOptions => _connectOptions;
+    /// <summary>
+    /// Builds MQTT connect options for a single connection attempt by fetching
+    /// credentials fresh from the configured source (SUPV-03 — never cached).
+    /// LWT is embedded in the returned options so it is always set before
+    /// ConnectAsync (PITFALL 6, RES-01).
+    ///
+    /// Internal visibility: exposed for unit-test LWT assertions without a live broker.
+    /// </summary>
+    internal async Task<MqttClientOptions> BuildConnectOptionsAsync(CancellationToken ct)
+    {
+        var creds = await _credentialSource.GetAsync(ct);
+
+        // Log host/port only — never user or password (T-03-03)
+        _logger.LogInformation(LogEvents.MqttCredentialsRefreshed,
+            "MQTT credentials resolved for {Host}:{Port}", creds.Host, creds.Port);
+
+        return new MqttClientOptionsBuilder()
+            .WithTcpServer(creds.Host ?? "localhost", creds.Port)
+            .WithCredentials(creds.User, creds.Password)
+            .WithWillTopic(BridgeAvailabilityTopic)
+            .WithWillPayload("offline")
+            .WithWillRetain(true)
+            .WithWillQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build();
+    }
 
     private async Task PublishOnlineAsync(CancellationToken ct)
     {
@@ -100,8 +120,10 @@ public sealed class MqttConnection : IAsyncDisposable
                 _logger.LogInformation(LogEvents.MqttReconnecting, "MQTT reconnecting in {Delay:F1}s...", totalDelay.TotalSeconds);
                 await Task.Delay(totalDelay, _cts.Token);
 
-                await _client.ConnectAsync(_connectOptions, _cts.Token);
-                _logger.LogInformation(LogEvents.MqttConnected, "MQTT reconnected to {Host}:{Port}", _settings.MqttHost, _settings.MqttPort);
+                // Fetch credentials fresh on every reconnect attempt (SUPV-03)
+                var options = await BuildConnectOptionsAsync(_cts.Token);
+                await _client.ConnectAsync(options, _cts.Token);
+                _logger.LogInformation(LogEvents.MqttConnected, "MQTT reconnected");
                 await PublishOnlineAsync(_cts.Token);
                 return;
             }

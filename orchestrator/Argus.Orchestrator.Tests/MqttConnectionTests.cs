@@ -15,38 +15,79 @@ public class MqttConnectionTests
         MqttPassword = "testpass",
     };
 
+    private static MqttConnection MakeConn(FakeCredentialSource? source = null) =>
+        new(source ?? new FakeCredentialSource(MakeSettings()), NullLogger<MqttConnection>.Instance);
+
+    // ── LWT assertions (now via BuildConnectOptionsAsync; no live broker) ──
+
     [Fact]
-    public void ConnectOptions_WillTopic_EndsWithAvailability()
+    public async Task BuildConnectOptionsAsync_WillTopic_EndsWithAvailability()
     {
-        var conn = new MqttConnection(MakeSettings(), NullLogger<MqttConnection>.Instance);
-        Assert.EndsWith("/availability", conn.ConnectOptions.WillTopic);
+        var conn = MakeConn();
+        var opts = await conn.BuildConnectOptionsAsync(CancellationToken.None);
+        Assert.EndsWith("/availability", opts.WillTopic);
     }
 
     [Fact]
-    public void ConnectOptions_WillPayload_IsOffline()
+    public async Task BuildConnectOptionsAsync_WillPayload_IsOffline()
     {
-        var conn = new MqttConnection(MakeSettings(), NullLogger<MqttConnection>.Instance);
-        var payload = System.Text.Encoding.UTF8.GetString(conn.ConnectOptions.WillPayload!);
+        var conn = MakeConn();
+        var opts = await conn.BuildConnectOptionsAsync(CancellationToken.None);
+        var payload = System.Text.Encoding.UTF8.GetString(opts.WillPayload!);
         Assert.Equal("offline", payload);
     }
 
     [Fact]
-    public void ConnectOptions_WillRetain_IsTrue()
+    public async Task BuildConnectOptionsAsync_WillRetain_IsTrue()
     {
-        var conn = new MqttConnection(MakeSettings(), NullLogger<MqttConnection>.Instance);
-        Assert.True(conn.ConnectOptions.WillRetain);
+        var conn = MakeConn();
+        var opts = await conn.BuildConnectOptionsAsync(CancellationToken.None);
+        Assert.True(opts.WillRetain);
     }
 
     [Fact]
-    public void ConnectOptions_WillIsConfiguredBeforeConnect_NoLiveConnection()
+    public async Task BuildConnectOptionsAsync_LwtIsConfigured_BeforeConnectAttempt()
     {
-        // This test verifies that ConnectOptions is populated (LWT is configured in the
-        // constructor, before any ConnectAsync call — PITFALL 6 mitigation).
-        // No live broker needed: we only inspect the options object.
-        var conn = new MqttConnection(MakeSettings(), NullLogger<MqttConnection>.Instance);
-        Assert.NotNull(conn.ConnectOptions.WillTopic);
-        Assert.NotEmpty(conn.ConnectOptions.WillTopic);
+        // Verifies LWT is in the options object returned before any ConnectAsync call (PITFALL 6).
+        var conn = MakeConn();
+        var opts = await conn.BuildConnectOptionsAsync(CancellationToken.None);
+        Assert.NotNull(opts.WillTopic);
+        Assert.NotEmpty(opts.WillTopic);
     }
+
+    // ── Per-attempt credential refetch assertions (SUPV-03) ──
+
+    [Fact]
+    public async Task BuildConnectOptionsAsync_InvokesCredentialSourceOnEveryCall()
+    {
+        var source = new FakeCredentialSource(MakeSettings());
+        var conn = MakeConn(source);
+
+        await conn.BuildConnectOptionsAsync(CancellationToken.None);
+        await conn.BuildConnectOptionsAsync(CancellationToken.None);
+        await conn.BuildConnectOptionsAsync(CancellationToken.None);
+
+        // Each call must produce a fresh fetch — never return a cached options object
+        Assert.Equal(3, source.CallCount);
+    }
+
+    [Fact]
+    public async Task BuildConnectOptionsAsync_DistinctCalls_ProduceSeparateOptionsObjects()
+    {
+        var source = new FakeCredentialSource(MakeSettings());
+        var conn = MakeConn(source);
+
+        var opts1 = await conn.BuildConnectOptionsAsync(CancellationToken.None);
+        var opts2 = await conn.BuildConnectOptionsAsync(CancellationToken.None);
+
+        // Not the same cached reference (SUPV-03 — no cross-attempt state sharing)
+        Assert.NotSame(opts1, opts2);
+        // Both carry the LWT (RES-01)
+        Assert.Equal("offline", System.Text.Encoding.UTF8.GetString(opts1.WillPayload!));
+        Assert.Equal("offline", System.Text.Encoding.UTF8.GetString(opts2.WillPayload!));
+    }
+
+    // ── StatePublisher topic-shape tests (unchanged from v1) ──
 
     [Fact]
     public void StatePublisher_FlagTopic_Correct()
@@ -68,5 +109,28 @@ public class MqttConnectionTests
     public void StatePublisher_BridgeAvailabilityTopic_Constant()
     {
         Assert.Equal("argus/bridge/availability", StatePublisher.BridgeAvailabilityTopic);
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    internal sealed class FakeCredentialSource : IMqttCredentialSource
+    {
+        private readonly MqttCredentials _creds;
+        public int CallCount { get; private set; }
+
+        public FakeCredentialSource(ConnectionSettings settings)
+        {
+            _creds = new MqttCredentials(
+                settings.MqttHost,
+                settings.MqttPort,
+                settings.MqttUser,
+                settings.MqttPassword);
+        }
+
+        public Task<MqttCredentials> GetAsync(CancellationToken ct)
+        {
+            CallCount++;
+            return Task.FromResult(_creds);
+        }
     }
 }
