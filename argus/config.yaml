@@ -14,6 +14,10 @@ boot: auto
 # local process listens on 50051 — this watchdog interaction should be revisited
 # for remote-only deployments (deferred to live-HA verification).
 watchdog: "tcp://[HOST]:50051"
+ingress: true
+ingress_port: 8099
+panel_icon: "mdi:tune-variant"
+panel_title: "Argus"
 init: false
 homeassistant_api: true
 services:
