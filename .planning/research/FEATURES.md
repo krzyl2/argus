@@ -1,60 +1,70 @@
 # Feature Research
 
-**Domain:** Home Assistant add-on packaging + UI configuration + lifecycle
-**Researched:** 2026-06-29
-**Confidence:** LOW (all sources: web/webfetch; official HA dev docs fetched directly but provider tier is LOW)
+**Domain:** Home Assistant add-on Ingress configuration web UI (v3.0)
+**Researched:** 2026-06-30
+**Confidence:** MEDIUM — HA Ingress mechanics from official developer docs (HIGH); UX patterns from ecosystem survey of real add-ons (MEDIUM); static-file/path-base specifics from community issues (MEDIUM); .NET file-watch reload from official docs (HIGH)
 
 ---
 
 ## Scope
 
-This file covers only the add-on shell: install flow, configuration UX, lifecycle management, entity selection, and the mapping from the existing `entities.yaml` / `ARGUS_*` env-var surface to the add-on options form. Detection algorithms are out of scope.
+This file covers ONLY the new v3.0 Ingress Configuration UI. Existing v2.0 features (streaming
+detection, MQTT discovery, batch scheduling, health entity, add-on packaging) are shipped and out
+of scope. The three UI scenarios under research:
+
+- **(a) Entity discovery + selection** — browse/filter/search live HA sensors, see current values,
+  select which Argus tracks
+- **(b) Per-entity detector assignment** — assign HST/MAD/STL with editable parameters
+- **(c) Apply without restart** — save → reload → feedback/validation loop
+
+Dependencies on v2.0 capabilities are noted throughout.
 
 ---
 
-## How HA Add-ons Work — Background
+## How HA Ingress Works — Critical Background
 
-### Install flow (user perspective)
+Understanding the Ingress mechanism is prerequisite to all feature decisions below.
 
-1. Settings → Add-ons → Add-on Store → three-dot menu → Repositories → paste custom repo URL
-2. Supervisor fetches `repository.yaml` at the repo root (name, maintainer, url)
-3. Add-on subfolder appears in the store under "Custom repositories"
-4. User selects add-on → Install (pulls Docker image)
-5. Configuration tab: user fills out options form generated from `options` + `schema` in `config.yaml`
-6. User presses Start → Supervisor creates container, injects `/data/options.json`, sets env vars
-7. Logs tab: everything written to stdout/stderr appears here in near-real-time
+### Ingress plumbing
 
-### Runtime plumbing Argus gets for free as an add-on
+- Add-on `config.yaml` must declare `ingress: true` and `ingress_port: <port>` (default 8099).
+- HA Supervisor reverse-proxies `https://ha-host/api/hassio_ingress/<token>/` to
+  `http://172.30.32.1:<ingress_port>/` inside the add-on container.
+- **Authentication is handled by HA.** The user is already authenticated before the request
+  reaches the add-on — the add-on does NOT need to implement auth.
+- **Only connections from `172.30.32.2` must be allowed** — the add-on should reject other IPs.
+- HA injects the `X-Ingress-Path` header on every request, containing the base path prefix
+  (e.g. `/api/hassio_ingress/abc123`). The app MUST use this for all absolute URL generation.
+- Protocols supported: HTTP/1.x, streaming, WebSockets.
+- `ingress_entry` is the URL HA opens when the user clicks "Open Web UI".
 
-| Capability | How | Replaces |
-|------------|-----|---------|
-| HA WebSocket auth | `homeassistant_api: true` → `SUPERVISOR_TOKEN` env var; use as Bearer at `ws://supervisor/core/websocket` | `ARGUS_HA_URL` + `ARGUS_HA_TOKEN` |
-| HA REST API | `http://supervisor/core/api/*` with same token | same |
-| MQTT credentials | `services: [mqtt:need]` → `bashio::services mqtt host/port/username/password` | `ARGUS_MQTT_HOST/PORT/USER/PASSWORD` |
-| User options | `/data/options.json` written by Supervisor at startup | `entities.yaml` (generated) + `ARGUS_*` env vars |
-| Persistent state | `/data/` volume survives restarts | existing model storage path |
+### Critical path-base pitfall
 
-### Options schema type system
+Ingress prepends a dynamic path prefix to all requests. Static assets served with hardcoded root
+paths (`/app.js`, `/style.css`) will 404 through the proxy. The two valid approaches:
 
-Types available in `config.yaml` `schema:` block:
+1. **Relative paths only** — all asset references use relative URLs (`./app.js`, `../style.css`);
+   works without knowing the prefix at build time.
+2. **`UsePathBase` middleware** — read `X-Ingress-Path` at startup or per-request and set
+   `app.UsePathBase(ingressPath)` so ASP.NET Core strips the prefix before routing.
+   `UsePathBase` must be registered BEFORE `UseRouting` in the middleware pipeline.
 
-| Type | UI control | Notes |
-|------|------------|-------|
-| `str` | text input | `str(min,max)` for length constraint |
-| `bool` | toggle | |
-| `int` | number input | `int(min,max)` for range |
-| `float` | number input | `float(min,max)` |
-| `password` | masked input | never shown in plaintext in UI |
-| `url` | text input with url validation | |
-| `port` | number input 1–65535 | |
-| `email` | text input | |
-| `match(regex)` | text input + pattern validation | |
-| `list(a\|b\|c)` | dropdown/select | |
-| `[str]` | repeatable string list | user adds rows; closest to entity picker |
-| `[{key: type}]` | repeatable object list | nested dict, max depth 2 |
-| `type?` | any of above + `?` suffix | field is truly optional (no default required) |
+Option 1 (relative paths) is simpler and has no runtime dependency; Option 2 is required if the
+app uses absolute redirects or generates absolute URLs server-side.
 
-There is **no native entity picker** widget. User types entity_id strings into a `[str]` array field. The UI renders this as a list with add/remove row controls.
+### What the orchestrator already has (v2.0 assets)
+
+| Existing capability | How UI reuses it |
+|--------------------|-----------------|
+| `HaWebSocketClient.GetStatesAsync()` | Fetch all live entity states for the discovery browser |
+| `SelectDiscoverableSensors()` | Filter to numeric sensors not yet configured |
+| `EntitiesConfig` / `EntitiesConfigLoader` | Config model the UI reads and writes |
+| `entities.yaml` under `/data/` | Config file the UI persists changes to |
+| `ConnectionSettings.HaToken` (`SUPERVISOR_TOKEN`) | Auth for making HA API calls from the UI backend |
+| `DetectorConfig` + `HstParams` | Parameter schema the per-entity form is built from |
+
+The UI backend runs inside the same process as the orchestrator (ASP.NET minimal API added to the
+existing `Host`). It does not need a separate process or new container.
 
 ---
 
@@ -62,243 +72,255 @@ There is **no native entity picker** widget. User types entity_id strings into a
 
 ### Table Stakes (Users Expect These)
 
-| Feature | Why Expected | Complexity | Dependency on Existing Config | Notes |
-|---------|--------------|------------|-------------------------------|-------|
-| Custom repo + install from store | All HA add-ons work this way; missing = not an add-on | LOW | None — new repo structure | `repository.yaml` + add-on subfolder; Docker image on GHCR |
-| Configuration tab (options form) | Every add-on has one; missing = unusable | MEDIUM | Replaces all `ARGUS_*` env vars; `entities.yaml` generated from it | Schema must cover: entity list, InfluxDB, detector endpoint, batch schedule |
-| Auto HA auth (no token field) | Users expect add-ons to integrate silently; asking for a token = poor UX | LOW | Eliminates `ARGUS_HA_URL` + `ARGUS_HA_TOKEN` | `homeassistant_api: true` + `SUPERVISOR_TOKEN` |
-| Auto MQTT credentials (no MQTT fields) | Official Mosquitto add-on is the standard broker; credentials should wire up automatically | LOW | Eliminates all `ARGUS_MQTT_*` vars | `services: [mqtt:need]`; startup script reads via bashio |
-| Logs tab shows add-on output | Expected by every HA user for troubleshooting | LOW | No change — stdout/stderr already used | Ensure both orchestrator + detector processes log to stdout |
-| Start/Stop/Restart from UI | Standard add-on lifecycle; missing = must SSH | LOW | None | Managed by Supervisor automatically |
-| Add-on survives HA restart | Standard expectation | LOW | None | `boot: auto` in config.yaml |
-| startup script generates entities.yaml from options | Bridge between add-on options form and existing code | MEDIUM | Direct dependency: replaces manual `entities.yaml` editing | Bash or .NET startup reads `/data/options.json`, writes `entities.yaml` |
-| icon.png + logo.png | Users expect polished add-on cards | LOW | None | 128x128 icon, 250x100 logo; PNG |
-| DOCS.md in Documentation tab | Users read this before configuring; missing = confusion | LOW | None | Markdown shown verbatim in HA UI; cover all config options |
-| Watchdog / auto-restart on crash | Users expect services to self-heal | LOW | None | `watchdog: tcp://[HOST]:PORT` on a gRPC or HTTP health endpoint; Mosquitto pattern |
-| Multi-arch (amd64 + aarch64) | Raspberry Pi (aarch64) is the dominant HA platform; amd64-only = excludes majority of users | MEDIUM | None | GitHub Actions matrix build; `arch: [aarch64, amd64]` in config.yaml |
+These are the non-negotiable features for a usable Ingress config UI. Missing any one of them
+means the UI is broken or confusing.
+
+| Feature | Why Expected | Complexity | v2.0 Dependency | Notes |
+|---------|--------------|------------|-----------------|-------|
+| Ingress endpoint accessible via "Open Web UI" | Every HA add-on with a web UI uses Ingress; missing = button does nothing | LOW | Adds `ingress: true` + `ingress_port` to `config.yaml`; orchestrator adds ASP.NET minimal API server on that port | Port 8080 recommended (avoids conflict with watchdog gRPC on 50051) |
+| Live sensor list showing all HA numeric sensors | Without this the user has no idea what entity_ids exist; they are forced to use Developer Tools separately | MEDIUM | Reuses `HaWebSocketClient.GetStatesAsync()` + `SelectDiscoverableSensors()` already in v2.0 | Returns entity_id + current numeric value; no need to re-implement the HA call |
+| Current value shown per sensor in the list | Users need context to identify sensors (e.g. "22.3" for a temp vs a raw counter) | LOW | Values already returned by `GetStatesAsync()` | Format to 2 decimal places; omit unit (not available from basic get_states) |
+| Text search / filter on entity_id | A typical HA instance has 200-2000 entities; unfiltered list is unusable | LOW | Client-side JS only; no server round-trip needed | Substring match on entity_id string; update list on keyup |
+| Distinction: "already tracking" vs "available to add" | User must see which sensors Argus monitors and which are new candidates | LOW | Read `entities.yaml` from `/data/` (already written by startup) | Two sections or visual differentiation (checkbox state, label, color) |
+| Select/deselect sensors from the discovered list | Core action — add a sensor to tracking | LOW | Writes to `entities.yaml` via save action | Checkbox or toggle per row; bulk select not required for MVP |
+| Per-entity detector type selector (HST/MAD/STL) | Requirements spec (UI-03) explicitly calls this out; it is the main config action beyond entity selection | MEDIUM | `DetectorConfig.Name` + typed param structs already exist in v2.0 | Dropdown per entity; each detector has a distinct parameter set |
+| Per-detector parameter fields with defaults shown | Without visible defaults, users have no idea what "n_trees" means or what a safe value is | MEDIUM | `HstParams.From()` defaults already defined in `EntitiesConfig.cs` | Show current value pre-filled; display valid range next to each field |
+| Input validation with visible error messages before save | Without this users silently save bad config (e.g. `high_threshold: 2.0` which is out of range [0,1]) | MEDIUM | Parameter ranges are already coded in `HstParams` defaults; need to expose as validation rules | Validate on form submit; highlight fields in error; block save if invalid |
+| Save button persists changes to `/data/entities.yaml` | Core action; without persistence changes are lost on restart | LOW | `EntitiesConfigLoader` already reads this file; UI backend writes it | Atomic write (write to temp file, rename) to avoid partial writes |
+| Apply without add-on restart | Requirements spec (CFG-04) requires changes apply within seconds; a restart takes 15-30+ seconds and clears model state | HIGH | File-watch on `entities.yaml` in the orchestrator; reconfigure streaming pipeline in-place | This is the most technically complex table-stakes feature — see dependency notes |
+| Success/failure feedback after save | User needs to know whether the save worked and whether the orchestrator accepted the reload | LOW | The reload mechanism must return success/error status; UI polls or uses SSE | Toast notification or status banner; show error text on failure |
+| Config state survives add-on restart | User expects configuration to persist; losing it on restart = trust broken | LOW | `/data/` volume already survives restarts (v2.0 maps `type: data`) | No new work needed beyond correct path |
 
 ### Differentiators (Argus-Specific Value)
 
-| Feature | Value Proposition | Complexity | Dependency on Existing Config | Notes |
-|---------|-------------------|------------|-------------------------------|-------|
-| HA API auto-discovery of numeric sensors (optional, at startup) | User does not have to know entity_id strings; add-on can propose a filtered list | MEDIUM | None — new feature using SUPERVISOR_TOKEN | Call `GET /api/states` at startup; filter `state_class: measurement` + numeric `unit_of_measurement`; write entity list to startup log so user can copy-paste into form. Does not auto-populate the form (schema limitation). |
-| `include_patterns` + `exclude_patterns` glob fields | Power-user UX: monitor `sensor.*_temperature` without listing 20 entities | MEDIUM | Replaces / supplements `entities` list | `[str]` fields; startup script expands globs against `/api/states` to build `entities.yaml`. This is additive to the explicit list. |
-| Local detector by default (loopback, no mTLS, no config) | Zero networking config for the common case | MEDIUM | Overrides D4 mTLS (intentional for v2); `ARGUS_DETECTOR_ENDPOINT` becomes optional | `detector_endpoint` field absent or empty → use loopback; presence triggers mTLS path |
-| Optional external detector endpoint | Retains the GPU-host split for power users | LOW | `detector_endpoint: url?` + `tls_ca/cert/key: str?` optional fields | mTLS cert content as base64 `password?` fields (paths don't exist in add-on filesystem) |
-| InfluxDB in options form (all fields) | Batch detection works without SSH / env file editing | LOW | Maps 1:1 to `ARGUS_INFLUX_*` vars | url, token (password), org, bucket, measurement, value_field, batch_interval_minutes, nightly_fit_hour |
-| translations/en.yaml for option labels | Configuration tab shows human-readable labels instead of raw key names | LOW | None — additive | `configuration.entities.name`, `.description` etc.; straightforward to add |
-| Startup log prints discovered entities | Bridges the no-entity-picker gap; user sees what Argus found and can refine list | LOW | Requires homeassistant_api call at startup | Log lines like `[ARGUS] Discovered numeric sensor: sensor.salon_temperatura` |
+These features are not expected by default but meaningfully improve the UX for this specific use case.
 
-### Anti-Features (Deliberately NOT Building)
+| Feature | Value Proposition | Complexity | v2.0 Dependency | Notes |
+|---------|-------------------|------------|-----------------|-------|
+| include_patterns / exclude_patterns wired to real selection | The v2.0 schema has these fields but they are IGNORED; closing this gap is the explicit v3.0 goal (REQUIREMENTS CFG-02) | MEDIUM | `include_patterns` / `exclude_patterns` exist in `config.yaml` options schema; orchestrator must now actually apply them | Pattern UI: two text inputs (one pattern per line or comma-separated); preview which entities match before save |
+| Live pattern preview ("these 7 sensors would be tracked") | Users cannot tell if their glob `sensor.*_temperature` matches 2 or 20 sensors without running it | MEDIUM | Reuses `SelectDiscoverableSensors()` server-side; exposed via a preview endpoint | Debounce input → GET /api/ui/preview?patterns=... → returns matched count + list |
+| Multiple detectors per entity | v2.0 config model supports multiple `detectors:` per entity but the UI only needs to expose 1 per entity for MVP; surfacing the multi-detector model is a differentiator | MEDIUM | `EntityConfig.Detectors: List<DetectorConfig>` already supports multiple | "Add detector" button per entity row; UI renders each detector as a collapsible panel |
+| Detector parameter documentation shown inline | HST/MAD/STL parameters are ML concepts; showing a one-line tooltip ("Higher = more sensitive; default: 0.7") prevents misuse | LOW | No dependency — purely UI content | Tooltip or `<details>` element per parameter field |
+| Reload status visible in UI (applying / applied / error) | When "apply without restart" is in progress the user needs feedback that the orchestrator is reconfiguring | LOW | Reload mechanism must surface status; UI polls `GET /api/ui/status` | Status badge: "Idle / Reloading / Error" with timestamp of last successful reload |
+| Sensor count summary (N tracked, M available) | Quick orientation; how many sensors is Argus watching? | LOW | Count from loaded `EntitiesConfig` | Single line at top of page: "Tracking 3 sensors. 47 numeric sensors available." |
+| Unsaved-changes warning before navigating away | Prevents accidental loss of edits if the user clicks the HA sidebar while mid-edit | LOW | No dependency | Browser `beforeunload` event; warn only if form is dirty |
 
-| Feature | Why Requested | Why Problematic | What To Do Instead |
-|---------|---------------|-----------------|-------------------|
-| Native entity picker in the config form | Users expect GUI entity selection | Not possible in add-on options schema — the type system has no entity selector widget | Use `[str]` list + startup auto-discovery log; document that user copies entity_ids from HA Developer Tools |
-| Ingress / sidebar panel | Looks professional; ESPHome does it | Ingress is for add-ons with a web UI. Argus has no web frontend. Adding ingress for no reason creates a dead link in the sidebar and confuses users. | Do not set `ingress: true`. Use `panel_icon` only if a future UI panel is added. |
-| Per-entity detector tuning in the options form | Full control over detector params per entity | `[{entity_id: str, detector: str, threshold: float}]` nested list is schema depth 2 and extremely tedious to configure through the HA list UI; breaks the "zero-config" value | Use defaults for all detector params in the add-on options form. Advanced users can override via the v1 `entities.yaml` mechanism (mount point or local add-on variant). |
-| MQTT username/password fields in options | Users who don't use official Mosquitto need to enter creds | Adds 4 fields that 95% of users never fill in; creates confusion about whether to fill them | Use `services: [mqtt:need]`; if user needs external MQTT, that's a v3 concern. Document the Mosquitto dependency clearly in DOCS.md. |
-| HA token field in options | Power users on Container/Core don't have Supervisor | Duplicates auto-auth; misleads users on OS/Supervised into thinking they need to generate a token | The docker-compose path (for Container/Core) remains the v1 deployment; the add-on is strictly for OS/Supervised. Document this clearly. |
-| Arbitrary config file editor inside the add-on | Full power of entities.yaml without leaving HA | Complex to build safely; not what the options form is for | The add-on mount (`map: [addon_config:rw]`) can expose `/addon_configs/argus/` to File Editor; document this in DOCS.md for advanced users. |
-| GitHub Action auto-publish to store on every commit | Continuous deployment | HA add-on store indexes by GitHub release tags, not commits; auto-publishing every commit produces broken intermediate versions | Use GitHub release tags; GHA workflow triggers on `release: published` only. |
+### Anti-Features (Scope Traps to Explicitly Avoid)
 
----
+These are commonly requested or tempting features that should NOT be built for v3.0.
 
-## Options Schema → Existing Config Mapping
-
-Concrete mapping of v2 add-on options to v1 `ConnectionSettings.cs` fields and `entities.yaml`:
-
-### Eliminated (handled by Supervisor)
-
-| v1 env var | Why eliminated |
-|-----------|---------------|
-| `ARGUS_HA_URL` | `http://supervisor/core/api` is the fixed endpoint |
-| `ARGUS_HA_TOKEN` | `SUPERVISOR_TOKEN` is injected automatically |
-| `ARGUS_MQTT_HOST` | `bashio::services mqtt "host"` |
-| `ARGUS_MQTT_PORT` | `bashio::services mqtt "port"` |
-| `ARGUS_MQTT_USER` | `bashio::services mqtt "username"` |
-| `ARGUS_MQTT_PASSWORD` | `bashio::services mqtt "password"` |
-| `ARGUS_ENTITIES_PATH` | Always `/data/entities.yaml` (generated at startup) |
-
-### Mapped to options form fields
-
-| Options field | Type | Default | Maps to | Notes |
-|--------------|------|---------|---------|-------|
-| `entities` | `[str]` | `[]` | `entities.yaml` entity list | One entity_id per row; HST detector with all defaults |
-| `include_patterns` | `[str]?` | omit | Entity glob expansion at startup | e.g. `sensor.*_temperature` |
-| `exclude_patterns` | `[str]?` | omit | Excluded from glob expansion | e.g. `sensor.outdoor_*` |
-| `detector_endpoint` | `url?` | omit | `ARGUS_DETECTOR_ENDPOINT` | If absent → loopback gRPC, no mTLS |
-| `tls_ca` | `password?` | omit | `ARGUS_TLS_CA` (written to temp file) | Base64-encoded cert content; written to `/tmp/ca.crt` at startup |
-| `tls_cert` | `password?` | omit | `ARGUS_TLS_CERT` | Same pattern |
-| `tls_key` | `password?` | omit | `ARGUS_TLS_KEY` | Same pattern |
-| `influx_url` | `url?` | omit | `ARGUS_INFLUX_URL` | Batch detection only; if absent, batch disabled |
-| `influx_token` | `password?` | omit | `ARGUS_INFLUX_TOKEN` | |
-| `influx_org` | `str?` | omit | `ARGUS_INFLUX_ORG` | |
-| `influx_bucket` | `str?` | omit | `ARGUS_INFLUX_BUCKET` | |
-| `influx_measurement` | `str` | `homeassistant` | `ARGUS_INFLUX_MEASUREMENT` | |
-| `influx_value_field` | `str` | `value` | `ARGUS_INFLUX_VALUE_FIELD` | |
-| `batch_interval_minutes` | `int(1,1440)` | `10` | `ARGUS_BATCH_INTERVAL_MIN` | |
-| `nightly_fit_hour` | `int(0,23)` | `2` | `ARGUS_NIGHTLY_FIT_HOUR` | |
-
-### Generated at startup (not in options form)
-
-- `entities.yaml` — written by startup script by expanding `entities` list + `include_patterns` minus `exclude_patterns` against HA `/api/states`; all entities get default HST detector config
-- mTLS cert files — if `tls_*` options present, base64-decoded and written to `/tmp/`
-
----
-
-## Entity Selection UX Options (Concrete)
-
-The add-on schema has no entity picker. Three realistic approaches, ranked by implementation cost:
-
-### Option A — Manual list only (minimum viable, recommended for v2)
-
-```yaml
-# config.yaml
-options:
-  entities: []
-schema:
-  entities:
-    - str
-```
-
-User manually types `sensor.salon_temperatura`, `sensor.outdoor_temperature` etc. as rows in the UI list.
-
-**Startup behavior:** startup script reads `entities` array from `/data/options.json`, writes `entities.yaml` with default HST params for each.
-
-**Gap mitigation:** startup script calls `GET /api/states`, filters by numeric `state_class`, logs discovered entity_ids so user can copy-paste.
-
-Complexity: LOW. No HA API call required beyond what already exists.
-
-### Option B — Manual list + glob patterns (differentiator)
-
-Add `include_patterns` and `exclude_patterns` as `[str]?` fields. Startup script expands globs.
-
-```yaml
-options:
-  entities: []
-  include_patterns: []
-  exclude_patterns: []
-schema:
-  entities:
-    - str
-  include_patterns:
-    - str?
-  exclude_patterns:
-    - str?
-```
-
-Final entity list = (explicit `entities`) ∪ (globs expanded from `include_patterns`) \ (globs from `exclude_patterns`).
-
-Complexity: MEDIUM. Requires HA API call + fnmatch/glob expansion at startup.
-
-### Option C — Auto-discovery only (future / v3)
-
-No options form entry; startup calls `/api/states`, finds all `state_class: measurement` numeric sensors, monitors all of them. User uses `exclude_patterns` to opt out.
-
-Not recommended for v2: users need explicit control over what's monitored to avoid model pollution from unrelated sensors.
-
-**Recommendation: implement Option A for v2, expose discovered entity list in startup log. Option B can follow in a patch if users find the manual list tedious.**
+| Feature | Why Tempting | Why Problematic | What To Do Instead |
+|---------|-------------|-----------------|-------------------|
+| Full SPA framework (React, Vue, Svelte) | Modern, component-based, good DX | Adds a build pipeline to the .NET project; assets must be bundled and embedded in the image; significant complexity for a single-page config UI used infrequently | Use server-rendered HTML with vanilla JS or HTMX for dynamic parts. The config UI has ~3 screens; it does not need a component framework. |
+| InfluxDB configuration in the Ingress UI | All config in one place | InfluxDB settings are in `options.json` (managed by Supervisor); the Ingress UI does not own them. Writing them from the UI bypasses the Supervisor's options model and creates two sources of truth. | Leave InfluxDB config in the HA add-on options tab (Supervisor-managed). Ingress UI owns only entity selection and detector assignment. |
+| Add-on options tab removal | Single config UI is cleaner | The Supervisor options form handles fields the Ingress UI cannot (InfluxDB credentials, detector endpoint, batch interval). Removing the options tab breaks those fields. | Keep both. Document the split: options tab = infrastructure settings; Ingress UI = sensor + detector config. |
+| Live sensor value streaming / dashboard | "Wouldn't it be cool to see live anomaly scores?" | That is a monitoring dashboard, not a configuration UI. It requires SSE or WebSocket per-sensor streams, a real-time chart library, and significant ongoing maintenance. It dilutes the v3.0 focus. | HA already displays the MQTT-published binary_sensor + score sensor entities on any dashboard. Link to those entities from the UI if a live view is desired. |
+| User authentication / session management | Security concern | HA Ingress already authenticates the user before the request reaches the add-on. Adding a second auth layer confuses users and duplicates HA's work. | Trust the Ingress layer. Accept all connections from `172.30.32.2` (the Supervisor proxy IP) without additional auth. |
+| Undo / revision history | "What if I make a mistake?" | Adds complexity (storing previous config versions under `/data/`) with low frequency of use. The add-on restart itself is a recovery path (old model state is still on disk). | Document that the previous `entities.yaml` can be restored via File Editor if needed. A single backup copy (`.entities.yaml.bak`) written before each save is sufficient. |
+| Auto-discovery-only mode (no explicit entity list) | Zero config | Monitoring every numeric sensor produces model pollution and false positives from sensors that are naturally non-stationary (e.g. energy counters). Users need to choose what to watch. | Keep explicit selection as the primary mode. Use `include_patterns` to reduce typing, not to eliminate intention. |
+| Per-entity calibration / threshold tuning UI | Full control | HST threshold tuning requires understanding the anomaly score distribution for each sensor, which requires historical data and statistics the UI cannot display cleanly. Exposing raw threshold sliders without context leads to misconfiguration. | Expose only the documented `high_threshold` / `low_threshold` / `min_consecutive` fields with their defaults shown. Hide deeper tuning (frozen window, variance threshold) behind an "Advanced" toggle. |
+| Grafana-style iframe embed in HA dashboard | "Show sensor data inside a Lovelace card" | HA Ingress URLs are not embeddable in iframe/webpage Lovelace cards without an active Ingress session. This is a known HA limitation. Attempting it produces auth errors. | The anomaly entities themselves (binary_sensor + score sensor) are natively embeddable in Lovelace. No iframe needed. |
+| Multi-user concurrent editing | Two users editing config simultaneously | Single-user, single-operator system (PROJECT.md constraint). File-based config has no locking. | No concurrent editing protection needed. Document that only one operator should edit at a time (trivially true in a home setup). |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Custom repo + install flow]
-    └──requires──> [config.yaml with options schema]
-                       └──requires──> [startup script reads /data/options.json]
-                                          └──requires──> [entities.yaml generation]
+[Ingress endpoint (config.yaml + ASP.NET server)]
+    └──required by──> ALL UI features
 
-[Auto MQTT credentials]
-    └──requires──> [services: mqtt:need in config.yaml]
-    └──requires──> [Mosquitto add-on installed by user]
+[Entity discovery browser]
+    └──requires──> [HaWebSocketClient.GetStatesAsync() — already exists]
+    └──requires──> [SelectDiscoverableSensors() — already exists]
+    └──requires──> [SUPERVISOR_TOKEN available — already exists]
+    └──enhances──> [Entity selection checkboxes]
 
-[Auto HA auth]
-    └──requires──> [homeassistant_api: true in config.yaml]
+[Entity selection checkboxes]
+    └──requires──> [Entity discovery browser]
+    └──requires──> [Read current entities.yaml — already exists via EntitiesConfigLoader]
+    └──feeds──> [Save → write entities.yaml]
 
-[Startup log entity discovery]
-    └──requires──> [homeassistant_api: true]
-    └──enhances──> [manual entity list UX]
+[Detector type selector + parameter fields]
+    └──requires──> [Entity selection] (must know which entities are selected)
+    └──requires──> [DetectorConfig + HstParams — already in v2.0]
+    └──requires──> [Input validation rules]
+    └──feeds──> [Save → write entities.yaml]
 
-[Local detector default]
-    └──requires──> [detector + orchestrator both run in same container via s6]
-    └──conflicts──> [external detector endpoint] (mutually exclusive at runtime, not at config time)
+[Save → write entities.yaml]
+    └──requires──> [Input validation passes]
+    └──triggers──> [Reload without restart]
 
-[Watchdog]
-    └──requires──> [health endpoint on a known port in the container]
+[Reload without restart (CFG-04)]
+    └──requires──> [File watcher on entities.yaml — NEW, not in v2.0]
+    └──requires──> [In-place pipeline reconfiguration — NEW, not in v2.0]
+    └──requires──> [Save → write entities.yaml]
+    └──feeds──> [Reload status indicator in UI]
 
-[Multi-arch build]
-    └──requires──> [Dockerfile with multi-arch base images]
-    └──requires──> [GitHub Actions matrix build]
+[include_patterns / exclude_patterns wired]
+    └──requires──> [Entity discovery browser] (pattern expansion needs live entity list)
+    └──requires──> [Save → write entities.yaml]
+    └──optional──> [Live pattern preview endpoint]
+
+[Live pattern preview]
+    └──requires──> [include_patterns / exclude_patterns wired]
+    └──requires──> [HaWebSocketClient.GetStatesAsync()]
+
+[Reload status indicator]
+    └──requires──> [Reload without restart]
+    └──requires──> [Status endpoint GET /api/ui/status]
 ```
 
----
+### Key dependency notes
 
-## MVP Definition for v2.0
+- **Reload without restart is the single most complex dependency.** It requires the orchestrator
+  to watch `entities.yaml` for changes and reconfigure the live streaming pipeline without
+  cancelling the host. The v2.0 pipeline reads `EntitiesConfig` once at startup and registers it
+  as a singleton — this must change to a `IOptionsMonitor<EntitiesConfig>` or equivalent reactive
+  pattern. This is NOT currently implemented and is the highest-risk item for v3.0.
 
-### Must ship
+- **Entity discovery browser has zero new infrastructure cost.** `GetStatesAsync()` and
+  `SelectDiscoverableSensors()` already exist in v2.0; the UI just needs an HTTP endpoint that
+  calls them and returns JSON.
 
-- [ ] `repository.yaml` + add-on folder structure (slug, config.yaml, Dockerfile)
-- [ ] options schema covering: `entities [str]`, InfluxDB fields, `detector_endpoint?`, `batch_interval_minutes`, `nightly_fit_hour`
-- [ ] `homeassistant_api: true` + `services: [mqtt:need]` (auto auth + auto MQTT creds)
-- [ ] Startup script: reads `/data/options.json`, writes `entities.yaml`, sets env vars, starts s6 services
-- [ ] s6-overlay service supervision for orchestrator + detector processes
-- [ ] Watchdog declaration (`tcp://` on gRPC port or `http://` on health endpoint)
-- [ ] `boot: auto` + `startup: application`
-- [ ] Multi-arch: amd64 + aarch64 builds via GitHub Actions
-- [ ] DOCS.md covering install flow, prerequisites (Mosquitto), all config fields, troubleshooting
-- [ ] icon.png + logo.png
-- [ ] Startup log line listing discovered numeric sensors (entity selection gap mitigation)
-
-### Add after v2.0 ships
-
-- [ ] `translations/en.yaml` for option labels — improves polish, low effort
-- [ ] `include_patterns` / `exclude_patterns` glob fields — reduces manual list burden
-- [ ] Custom AppArmor profile — earns security point; requires profiling .NET + Python subprocess behavior
-- [ ] Per-entity detector param overrides — only if users complain about false positive rate
-
-### Defer to v3+
-
-- [ ] Ingress / sidebar panel — only if a web UI (diagnostics dashboard) is added
-- [ ] Auto-discovery-only mode (Option C) — requires UX for exclude lists first
-- [ ] HACS submission — requires stable public release and review process
+- **Ingress path-base is a blocking issue for static assets.** All `<script>`, `<link>`, and
+  `<img>` tags must use relative paths, or the app must read `X-Ingress-Path` at startup and
+  call `app.UsePathBase()` before `app.UseRouting()`. This must be solved before the first
+  working UI prototype.
 
 ---
 
-## Prioritization Matrix
+## MVP Definition for v3.0
+
+### Must ship (v3.0 launch)
+
+- [ ] `ingress: true` + `ingress_port` in `config.yaml` — enables "Open Web UI" button
+- [ ] ASP.NET minimal API server on ingress port, added to existing orchestrator host
+- [ ] `X-Ingress-Path` / relative-path handling so static assets resolve through the Supervisor proxy
+- [ ] Entity discovery page: fetch all HA numeric sensors, show entity_id + current value, text search
+- [ ] Entity selection: checkboxes; distinquish already-tracked from available; persist selection to `entities.yaml`
+- [ ] Per-entity detector assignment: detector type dropdown (HST/MAD/STL); parameter fields with defaults; parameter validation with error messages
+- [ ] Save action: atomic write to `/data/entities.yaml`; single `.bak` backup before overwrite
+- [ ] Reload without restart: file watcher triggers in-place pipeline reconfiguration; status returned to UI
+- [ ] Success/failure feedback: status banner or toast after save + reload attempt
+- [ ] `include_patterns` / `exclude_patterns` wired: pattern fields in UI; expansion applied before writing `entities.yaml` (closes v2.0 gap)
+- [ ] `ingress_entry` documented in DOCS.md; updated DOCS-02 requirement satisfied
+
+### Add after v3.0 ships (v3.x)
+
+- [ ] Live pattern preview — only if users find pattern matching confusing without it
+- [ ] Multiple detectors per entity in UI — model already supports it; UI currently shows 1
+- [ ] Advanced parameter toggle (frozen window, variance threshold) — hide by default, expose on demand
+- [ ] Unsaved-changes warning — browser `beforeunload`; low effort, add when UI is stable
+
+### Defer to v4+
+
+- [ ] Monitoring dashboard / live anomaly scores — distinct milestone, not config UI
+- [ ] Per-entity calibration UI with historical data — requires InfluxDB query integration in the UI
+- [ ] Multi-detector comparison view — requires understanding score distributions
+
+---
+
+## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Custom repo + install | HIGH | LOW | P1 |
-| Options form (entity list + InfluxDB) | HIGH | MEDIUM | P1 |
-| Auto HA auth (homeassistant_api) | HIGH | LOW | P1 |
-| Auto MQTT creds (services) | HIGH | LOW | P1 |
-| Startup generates entities.yaml | HIGH | MEDIUM | P1 |
-| s6 two-process supervision | HIGH | MEDIUM | P1 |
-| Multi-arch (amd64 + aarch64) | HIGH | MEDIUM | P1 |
-| Watchdog | MEDIUM | LOW | P1 |
-| DOCS.md | MEDIUM | LOW | P1 |
-| icon.png + logo.png | LOW | LOW | P1 |
-| Startup log: discovered entities | MEDIUM | LOW | P1 |
-| translations/en.yaml | LOW | LOW | P2 |
-| include_patterns / exclude_patterns | MEDIUM | MEDIUM | P2 |
-| Custom AppArmor profile | LOW | MEDIUM | P2 |
-| Per-entity detector tuning in form | LOW | HIGH | P3 |
-| Ingress panel | LOW | HIGH | P3 |
+| Ingress endpoint live | HIGH | LOW | P1 |
+| X-Ingress-Path / path-base handling | HIGH | LOW | P1 (blocker) |
+| Entity discovery browser | HIGH | LOW | P1 |
+| Text search/filter on entity list | HIGH | LOW | P1 |
+| Entity selection + tracking status | HIGH | LOW | P1 |
+| Detector type selector | HIGH | MEDIUM | P1 |
+| Parameter fields with defaults | HIGH | MEDIUM | P1 |
+| Input validation + error messages | HIGH | MEDIUM | P1 |
+| Save → write entities.yaml | HIGH | LOW | P1 |
+| Reload without restart (CFG-04) | HIGH | HIGH | P1 |
+| Success/failure feedback | HIGH | LOW | P1 |
+| include_patterns/exclude_patterns wired | MEDIUM | MEDIUM | P1 |
+| Reload status indicator | MEDIUM | LOW | P2 |
+| Sensor count summary | LOW | LOW | P2 |
+| Unsaved-changes warning | LOW | LOW | P2 |
+| Live pattern preview | MEDIUM | MEDIUM | P2 |
+| Multiple detectors per entity in UI | LOW | MEDIUM | P3 |
+| Advanced parameter toggle | LOW | LOW | P3 |
+| Monitoring dashboard | MEDIUM | HIGH | P3 (separate milestone) |
+
+**Priority key:** P1 = must have for v3.0 launch; P2 = add when core works; P3 = future
+
+---
+
+## Ingress Config.yaml Changes Required
+
+The v2.0 `config.yaml` does not declare ingress. These additions are required:
+
+```yaml
+# Add these fields to argus/config.yaml
+ingress: true
+ingress_port: 8080        # any free port; avoid 50051 (gRPC watchdog)
+ingress_entry: /          # path HA opens; "/" with UsePathBase is fine
+panel_icon: mdi:tune      # sidebar icon shown in HA
+panel_title: Argus Config # sidebar label
+```
+
+The watchdog currently points to `tcp://[HOST]:50051` (gRPC). The ingress port (8080) should also
+be reachable for a `http://` watchdog entry if the health endpoint is added to the minimal API.
+
+---
+
+## Reload Without Restart — Technical Options
+
+This is the highest-complexity table-stakes feature. Three approaches ranked by risk:
+
+### Option R1 — FileSystemWatcher + IOptionsMonitor (recommended)
+
+Use `IOptionsMonitor<EntitiesConfig>` with a custom JSON/YAML file provider. On file change:
+1. Reload `entities.yaml` from disk.
+2. Diff old vs new entity set.
+3. Add new entities to `ScoreStreamPipeline` and `_configuredEntities` HashSet.
+4. Remove dropped entities (send MQTT `unavailable`, unregister from pipeline).
+5. Return success to UI via status endpoint.
+
+Risk: `ScoreStreamPipeline` and `HaListenerWorker` currently read `EntitiesConfig` once at
+construction time (singleton). The DI graph must be restructured to tolerate live entity set
+changes. This is the main implementation risk.
+
+Mitigation: scope the reload to only what changes — the `_configuredEntities` HashSet in
+`NetDaemonHaEventSource` and the per-entity `EntityRuntimeState` map in `ScoreStreamPipeline`.
+The gRPC channel and MQTT connection do not need to restart.
+
+### Option R2 — Soft restart (process self-restart)
+
+Write config, then signal the orchestrator to exit with code 0. The s6 supervisor restarts it.
+Simpler to implement; respects the existing startup path entirely.
+
+Downside: ~5-10 second gap during restart; in-flight gRPC streams drop; MQTT LWT fires briefly.
+Not acceptable per CFG-04 ("within seconds").
+
+### Option R3 — Config-gen bridge only (no in-process reload)
+
+UI writes new `entities.yaml`; a separate config-gen script regenerates and restarts only the
+entities-tracking state. Requires IPC between script and orchestrator (signal, named pipe, HTTP).
+More complex than R1 with no benefit.
+
+**Recommendation: R1.** The IOptionsMonitor pattern is well-supported in .NET 8 and documented.
+The key constraint is that `reloadOnChange: true` must be set on the YAML file provider, and
+`UsePathBase` must be registered before `UseRouting` if absolute redirects are needed.
 
 ---
 
 ## Sources
 
-- [HA Add-on Configuration docs](https://developers.home-assistant.io/docs/add-ons/configuration/) — schema type system, options/schema fields, watchdog, services, maps
-- [HA Add-on Presentation docs](https://developers.home-assistant.io/docs/add-ons/presentation/) — DOCS.md, icon/logo specs
-- [HA Add-on Tutorial](https://developers.home-assistant.io/docs/add-ons/tutorial/) — install flow, run.sh conventions, /data/options.json
-- [HA Add-on Communication docs](https://developers.home-assistant.io/docs/add-ons/communication/) — SUPERVISOR_TOKEN, homeassistant_api, services mqtt credential injection
-- [Mosquitto add-on config.yaml](https://github.com/home-assistant/addons/blob/master/mosquitto/config.yaml) — watchdog tcp:// pattern, services: mqtt:provide, startup: system
-- [Z-Wave JS UI add-on config.yaml](https://github.com/hassio-addons/addon-zwave-js-ui/blob/main/zwave-js-ui/config.yaml) — ingress, panel_icon, services: mqtt:want, mature add-on conventions
-- [HA builder GitHub Action](https://github.com/marketplace/actions/home-assistant-builder) — multi-arch build workflow
-- [hassio-addons/bashio](https://github.com/hassio-addons/bashio) — bashio::services mqtt, bashio::config helpers
+- [HA Add-on Presentation / Ingress docs](https://developers.home-assistant.io/docs/add-ons/presentation) — ingress: true, ingress_port, X-Ingress-Path header, IP restriction
+- [HA community: Addon ingress thread](https://community.home-assistant.io/t/addon-ingress/936226) — real add-on developer pitfalls with path resolution
+- [HA community: Trouble with static assets in custom addon with ingress](https://community.home-assistant.io/t/trouble-with-static-assets-in-custom-addon-with-ingress/712298) — relative paths vs X-Ingress-Path
+- [HA community: How to use X-Ingress-Path in an add-on](https://community.home-assistant.io/t/how-to-use-x-ingress-path-in-an-add-on/276905) — base URL extraction pattern
+- [Understanding PathBase in ASP.NET Core — Andrew Lock](https://andrewlock.net/understanding-pathbase-in-aspnetcore/) — UsePathBase placement before UseRouting
+- [Using PathBase with .NET 6 WebApplicationBuilder — Andrew Lock](https://andrewlock.net/using-pathbase-with-dotnet-6-webapplicationbuilder/) — minimal API specific guidance
+- [Real-Time Config Updates with IOptionsMonitor .NET](https://medium.com/codenx/real-time-configuration-updates-in-asp-net-core-with-live-loading-of-appsettings-json-d63eac388d28) — file watcher + IOptionsMonitor pattern
+- [MinimalAPI IOptionsMonitor known issue — dotnet/aspnetcore#34056](https://github.com/dotnet/aspnetcore/issues/34056) — builder.Configuration vs DI IConfiguration mismatch warning
+- [hms-homelab/hms-baby-tracker](https://github.com/hms-homelab/hms-baby-tracker) — real HA add-on with Ingress UI (FastAPI + SQLite pattern)
+- [HTMX + Alpine.js for config UIs — InfoWorld](https://www.infoworld.com/article/3856520/htmx-and-alpine-js-how-to-combine-two-great-lean-front-ends.html) — lightweight alternative to SPA for config UIs
 
 ---
-*Feature research for: Home Assistant add-on packaging + UI configuration + lifecycle*
-*Researched: 2026-06-29*
+*Feature research for: Home Assistant add-on Ingress configuration web UI (v3.0)*
+*Researched: 2026-06-30*
