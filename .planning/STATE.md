@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ingress Configuration UI
-status: planning
-last_updated: "2026-06-30T00:00:00.000Z"
+status: executing
+last_updated: "2026-06-30T19:12:46.295Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
   percent: 0
 ---
 
@@ -19,14 +19,14 @@ progress:
 
 - Milestone: **v3.0 Ingress Configuration UI** — roadmap created (4 phases), requirements mapped
 - Previous: **v2.0 Home Assistant Add-on — SHIPPED & live-verified 2026-06-30**
-- Last action: Roadmap created for v3.0 — 2026-06-30
+- Last action: Plan 01-01 complete — config seam (EntitiesConfigLoader softened + ConfigWriter atomic write) — 2026-06-30
 
 ## Project Reference
 
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds.
-**Current focus:** v3.0 Phase 1 — Ingress Scaffold + SDK Migration + Config Seam
+**Current focus:** Phase 01 — Ingress Scaffold + SDK Migration + Config Seam
 
 ## Phase Status (v3.0)
 
@@ -38,7 +38,7 @@ See: .planning/PROJECT.md
 | 4 | Validation, CI Packaging + Documentation | Not started |
 
 ```
-Progress: [                    ] 0% (0/4 phases)
+Progress: [█████░░░░░] 50%
 ```
 
 v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -85,6 +85,12 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 - Mono-repo: proto/, orchestrator/, detector/, deploy/, argus/ (add-on)
 - Licenses: BSD/Apache/MIT only (no GPL, no ADTK/MPL-2.0)
 
+### Plan 01-01 decisions (config seam)
+
+- Null YAML deserialization returns `new EntitiesConfig()` instead of throwing — maintains no-crash guarantee for all first-boot scenarios
+- `ConfigWriter` not registered in DI by Plan 01 — Plan 02 owns `Program.cs` to avoid parallel-wave file conflict
+- `ConfigWriter.WriteAsync` writes verbatim strings; YAML serialization deferred to Phase 2+ callers (keeps writer focused and testable)
+
 ### Blockers
 
 - None
@@ -96,21 +102,22 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 | Plans completed | — | 0/TBD |
 | Phases completed | 4 | 0/4 |
 | Requirements mapped | 9/9 | 9/9 |
+| Phase 01 P01-01 | 2 | 2 tasks | 5 files |
 
 ## Session Continuity
 
-- Last session: 2026-06-30 — v3.0 roadmap created from research + requirements.
-- Resume point: `/gsd-discuss-phase 1` to refine Phase 1 plans, or `/gsd-plan-phase 1` to begin planning directly.
+- Last session: 2026-06-30 — Plan 01-01 complete: EntitiesConfigLoader softened (LogWarning on empty entities) + ConfigWriter (atomic temp-then-rename + SemaphoreSlim).
+- Resume point: Execute Plan 01-02 (SDK migration + Program.cs + Kestrel bind + Ingress placeholder page).
 
 ## Operator Next Steps
 
-1. Run `/gsd-discuss-phase 1` (recommended) to refine Phase 1 scope and identify the exact plan breakdown before implementation.
-2. Alternatively, run `/gsd-plan-phase 1` to generate executable plans directly from the Phase 1 roadmap entry.
-3. During Phase 1 planning/execution: live-test the X-Ingress-Path / UsePathBase behavior on the real HA OS instance to resolve the STACK vs PITFALLS conflict.
+1. Execute Plan 01-02: SDK migration (Worker → Web), Program.cs WebApplication builder, Kestrel bind on 0.0.0.0:8099, ConfigWriter DI registration, Ingress placeholder page.
+2. During Plan 01-02/02 execution: live-test X-Ingress-Path / UsePathBase conflict on real HA OS — safe implementation is per-request PathBase + `<base href="...">`.
+3. Before Phase 2 save endpoint: land `gen-entities.py` guard (`_source: ui` marker) to prevent add-on restart erasing UI config.
 
 ## Current Position
 
-Phase: 1 — Ingress Scaffold + SDK Migration + Config Seam
-Plan: —
-Status: Not started
-Last activity: 2026-06-30 — Roadmap created
+Phase: 01 (Ingress Scaffold + SDK Migration + Config Seam) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-06-30

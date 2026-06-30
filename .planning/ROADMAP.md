@@ -69,7 +69,7 @@ apply without an add-on restart.
 **Plans**: 2 plans
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Config seam: empty-entities warning fix + atomic ConfigWriter (CFG-01)
+- [x] 01-01-PLAN.md — Config seam: empty-entities warning fix + atomic ConfigWriter (CFG-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -165,7 +165,7 @@ apply without an add-on restart.
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1-2. Foundations + Batch/Model Lifecycle | v1.0 | 14/14 | Complete | 2026-06-10 |
-| 1. Add-on Skeleton + Config-Gen | v2.0 | 3/3 | Complete | 2026-06-30 |
+| 1. Add-on Skeleton + Config-Gen | v2.0 | 1/2 | In Progress|  |
 | 2. v1 Code Changes | v2.0 | 2/2 | Complete | 2026-06-30 |
 | 3. Process Supervision + Runtime Integration | v2.0 | 3/3 | Complete | 2026-06-30 |
 | 4. Multi-Arch CI + Integration + Documentation | v2.0 | 2/2 | Complete | 2026-06-30 |

@@ -20,7 +20,7 @@ parameters per sensor, and apply changes without an add-on restart.
 - [ ] **UI-04** — UI inputs are validated (entity_id format, parameter ranges) with clear error messages before save.
 
 ### CFG — Configuration model & lifecycle
-- [ ] **CFG-01** — A single configuration source of truth under `/data` is read by both the UI and the orchestrator's `EntitiesConfigLoader`.
+- [x] **CFG-01** — A single configuration source of truth under `/data` is read by both the UI and the orchestrator's `EntitiesConfigLoader`.
 - [ ] **CFG-02** — Entity selection (incl. `include_patterns`/`exclude_patterns` honored as filters) persists to the config and is consumed by the orchestrator — replacing the manual `entities` list and closing the v2.0 patterns-ignored gap.
 - [ ] **CFG-03** — Per-entity detector/parameter assignments persist in the structure `EntitiesConfigLoader` expects (multiple detectors per entity supported; sane defaults when unset).
 - [ ] **CFG-04** — Configuration changes apply to the running orchestrator within seconds via reload, without restarting the add-on.
