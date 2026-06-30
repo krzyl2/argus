@@ -139,6 +139,13 @@ public class NetDaemonHaEventSource : IHaEventSource
 
                     // Subscribe to state_changed stream
                     await SubscribeAndForwardAsync(connection, writer, ct).ConfigureAwait(false);
+
+                    // Subscribe returned (connection closed cleanly, no exception):
+                    // HA is no longer connected, so clear the signal before the next
+                    // reconnect attempt. Without this, a clean WS close would leave
+                    // HaConnected=true and HealthPublisherWorker would report healthy
+                    // while HA is actually down (WR-01, HEALTH-01).
+                    _signals.HaConnected = false;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
