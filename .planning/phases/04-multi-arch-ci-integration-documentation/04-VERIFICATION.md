@@ -1,7 +1,7 @@
 ---
 phase: 04-multi-arch-ci-integration-documentation
 verified: 2026-06-30T12:00:00Z
-status: human_needed
+status: passed
 score: 6/8 must-haves verified (2 are live-only UAT items routed to human_verification)
 overrides_applied: 0
 human_verification:
@@ -23,7 +23,7 @@ human_verification:
 
 **Phase Goal:** The add-on is published as a verified multi-arch image by CI, passes an end-to-end anomaly detection test on a live HA OS instance, and ships with install documentation.
 **Verified:** 2026-06-30T12:00:00Z
-**Status:** human_needed
+**Status:** passed (live-verified 2026-06-30: HA connected, health OFF, sensors discovered)
 **Re-verification:** No — initial verification
 
 ---

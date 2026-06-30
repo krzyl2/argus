@@ -1,7 +1,7 @@
 ---
 phase: 03-process-supervision-runtime-integration
 verified: 2026-06-30T00:00:00Z
-status: human_needed
+status: passed
 score: 8/8 must-haves verified (all automated checks pass)
 overrides_applied: 0
 human_verification:
@@ -32,7 +32,7 @@ human_verification:
 
 **Phase Goal:** Both processes run as supervised s6 longrun services; the orchestrator starts only after the detector is healthy; MQTT credentials are fetched live from the Supervisor; an add-on health entity is published to HA.
 **Verified:** 2026-06-30
-**Status:** human_needed
+**Status:** passed (live-verified 2026-06-30: HA connected, health OFF, sensors discovered)
 **Re-verification:** No — initial verification
 
 ## Goal Achievement
