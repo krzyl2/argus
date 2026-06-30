@@ -48,6 +48,12 @@ jobs:
         id: builddate
         run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
+      - name: Compute image version (strip leading v from tag)
+        id: ver
+        env:
+          REF: ${{ github.ref_name }}
+        run: echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v6
         with:
@@ -56,10 +62,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/argus:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/argus:${{ steps.ver.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/argus:latest
           build-args: |
-            BUILD_VERSION=${{ github.ref_name }}
+            BUILD_VERSION=${{ steps.ver.outputs.version }}
             BUILD_DATE=${{ steps.builddate.outputs.date }}
             BUILD_REF=${{ github.sha }}
         timeout-minutes: 120
@@ -68,8 +74,8 @@ jobs:
         id: imgref
         env:
           OWNER: ${{ github.repository_owner }}
-          REF: ${{ github.ref_name }}
-        run: echo "ref=ghcr.io/${OWNER}/argus:${REF}" >> "$GITHUB_OUTPUT"
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: echo "ref=ghcr.io/${OWNER}/argus:${VERSION}" >> "$GITHUB_OUTPUT"
 
   image-facts:
     runs-on: ubuntu-latest
