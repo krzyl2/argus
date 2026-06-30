@@ -25,6 +25,7 @@ public static class LogEvents
     // HA listener
     public static readonly EventId HaListenerStarting = new(3001, nameof(HaListenerStarting));
     public static readonly EventId HaListenerDetectorHealthy = new(3002, nameof(HaListenerDetectorHealthy));
+    public static readonly EventId DiscoveredSensorsLogged = new(3003, nameof(DiscoveredSensorsLogged));
 
     // MQTT publisher
     public static readonly EventId MqttConnected = new(4001, nameof(MqttConnected));
@@ -35,6 +36,9 @@ public static class LogEvents
     public static readonly EventId MqttWorkerStarted = new(4006, nameof(MqttWorkerStarted));
     public static readonly EventId MqttWorkerReady = new(4007, nameof(MqttWorkerReady));
     public static readonly EventId MqttCredentialsRefreshed = new(4008, nameof(MqttCredentialsRefreshed));
+
+    // Health publisher (6xxx)
+    public static readonly EventId HealthEntityPublished = new(6001, nameof(HealthEntityPublished));
 
     // Batch scheduler (5xxx)
     public static readonly EventId BatchSchedulerStarted   = new(5001, nameof(BatchSchedulerStarted));

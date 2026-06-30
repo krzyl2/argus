@@ -1,6 +1,6 @@
 using Argus.Detector.V1;
 using Argus.Orchestrator.Logging;
-using Grpc.Health.V1;
+using GrpcHealth = Grpc.Health.V1;
 using Grpc.Net.Client;
 using Microsoft.Extensions.Logging;
 
@@ -19,7 +19,7 @@ public class DetectionGateway : IDisposable
     private readonly ILogger<DetectionGateway> _logger;
 
     public DetectorService.DetectorServiceClient DetectorClient { get; }
-    public Health.HealthClient HealthClient { get; }
+    public GrpcHealth.Health.HealthClient HealthClient { get; }
 
     public DetectionGateway(GrpcChannel channel, ILogger<DetectionGateway> logger)
     {
@@ -28,7 +28,7 @@ public class DetectionGateway : IDisposable
 
         // Create stubs from the single shared channel (anti-pattern: multiple channels)
         DetectorClient = new DetectorService.DetectorServiceClient(_channel);
-        HealthClient = new Health.HealthClient(_channel);
+        HealthClient = new GrpcHealth.Health.HealthClient(_channel);
     }
 
     /// <summary>
@@ -51,11 +51,11 @@ public class DetectionGateway : IDisposable
 
                 var deadline = DateTime.UtcNow.AddSeconds(5);
                 var resp = await HealthClient.CheckAsync(
-                    new HealthCheckRequest { Service = "argus.v1.DetectorService" },
+                    new GrpcHealth.HealthCheckRequest { Service = "argus.v1.DetectorService" },
                     deadline: deadline,
                     cancellationToken: ct);
 
-                if (resp.Status == HealthCheckResponse.Types.ServingStatus.Serving)
+                if (resp.Status == GrpcHealth.HealthCheckResponse.Types.ServingStatus.Serving)
                 {
                     _logger.Log(LogLevel.Information, LogEvents.StartupHealthCheckServing,
                         "Detector is SERVING — health gate passed on attempt {Attempt}",
@@ -65,7 +65,7 @@ public class DetectionGateway : IDisposable
 
                 _logger.Log(LogLevel.Warning, LogEvents.StartupHealthCheckNotServing,
                     "Detector health check returned {Status} on attempt {Attempt}",
-                    resp.Status, attempt + 1);
+                    resp.Status.ToString(), attempt + 1);
             }
             catch (OperationCanceledException)
             {

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Argus.Orchestrator.Mqtt;
+using Argus.Orchestrator.Workers;
 using Xunit;
 
 namespace Argus.Orchestrator.Tests;
@@ -115,5 +116,97 @@ public class HealthEntityTests
     {
         using var doc = ParseHealthPayload();
         Assert.Equal("Argus", doc.RootElement.GetProperty("device").GetProperty("name").GetString());
+    }
+
+    // ── HealthPublisherWorker fake-inject tests ──────────────────────────────
+    // Mirror the MqttConnectionTests fake-credential-source pattern (03-02):
+    // inject fake delegates, assert the correct payload is computed and published.
+
+    [Fact]
+    public async Task ExecuteHealthCycle_AllHealthy_PublishesOff()
+    {
+        var published = new List<(string Topic, string Payload, bool Retain)>();
+
+        var (_, payload) = await HealthPublisherWorker.ExecuteHealthCycleAsync(
+            detectServing: _ => Task.FromResult(true),
+            getHaConnected: () => true,
+            getMqttConnected: () => true,
+            publish: (t, p, r, _) => { published.Add((t, p, r)); return Task.CompletedTask; },
+            ct: CancellationToken.None);
+
+        Assert.Equal("OFF", payload);
+        Assert.Single(published);
+        Assert.Equal(DiscoveryPublisher.HealthStateTopic, published[0].Topic);
+        Assert.Equal("OFF", published[0].Payload);
+        Assert.True(published[0].Retain);
+    }
+
+    [Fact]
+    public async Task ExecuteHealthCycle_DetectorNotServing_PublishesOn()
+    {
+        var (serving, payload) = await HealthPublisherWorker.ExecuteHealthCycleAsync(
+            detectServing: _ => Task.FromResult(false),
+            getHaConnected: () => true,
+            getMqttConnected: () => true,
+            publish: (_, _, _, _) => Task.CompletedTask,
+            ct: CancellationToken.None);
+
+        Assert.False(serving);
+        Assert.Equal("ON", payload);
+    }
+
+    [Fact]
+    public async Task ExecuteHealthCycle_HaNotConnected_PublishesOn()
+    {
+        var (_, payload) = await HealthPublisherWorker.ExecuteHealthCycleAsync(
+            detectServing: _ => Task.FromResult(true),
+            getHaConnected: () => false,
+            getMqttConnected: () => true,
+            publish: (_, _, _, _) => Task.CompletedTask,
+            ct: CancellationToken.None);
+
+        Assert.Equal("ON", payload);
+    }
+
+    [Fact]
+    public async Task ExecuteHealthCycle_MqttNotConnected_PublishesOn()
+    {
+        var (_, payload) = await HealthPublisherWorker.ExecuteHealthCycleAsync(
+            detectServing: _ => Task.FromResult(true),
+            getHaConnected: () => true,
+            getMqttConnected: () => false,
+            publish: (_, _, _, _) => Task.CompletedTask,
+            ct: CancellationToken.None);
+
+        Assert.Equal("ON", payload);
+    }
+
+    [Fact]
+    public async Task ExecuteHealthCycle_DetectorThrows_TreatsAsNotServing_PublishesOn()
+    {
+        // Simulates gRPC deadline exceeded or transport failure (T-03-08)
+        var (_, payload) = await HealthPublisherWorker.ExecuteHealthCycleAsync(
+            detectServing: _ => Task.FromException<bool>(new Exception("gRPC unavailable")),
+            getHaConnected: () => true,
+            getMqttConnected: () => true,
+            publish: (_, _, _, _) => Task.CompletedTask,
+            ct: CancellationToken.None);
+
+        Assert.Equal("ON", payload);
+    }
+
+    [Fact]
+    public async Task ExecuteHealthCycle_PublishesToHealthStateTopic()
+    {
+        var capturedTopic = string.Empty;
+
+        await HealthPublisherWorker.ExecuteHealthCycleAsync(
+            detectServing: _ => Task.FromResult(true),
+            getHaConnected: () => true,
+            getMqttConnected: () => true,
+            publish: (t, _, _, _) => { capturedTopic = t; return Task.CompletedTask; },
+            ct: CancellationToken.None);
+
+        Assert.Equal("argus/addon/health/state", capturedTopic);
     }
 }

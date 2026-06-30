@@ -2,6 +2,7 @@ using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Detection;
 using Argus.Orchestrator.Ha;
+using Argus.Orchestrator.Health;
 using Argus.Orchestrator.Mqtt;
 using Argus.Orchestrator.Workers;
 using Grpc.Net.Client;
@@ -71,7 +72,12 @@ builder.Services.AddHomeAssistantClient();
 // Register ReconnectCooldown (60s post-reconnect binary_sensor suppression — D-07)
 builder.Services.AddSingleton<ReconnectCooldown>();
 
+// Register ArgusHealthSignals singleton (HEALTH-01): shared liveness flag between
+// NetDaemonHaEventSource (writer) and HealthPublisherWorker (reader).
+builder.Services.AddSingleton<ArgusHealthSignals>();
+
 // Register HA event source (NetDaemon.Client WebSocket subscription — STRM-01/STRM-02)
+// ArgusHealthSignals is resolved automatically from DI (injected into NetDaemonHaEventSource ctor).
 builder.Services.AddSingleton<IHaEventSource, NetDaemonHaEventSource>();
 
 // Register HA listener worker (consumes IHaEventSource after health gate)
@@ -97,6 +103,9 @@ builder.Services.AddSingleton<StatePublisher>();
 // IStatePublisher resolves to the same singleton StatePublisher (for ScoreStreamPipeline injection)
 builder.Services.AddSingleton<IStatePublisher>(sp => sp.GetRequiredService<StatePublisher>());
 builder.Services.AddHostedService<MqttPublisherWorker>();
+
+// Register HealthPublisherWorker (HEALTH-01): publishes composite health entity to HA via MQTT
+builder.Services.AddHostedService<HealthPublisherWorker>();
 
 // Register ScoreStreamPipeline (Plan 08): bidi ScoreStream loop with hysteresis/frozen/MQTT
 builder.Services.AddSingleton<ScoreStreamPipeline>();

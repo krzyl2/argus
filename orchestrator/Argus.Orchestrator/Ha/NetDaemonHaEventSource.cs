@@ -1,4 +1,5 @@
 using Argus.Orchestrator.Config;
+using Argus.Orchestrator.Health;
 using Argus.Orchestrator.Logging;
 using Microsoft.Extensions.Logging;
 using NetDaemon.Client;
@@ -32,6 +33,7 @@ public class NetDaemonHaEventSource : IHaEventSource
     private readonly EntitiesConfig _entitiesConfig;
     private readonly ReconnectCooldown _cooldown;
     private readonly IHomeAssistantClient _haClient;
+    private readonly ArgusHealthSignals _signals;
     private readonly ILogger<NetDaemonHaEventSource> _logger;
 
     // Precomputed O(1) lookup set of configured entity_ids
@@ -42,12 +44,14 @@ public class NetDaemonHaEventSource : IHaEventSource
         EntitiesConfig entitiesConfig,
         ReconnectCooldown cooldown,
         IHomeAssistantClient haClient,
+        ArgusHealthSignals signals,
         ILogger<NetDaemonHaEventSource> logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _entitiesConfig = entitiesConfig ?? throw new ArgumentNullException(nameof(entitiesConfig));
         _cooldown = cooldown ?? throw new ArgumentNullException(nameof(cooldown));
         _haClient = haClient ?? throw new ArgumentNullException(nameof(haClient));
+        _signals = signals ?? throw new ArgumentNullException(nameof(signals));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _configuredEntities = new HashSet<string>(
@@ -108,6 +112,9 @@ public class NetDaemonHaEventSource : IHaEventSource
                         "Connected to HA WebSocket (host={Host} port={Port} ssl={Ssl})",
                         host, port, ssl);
 
+                    // Signal HA connectivity (HEALTH-01 composite health)
+                    _signals.HaConnected = true;
+
                     // Reset backoff on successful connection
                     backoffSeconds = BackoffInitialSeconds;
 
@@ -133,6 +140,9 @@ public class NetDaemonHaEventSource : IHaEventSource
                 }
                 catch (Exception ex)
                 {
+                    // Clear HA connectivity signal on any connection loss (HEALTH-01)
+                    _signals.HaConnected = false;
+
                     _logger.LogWarning(ex,
                         "HA WebSocket connection lost — backing off {BackoffSeconds}s before reconnect",
                         backoffSeconds);

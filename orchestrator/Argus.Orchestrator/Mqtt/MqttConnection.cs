@@ -40,6 +40,12 @@ public sealed class MqttConnection : IAsyncDisposable
     }
 
     /// <summary>
+    /// True when the underlying MQTT client is currently connected to the broker.
+    /// Used by HealthPublisherWorker as the MQTT component of composite health (HEALTH-01).
+    /// </summary>
+    public bool IsConnected => _client.IsConnected;
+
+    /// <summary>
     /// Connects to the broker, then immediately publishes "online" to availability topic.
     /// Credentials are fetched fresh on every call — never reused from a prior attempt (SUPV-03).
     /// LWT is configured in the options BEFORE ConnectAsync is called (PITFALL 6, RES-01).
