@@ -17,15 +17,21 @@ public sealed class ConfigWriter
         CancellationToken ct = default)
     {
         await _lock.WaitAsync(ct);
+        string? tmp = null;
         try
         {
             var dir = Path.GetDirectoryName(targetPath)!;
-            var tmp = Path.Combine(dir, $".entities.tmp.{Guid.NewGuid():N}.yaml");
+            tmp = Path.Combine(dir, $".entities.tmp.{Guid.NewGuid():N}.yaml");
             await File.WriteAllTextAsync(tmp, yaml, ct);
             File.Move(tmp, targetPath, overwrite: true); // atomic POSIX rename
+            tmp = null; // Move succeeded — do not delete
         }
         finally
         {
+            if (tmp != null)
+            {
+                try { File.Delete(tmp); } catch { /* best-effort cleanup */ }
+            }
             _lock.Release();
         }
     }
