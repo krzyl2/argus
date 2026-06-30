@@ -174,7 +174,9 @@ public sealed class MqttConnection : IAsyncDisposable
             catch (Exception ex)
             {
                 _logger.LogWarning(LogEvents.MqttReconnecting, ex, "MQTT reconnect attempt failed");
-                delay = delay * 2 < maxDelay ? delay * 2 : maxDelay;
+                // Clamp the doubled backoff to the cap using the same idiom as
+                // NetDaemonHaEventSource for consistency and correctness (WR-04).
+                delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, maxDelay.TotalSeconds));
             }
         }
     }
