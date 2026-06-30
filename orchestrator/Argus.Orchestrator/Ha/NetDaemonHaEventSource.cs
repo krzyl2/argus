@@ -118,6 +118,12 @@ public class NetDaemonHaEventSource : IHaEventSource
                     // Reset backoff on successful connection
                     backoffSeconds = BackoffInitialSeconds;
 
+                    // On FIRST connect: log discovered numeric sensors not yet configured (UICFG-05)
+                    if (isFirstConnection)
+                    {
+                        await LogDiscoverableSensorsAsync(connection, ct).ConfigureAwait(false);
+                    }
+
                     // On reconnect (not first connect): snapshot get_states + mark cooldown (D-07)
                     if (!isFirstConnection)
                     {
@@ -246,6 +252,51 @@ public class NetDaemonHaEventSource : IHaEventSource
 
         // Wait for the connection to close or CT to fire
         await connection.WaitForConnectionToCloseAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Logs discovered numeric sensors (UICFG-05) on the FIRST successful HA connect.
+    /// One INFO line per unconfigured numeric sensor (entity_id + last value),
+    /// followed by a total-count line.
+    /// </summary>
+    private async Task LogDiscoverableSensorsAsync(IHomeAssistantConnection connection, CancellationToken ct)
+    {
+        var states = await connection.GetStatesAsync(ct).ConfigureAwait(false);
+        if (states is null) return;
+
+        var discoverable = SelectDiscoverableSensors(
+            states.Select(s => (s.EntityId, s.State)),
+            _configuredEntities);
+
+        foreach (var (entityId, value) in discoverable)
+        {
+            _logger.LogInformation(LogEvents.DiscoveredSensorsLogged,
+                "Unconfigured numeric sensor: {EntityId} = {Value}", entityId, value);
+        }
+
+        _logger.LogInformation(LogEvents.DiscoveredSensorsLogged,
+            "Startup sensor discovery: {Count} unconfigured numeric sensors found", discoverable.Count);
+    }
+
+    /// <summary>
+    /// Pure static selector for UICFG-05: returns all numeric sensors not already in configuredEntities.
+    /// A state qualifies when its value parses as double (invariant culture) and its entity_id is
+    /// not in the configured set. Internal for unit testing without a live HA connection.
+    /// </summary>
+    internal static IReadOnlyList<(string EntityId, double Value)> SelectDiscoverableSensors(
+        IEnumerable<(string EntityId, string? State)> states,
+        HashSet<string> configuredEntities)
+    {
+        var result = new List<(string, double)>();
+        foreach (var (entityId, state) in states)
+        {
+            if (configuredEntities.Contains(entityId))
+                continue;
+            if (!double.TryParse(state, NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
+                continue;
+            result.Add((entityId, value));
+        }
+        return result;
     }
 
     /// <summary>
