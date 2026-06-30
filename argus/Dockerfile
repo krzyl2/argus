@@ -1,15 +1,15 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:bookworm
+ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:trixie
 FROM ${BUILD_FROM}
 
 # s6-overlay: exit container when any service crashes rather than looping silently.
 # Must be set before s6 init reads stage-2 config.
 ENV S6_BEHAVIOUR_IF_STAGE2_FAILS=2
 
-# ── .NET 8 Runtime (Microsoft Debian 12 package feed) ─────────────────────────
+# ── .NET 8 Runtime (Microsoft Debian 13 package feed) ─────────────────────────
 # Runtime only (not SDK) — orchestrator is published by CI before docker build.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends wget ca-certificates \
-    && wget -q https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
+    && wget -q https://packages.microsoft.com/config/debian/13/packages-microsoft-prod.deb \
          -O /tmp/packages-microsoft-prod.deb \
     && dpkg -i /tmp/packages-microsoft-prod.deb \
     && rm /tmp/packages-microsoft-prod.deb \
@@ -29,12 +29,12 @@ RUN apt-get update \
 # --prefer-binary: mandatory for aarch64 to avoid scipy/statsmodels source compilation
 # Core darts only (no ML-framework extras) — keeps image under 2 GB (ADDON-05)
 COPY detector/requirements.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir --prefer-binary -r /tmp/requirements.txt
+RUN pip3 install --no-cache-dir --prefer-binary --break-system-packages -r /tmp/requirements.txt
 
 # PyYAML is required by gen-entities.py (cont-init.d/10-config-gen.sh calls it to convert
 # options.json → /data/entities.yaml). It is NOT in detector/requirements.txt because the
 # detector itself does not use YAML — this explicit install keeps the dependency auditable.
-RUN pip3 install --no-cache-dir pyyaml
+RUN pip3 install --no-cache-dir --break-system-packages pyyaml
 
 # ── Orchestrator publish output (built by CI before docker build) ──────────────
 # Phase 1: create a stub directory so the COPY succeeds even without a real publish.
