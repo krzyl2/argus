@@ -28,11 +28,14 @@ write_optional_env() {
 }
 
 # ── HA Auth (SUPV-01) ────────────────────────────────────────────────────────
-# ParseHaUrl in NetDaemonHaEventSource requires explicit :80 for the ws:// scheme.
-# .NET Uri does not register a default port for ws://, so omitting :80 returns port -1.
+# Add-ons reach the HA WebSocket API through the Supervisor proxy at
+# ws://supervisor/core/websocket (host supervisor, port 80, path /core/websocket),
+# authenticated with SUPERVISOR_TOKEN. NOT ws://supervisor:80 — .NET treats :80 as
+# the ws default port, so the old code overrode it to HA core's 8123 (unreachable
+# from the add-on) and used the wrong default path /api/websocket.
 # homeassistant_api: true in config.yaml ensures SUPERVISOR_TOKEN is injected.
 # Do NOT write HA IConfiguration key overrides — Program.cs reads ARGUS_* vars directly.
-printf "ws://supervisor:80" > /var/run/s6/container_environment/ARGUS_HA_URL
+printf "ws://supervisor/core/websocket" > /var/run/s6/container_environment/ARGUS_HA_URL
 printf "%s" "${SUPERVISOR_TOKEN}" > /var/run/s6/container_environment/ARGUS_HA_TOKEN
 
 # ── MQTT Credentials (SUPV-02) ───────────────────────────────────────────────
@@ -67,7 +70,12 @@ if bashio::config.has_value 'detector_endpoint'; then
     touch /etc/services.d/detector/down
 else
     printf "http://127.0.0.1:50051" > /var/run/s6/container_environment/ARGUS_DETECTOR_ENDPOINT
-    printf "127.0.0.1"              > /var/run/s6/container_environment/ARGUS_GRPC_BIND
+    # Bind the detector on all interfaces (not loopback-only) so the Supervisor
+    # watchdog (tcp://[HOST]:50051 in config.yaml, PROC-05) can probe it on the
+    # add-on's container IP. The orchestrator still dials 127.0.0.1:50051 over
+    # loopback; a 127.0.0.1-only bind made the watchdog fail and the Supervisor
+    # restart the add-on. Exposure is limited to the HA internal add-on network.
+    printf "0.0.0.0"                > /var/run/s6/container_environment/ARGUS_GRPC_BIND
     printf "local"                  > /run/argus/mode
 fi
 mkdir -p /data/models

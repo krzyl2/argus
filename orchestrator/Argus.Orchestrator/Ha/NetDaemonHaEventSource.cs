@@ -100,11 +100,12 @@ public class NetDaemonHaEventSource : IHaEventSource
                     _logger.LogInformation(LogEvents.HaListenerStarting,
                         "Connecting to HA WebSocket at {HaUrl}", _settings.HaUrl);
 
-                    // Parse host/port/ssl from HaUrl (e.g. "ws://homeassistant.local:8123" or "wss://...")
-                    var (host, port, ssl) = ParseHaUrl(_settings.HaUrl);
+                    // Parse host/port/ssl/path from HaUrl. Add-on uses the Supervisor proxy
+                    // (ws://supervisor/core/websocket); standalone uses ws://host:8123 (/api/websocket).
+                    var (host, port, ssl, path) = ParseHaUrl(_settings.HaUrl);
 
                     var connection = await _haClient.ConnectAsync(
-                        host, port, ssl, _settings.HaToken ?? string.Empty, ct)
+                        host, port, ssl, _settings.HaToken ?? string.Empty, path, ct)
                         .ConfigureAwait(false);
 
                     _logger.LogInformation(LogEvents.ChannelEstablished,
@@ -347,23 +348,41 @@ public class NetDaemonHaEventSource : IHaEventSource
     }
 
     /// <summary>
-    /// Parses HA WebSocket URL into (host, port, ssl) components.
+    /// Parses an HA WebSocket URL into (host, port, ssl, path) components.
     /// Supports ws://, wss://, http://, https:// schemes.
-    /// Default port: 8123.
+    /// Port: an explicit port always wins. For a default port, a direct HA-core
+    /// connection (path /api/websocket) defaults to 8123, while the add-on
+    /// Supervisor proxy (path /core/websocket) defaults to 80/443. .NET treats
+    /// ws://host:80 as IsDefaultPort=true, so the proxy must resolve to 80 here —
+    /// the previous unconditional 8123 fallback connected the add-on to an
+    /// unreachable supervisor:8123.
+    /// Path: the URL path (e.g. /core/websocket for the Supervisor proxy),
+    /// defaulting to /api/websocket for a direct HA core connection.
     /// </summary>
-    private static (string host, int port, bool ssl) ParseHaUrl(string? url)
+    private static (string host, int port, bool ssl, string path) ParseHaUrl(string? url)
     {
         if (string.IsNullOrEmpty(url))
-            return ("localhost", 8123, false);
+            return ("localhost", 8123, false, "/api/websocket");
 
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
             var ssl = uri.Scheme is "wss" or "https";
-            var port = uri.IsDefaultPort ? (ssl ? 443 : 8123) : uri.Port;
-            return (uri.Host, port, ssl);
+            var path = string.IsNullOrEmpty(uri.AbsolutePath) || uri.AbsolutePath == "/"
+                ? "/api/websocket"
+                : uri.AbsolutePath;
+
+            int port;
+            if (!uri.IsDefaultPort)
+                port = uri.Port;                 // explicit port always wins
+            else if (path == "/api/websocket")
+                port = ssl ? 443 : 8123;         // direct HA core default
+            else
+                port = ssl ? 443 : 80;           // Supervisor proxy / custom-path default
+
+            return (uri.Host, port, ssl, path);
         }
 
-        // Fallback: treat as plain hostname
-        return (url, 8123, false);
+        // Fallback: treat as plain hostname (direct HA core)
+        return (url, 8123, false, "/api/websocket");
     }
 }
