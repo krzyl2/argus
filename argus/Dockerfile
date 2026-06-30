@@ -5,16 +5,20 @@ FROM ${BUILD_FROM}
 # Must be set before s6 init reads stage-2 config.
 ENV S6_BEHAVIOUR_IF_STAGE2_FAILS=2
 
-# ── .NET 8 Runtime (Microsoft Debian 12 package feed) ─────────────────────────
+# ── .NET 8 Runtime (official dotnet-install.sh, NOT the apt feed) ──────────────
 # Runtime only (not SDK) — orchestrator is published by CI before docker build.
+# The packages.microsoft.com Debian 12 feed only ships dotnet-runtime-8.0 for
+# amd64; the arm64 component has 10.0 only, so apt install fails on aarch64.
+# dotnet-install.sh pulls the arch-correct 8.0 runtime from the global CDN and
+# is feed-independent. Native runtime deps come from Debian's own repos.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends wget ca-certificates \
-    && wget -q https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
-         -O /tmp/packages-microsoft-prod.deb \
-    && dpkg -i /tmp/packages-microsoft-prod.deb \
-    && rm /tmp/packages-microsoft-prod.deb \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends dotnet-runtime-8.0 \
+    && apt-get install -y --no-install-recommends \
+        wget ca-certificates \
+        libicu72 libssl3 zlib1g libstdc++6 \
+    && wget -q https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh \
+    && bash /tmp/dotnet-install.sh --channel 8.0 --runtime dotnet --install-dir /usr/share/dotnet \
+    && ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
+    && rm /tmp/dotnet-install.sh \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python 3.11 (Debian bookworm native) + pip ────────────────────────────────
