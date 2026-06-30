@@ -103,13 +103,13 @@ def create_server(
             root_certificates=root_certificates,
             require_client_auth=True,
         )
-        server.add_secure_port(f"[::]:{port}", server_credentials)
+        server.add_secure_port(f"{config.grpc_bind}:{port}", server_credentials)
         logger.info(
             "detector listening",
             extra={"port": port, "mtls": True},
         )
     else:
-        server.add_insecure_port(f"[::]:{port}")
+        server.add_insecure_port(f"{config.grpc_bind}:{port}")
         logger.info(
             "detector listening",
             extra={"port": port, "mtls": False},
@@ -123,7 +123,7 @@ def serve() -> None:
     config = DetectorConfig()
     configure_logging(config.log_level)
 
-    server = create_server(port=config.grpc_port, config=config)
+    server = create_server(port=config.grpc_port, config=config, model_root=pathlib.Path(config.model_root))
     server.start()
     logger.info("detector started", extra={"port": config.grpc_port})
     server.wait_for_termination()
