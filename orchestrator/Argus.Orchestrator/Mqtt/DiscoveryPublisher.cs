@@ -10,12 +10,21 @@ namespace Argus.Orchestrator.Mqtt;
 /// Builds and publishes retained MQTT discovery payloads for HA entities (MQTT-01, MQTT-03).
 /// Each entity produces two HA entities (binary_sensor + sensor) under one HA device.
 /// Idempotency (MQTT-04) is inherent: deterministic unique_id + retain=true; republish is safe.
+///
+/// Also builds the composite add-on health binary_sensor (HEALTH-01):
+/// device_class "problem", unique_id == object_id == argus_addon_health,
+/// state_topic = argus/addon/health/state, device grouped under "Argus" with stable identifiers.
 /// </summary>
 public class DiscoveryPublisher
 {
     private const string BridgeAvailabilityTopic = "argus/bridge/availability";
     private const string Manufacturer = "Argus";
     private const string Model = "Argus Anomaly Detector";
+
+    // Health entity constants (HEALTH-01)
+    public const string HealthObjectId = "argus_addon_health";
+    public const string HealthStateTopic = "argus/addon/health/state";
+    public const string HealthDiscoveryTopic = $"homeassistant/binary_sensor/{HealthObjectId}/config";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -134,6 +143,39 @@ public class DiscoveryPublisher
                 true,
                 ct);
         }
+    }
+
+    /// <summary>
+    /// Builds the health binary_sensor discovery JSON payload for the Argus add-on itself (HEALTH-01).
+    /// device_class "problem" — ON means problem/unavailable, OFF means healthy.
+    /// Stable unique_id == object_id == argus_addon_health (D-14, prevents HA mangling).
+    /// Availability follows bridge-level only (no per-entity availability for the add-on health entity).
+    /// Polish friendly name "Argus — status" (D8).
+    /// </summary>
+    public static string BuildHealthBinarySensorConfig()
+    {
+        var payload = new
+        {
+            unique_id = HealthObjectId,
+            object_id = HealthObjectId,         // D-14: prevents HA mangling
+            name = "Argus — status",        // D8: Polish friendly name "Argus — status"
+            state_topic = HealthStateTopic,
+            payload_on = "ON",
+            payload_off = "OFF",
+            device_class = "problem",
+            availability_topic = BridgeAvailabilityTopic,
+            payload_available = "online",
+            payload_not_available = "offline",
+            device = new
+            {
+                identifiers = new[] { "argus_addon" },
+                name = "Argus",
+                manufacturer = Manufacturer,
+                model = Model,
+            }
+        };
+
+        return JsonSerializer.Serialize(payload, JsonOptions);
     }
 
     private static string GetDetectorName(EntityConfig entity)
