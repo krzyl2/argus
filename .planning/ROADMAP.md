@@ -68,13 +68,18 @@ Plans:
 **Goal**: Both processes run as supervised s6 longrun services; the orchestrator starts only after the detector is healthy; MQTT credentials are fetched live from the Supervisor; an add-on health entity is published to HA.
 **Depends on**: Phase 2
 **Requirements**: PROC-01, PROC-02, PROC-03, PROC-04, PROC-05, SUPV-03, HEALTH-01, UICFG-05
+**Requirement → plan map**: 03-01 [PROC-01, PROC-02, PROC-03, PROC-04, PROC-05] · 03-02 [SUPV-03] · 03-03 [HEALTH-01, UICFG-05]
 **Success Criteria** (what must be TRUE):
   1. Starting the add-on container brings up both detector and orchestrator as s6 longrun services; the orchestrator only begins consuming HA events after the detector reports gRPC health SERVING.
   2. Killing either service causes the container to exit non-zero rather than looping; the Supervisor watchdog also restarts the add-on when the gRPC port becomes unresponsive.
   3. Setting `detector_endpoint` to a remote URL leaves the local detector service stopped (down file written by config-gen); only the orchestrator starts.
   4. MQTT credentials are fetched from the Supervisor service API on each connection attempt; reinstalling the Mosquitto add-on and triggering a reconnect delivers a successful connection with the new credentials without restarting the Argus add-on.
   5. The add-on logs a list of discovered numeric HA sensors at startup before anomaly detection begins, and an Argus health/status entity appears in HA via MQTT discovery after startup.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 03-01-PLAN.md — s6 service wiring + readiness gate (wait-detector.py) + finish/halt exit-propagation + remote-mode down file + watchdog (Wave 1)
+- [ ] 03-02-PLAN.md — SUPV-03 live MQTT credential fetch from Supervisor API, never cached, with env-var fallback (Wave 1)
+- [ ] 03-03-PLAN.md — HEALTH-01 composite Argus health binary_sensor + UICFG-05 startup discovered-sensors log (Wave 2)
 **Research flag**: Confirm the Supervisor internal proxy hostname (`supervisor` vs `homeassistant`) on a live HA OS instance before finalising the ARGUS_HA_URL env var value written by config-gen. Wrong hostname causes NetDaemon.Client to fail silently.
 
 ### Phase 4: Multi-Arch CI + Integration + Documentation
@@ -97,5 +102,5 @@ Plans:
 | 2. Batch Path + Model Lifecycle | v1.0 | 6/6 | Complete | 2026-06-10 |
 | 1. Add-on Skeleton + Config-Gen | v2.0 | 0/3 | Planned | - |
 | 2. v1 Code Changes | v2.0 | 0/2 | Planned | - |
-| 3. Process Supervision + Runtime Integration | v2.0 | 0/TBD | Not started | - |
+| 3. Process Supervision + Runtime Integration | v2.0 | 0/3 | Planned | - |
 | 4. Multi-Arch CI + Integration + Documentation | v2.0 | 0/TBD | Not started | - |
