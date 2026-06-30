@@ -257,8 +257,15 @@ public class NetDaemonHaEventSource : IHaEventSource
         // Register CT so we unblock when cancellation is requested
         using var reg = ct.Register(() => tcs.TrySetCanceled(ct));
 
-        // Wait for the connection to close or CT to fire
-        await connection.WaitForConnectionToCloseAsync(ct).ConfigureAwait(false);
+        // Wait for whichever happens first: the WS connection closes, or the Rx
+        // subscription signals onError/onCompleted. Awaiting only the WS close
+        // would silently discard a stream-level error that does not close the
+        // socket, leaving a broken event stream on a still-open connection that
+        // never triggers reconnect (WR-05). The faulted tcs.Task rethrows here so
+        // the outer loop's catch backs off and reconnects.
+        var closeTask = connection.WaitForConnectionToCloseAsync(ct);
+        var completed = await Task.WhenAny(closeTask, tcs.Task).ConfigureAwait(false);
+        await completed.ConfigureAwait(false);
     }
 
     /// <summary>
