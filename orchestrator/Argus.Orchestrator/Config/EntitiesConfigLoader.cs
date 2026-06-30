@@ -27,22 +27,27 @@ public class EntitiesConfigLoader
             .Build();
 
         var config = deserializer.Deserialize<EntitiesConfig>(yaml)
-            ?? throw new InvalidOperationException("entities.yaml deserialized to null");
+            ?? new EntitiesConfig();
 
-        Validate(config, path);
-        WarnIgnoredKeys(config, logger);
+        Validate(config, path, logger);
+        if (config.Entities?.Count > 0)
+            WarnIgnoredKeys(config, logger);
 
         logger.Log(LogLevel.Information, LogEvents.EntityConfigLoaded,
-            "Loaded {EntityCount} entities from {Path}", config.Entities.Count, path);
+            "Loaded {EntityCount} entities from {Path}", config.Entities?.Count ?? 0, path);
 
         return config;
     }
 
-    private static void Validate(EntitiesConfig config, string path)
+    private static void Validate(EntitiesConfig config, string path, ILogger logger)
     {
         if (config.Entities == null || config.Entities.Count == 0)
-            throw new InvalidOperationException(
-                $"entities.yaml at '{path}' contains no entities");
+        {
+            logger.LogWarning(LogEvents.EmptyEntitiesWarning,
+                "entities.yaml at '{Path}' contains no entities — orchestrator running with empty pipeline; configure via UI.",
+                path);
+            return;
+        }
 
         foreach (var entity in config.Entities)
         {

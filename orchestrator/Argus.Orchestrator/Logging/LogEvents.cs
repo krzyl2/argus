@@ -11,6 +11,7 @@ public static class LogEvents
     // Config loading
     public static readonly EventId EntityConfigLoaded = new(1001, nameof(EntityConfigLoaded));
     public static readonly EventId CovariatesIgnored = new(1002, nameof(CovariatesIgnored));
+    public static readonly EventId EmptyEntitiesWarning = new(1003, nameof(EmptyEntitiesWarning));
 
     // gRPC channel
     public static readonly EventId ChannelEstablished = new(2001, nameof(ChannelEstablished));
