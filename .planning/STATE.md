@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ingress Configuration UI
-status: executing
-last_updated: "2026-06-30T19:12:46.295Z"
+status: verifying
+last_updated: "2026-06-30T19:22:04.090Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 0
+  completed_plans: 2
+  percent: 25
 ---
 
 # Project State: Argus
@@ -19,7 +19,7 @@ progress:
 
 - Milestone: **v3.0 Ingress Configuration UI** — roadmap created (4 phases), requirements mapped
 - Previous: **v2.0 Home Assistant Add-on — SHIPPED & live-verified 2026-06-30**
-- Last action: Plan 01-01 complete — config seam (EntitiesConfigLoader softened + ConfigWriter atomic write) — 2026-06-30
+- Last action: Plan 01-02 complete — SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path middleware, placeholder page + wwwroot assets, config.yaml ingress keys — 2026-06-30 (live-HA verification deferred)
 
 ## Project Reference
 
@@ -32,13 +32,13 @@ See: .planning/PROJECT.md
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 1 | Ingress Scaffold + SDK Migration + Config Seam | Not started |
+| 1 | Ingress Scaffold + SDK Migration + Config Seam | Code complete — live-HA verify pending |
 | 2 | Live Sensor Discovery + Entity Selection UI | Not started |
 | 3 | Config Read/Write + Detector Assignment + Reload | Not started |
 | 4 | Validation, CI Packaging + Documentation | Not started |
 
 ```
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 ```
 
 v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -91,6 +91,14 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 - `ConfigWriter` not registered in DI by Plan 01 — Plan 02 owns `Program.cs` to avoid parallel-wave file conflict
 - `ConfigWriter.WriteAsync` writes verbatim strings; YAML serialization deferred to Phase 2+ callers (keeps writer focused and testable)
 
+### Plan 01-02 decisions (SDK migration + Kestrel + Ingress scaffold)
+
+- Kestrel bound via `ConfigureKestrel(IPAddress.Any, 8099)` — not `UseUrls` or `ASPNETCORE_URLS`
+- Dual PathBase + `<base href>` defense handles both Supervisor-strips and Supervisor-does-not-strip behaviors (STACK-vs-PITFALLS conflict deferred to live-HA verification)
+- `ArgusHealthSignals.DetectorConnected` volatile bool added — cached by HealthPublisherWorker every ~15 s for zero-latency UI reads (no gRPC call on page load)
+- `ingressPath` HTML-encoded via `WebUtility.HtmlEncode` before `<base href>` interpolation (T-01-08)
+- argus/Dockerfile unchanged — add-on uses base-debian:bookworm + dotnet-install.sh; Web SDK publish carries ASP.NET DLLs
+
 ### Blockers
 
 - None
@@ -103,21 +111,22 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 | Phases completed | 4 | 0/4 |
 | Requirements mapped | 9/9 | 9/9 |
 | Phase 01 P01-01 | 2 | 2 tasks | 5 files |
+| Phase 01 P01-02 | 231 | - tasks | - files |
 
 ## Session Continuity
 
-- Last session: 2026-06-30 — Plan 01-01 complete: EntitiesConfigLoader softened (LogWarning on empty entities) + ConfigWriter (atomic temp-then-rename + SemaphoreSlim).
-- Resume point: Execute Plan 01-02 (SDK migration + Program.cs + Kestrel bind + Ingress placeholder page).
+- Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
+- Resume point: Live-HA verification per 01-02-SUMMARY.md "Pending Live-HA Verification" section, then Phase 2 planning.
 
 ## Operator Next Steps
 
-1. Execute Plan 01-02: SDK migration (Worker → Web), Program.cs WebApplication builder, Kestrel bind on 0.0.0.0:8099, ConfigWriter DI registration, Ingress placeholder page.
-2. During Plan 01-02/02 execution: live-test X-Ingress-Path / UsePathBase conflict on real HA OS — safe implementation is per-request PathBase + `<base href="...">`.
-3. Before Phase 2 save endpoint: land `gen-entities.py` guard (`_source: ui` marker) to prevent add-on restart erasing UI config.
+1. PENDING: Live-HA verification of Plan 01-02 — rebuild and deploy add-on, confirm "Open Web UI", assets HTTP 200, ss -tlnp shows 0.0.0.0:8099, binary_sensor.argus_addon_health healthy. Record X-Ingress-Path strip behavior to close STACK-vs-PITFALLS conflict (see 01-02-SUMMARY.md).
+2. Before Phase 2 save endpoint: land `gen-entities.py` guard (`_source: ui` marker) to prevent add-on restart erasing UI config.
+3. Phase 2 planning: live sensor discovery + entity selection UI.
 
 ## Current Position
 
-Phase: 01 (Ingress Scaffold + SDK Migration + Config Seam) — EXECUTING
-Plan: 2 of 2
-Status: Ready to execute
+Phase: 01 (Ingress Scaffold + SDK Migration + Config Seam) — PHASE COMPLETE (code), live-HA verification pending
+Plan: 2 of 2 (all plans executed)
+Status: Awaiting live-HA verification (see 01-02-SUMMARY.md Pending Live-HA Verification section)
 Last activity: 2026-06-30

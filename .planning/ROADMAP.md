@@ -46,7 +46,7 @@ by the add-on ("Open Web UI"): discover HA sensors and pick which Argus tracks, 
 detector algorithm(s) + parameters apply to each sensor — no manual `entities` list, and changes
 apply without an add-on restart.
 
-- [ ] **Phase 1: Ingress Scaffold + SDK Migration + Config Seam** — SDK Worker→Web migration, Kestrel on 0.0.0.0:8099, config.yaml ingress keys, empty-entities crash fix, atomic write seam
+- [x] **Phase 1: Ingress Scaffold + SDK Migration + Config Seam** — SDK Worker→Web migration, Kestrel on 0.0.0.0:8099, config.yaml ingress keys, empty-entities crash fix, atomic write seam (completed 2026-06-30)
 - [ ] **Phase 2: Live Sensor Discovery + Entity Selection UI** — IHaSensorRegistry, /api/sensors, filterable entity picker, include/exclude pattern wiring, gen-entities.py guard
 - [ ] **Phase 3: Config Read/Write + Detector Assignment + Reload** — ILiveEntitiesConfig atomic swap, ConfigApiEndpoints, detector/parameter UI, HaListenerWorker inner-CTS restart, MQTT retraction
 - [ ] **Phase 4: Validation, CI Packaging + Documentation** — server+client validation, CI image-size gate, FileSystemWatcher debounce, DOCS.md
@@ -73,7 +73,7 @@ apply without an add-on restart.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — SDK Worker→Web migration, Kestrel 0.0.0.0:8099, X-Ingress-Path middleware, placeholder page + wwwroot assets, config.yaml ingress keys (UI-01)
+- [x] 01-02-PLAN.md — SDK Worker→Web migration, Kestrel 0.0.0.0:8099, X-Ingress-Path middleware, placeholder page + wwwroot assets, config.yaml ingress keys (UI-01)
 
 **UI hint**: yes
 
@@ -165,7 +165,7 @@ apply without an add-on restart.
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1-2. Foundations + Batch/Model Lifecycle | v1.0 | 14/14 | Complete | 2026-06-10 |
-| 1. Add-on Skeleton + Config-Gen | v2.0 | 1/2 | In Progress|  |
+| 1. Add-on Skeleton + Config-Gen | v2.0 | 2/2 | Complete   | 2026-06-30 |
 | 2. v1 Code Changes | v2.0 | 2/2 | Complete | 2026-06-30 |
 | 3. Process Supervision + Runtime Integration | v2.0 | 3/3 | Complete | 2026-06-30 |
 | 4. Multi-Arch CI + Integration + Documentation | v2.0 | 2/2 | Complete | 2026-06-30 |
