@@ -82,6 +82,9 @@ public sealed class HealthPublisherWorker : BackgroundService
                 serving = false;
             }
 
+            // Cache detector-serving result for zero-latency UI reads (PlaceholderPage / Phase 2+ UI)
+            _signals.DetectorConnected = serving;
+
             string payload = HealthEvaluator.Evaluate(serving, ha, mqtt);
             await _mqtt.PublishAsync(DiscoveryPublisher.HealthStateTopic, payload, retain: true, stoppingToken);
 

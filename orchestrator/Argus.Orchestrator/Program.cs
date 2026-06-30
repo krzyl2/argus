@@ -1,3 +1,4 @@
+using Argus.Orchestrator;
 using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Detection;
@@ -8,7 +9,7 @@ using Argus.Orchestrator.Workers;
 using Grpc.Net.Client;
 using InfluxDB.Client;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 // Load entities.yaml (CONF-01/CONF-02)
 var entitiesPath = builder.Configuration["ARGUS_ENTITIES_PATH"] ?? "entities.yaml";
@@ -109,6 +110,9 @@ builder.Services.AddHostedService<HealthPublisherWorker>();
 // Register ScoreStreamPipeline (Plan 08): bidi ScoreStream loop with hysteresis/frozen/MQTT
 builder.Services.AddSingleton<ScoreStreamPipeline>();
 
+// Register ConfigWriter (Plan 02): atomic /data/entities.yaml write seam (temp-then-rename + SemaphoreSlim)
+builder.Services.AddSingleton<Argus.Orchestrator.Config.ConfigWriter>();
+
 // Register the InfluxDB batch path (Plan 02-02/04, BTCH-01/03) ONLY when an
 // InfluxDB URL is configured. InfluxDBClient's ctor throws on an empty URL, and
 // BatchSchedulerWorker (a hosted service) resolves it at startup — so with no
@@ -142,5 +146,38 @@ else
     Console.WriteLine("[Argus] InfluxDB not configured (influx_url empty) — batch path disabled; running streaming-only.");
 }
 
-var host = builder.Build();
-host.Run();
+// Kestrel: bind 0.0.0.0:8099 — Supervisor connects from 172.30.32.2 (not loopback).
+// ConfigureKestrel replaces the default localhost:5000/5001 endpoints. Do NOT use UseUrls.
+builder.WebHost.ConfigureKestrel(opts =>
+    opts.Listen(System.Net.IPAddress.Any, 8099));
+
+var app = builder.Build();
+
+// [1] X-Ingress-Path middleware — set PathBase per-request BEFORE UseRouting.
+// This ensures ASP.NET LinkGenerator and static-file middleware generate correct
+// absolute URLs relative to the Supervisor Ingress prefix.
+// T-01-05: PathBase derived from request header; port is not exposed (T-01-04).
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Headers.TryGetValue("X-Ingress-Path", out var ingressPath))
+        ctx.Request.PathBase = new Microsoft.AspNetCore.Http.PathString(ingressPath.ToString());
+    await next();
+});
+
+// [2] Explicit UseRouting() — must follow PathBase middleware (converts WebApplication's
+// auto-placement into a no-op per official minimal-API middleware ordering rules).
+app.UseRouting();
+
+// [3] Static files — serves wwwroot/ (htmx.min.js, argus.css) under correct PathBase.
+// T-01-07: only committed wwwroot/ tree; no directory listing; no /data exposure.
+app.UseStaticFiles();
+
+// [4] Placeholder page handler — reads X-Ingress-Path header, emits <base href>, renders
+// server-side HTML with detector status from ArgusHealthSignals (zero-latency).
+app.MapGet("/", (HttpRequest req, ArgusHealthSignals health) =>
+{
+    var ip = req.Headers["X-Ingress-Path"].FirstOrDefault() ?? "";
+    return Results.Content(PlaceholderPage.Build(ip, health), "text/html");
+});
+
+app.Run();

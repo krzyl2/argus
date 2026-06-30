@@ -12,4 +12,10 @@ public sealed class ArgusHealthSignals
     /// Set to true on successful ConnectAsync; cleared on connection loss.
     /// </summary>
     public volatile bool HaConnected;
+
+    /// <summary>
+    /// True when the detector gRPC health check last returned SERVING.
+    /// Updated by HealthPublisherWorker every ~15 seconds (zero-latency read for UI).
+    /// </summary>
+    public volatile bool DetectorConnected;
 }
