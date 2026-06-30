@@ -2,13 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Home Assistant Add-on
-status: planning
-last_updated: "2026-06-29T11:14:57.463Z"
+current_phase: 01
+current_phase_name: Add-on Skeleton + Config-Gen
+status: executing
+last_updated: "2026-06-29T20:19:24.706Z"
 last_activity: 2026-06-29
+last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
+  total_plans: 3
   completed_plans: 0
   percent: 0
 ---
@@ -26,7 +29,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds.
-**Current focus:** Repackage Argus as an installable, UI-configurable HA add-on.
+**Current focus:** Phase 01 — Add-on Skeleton + Config-Gen
 
 ## Phase Status
 
@@ -88,10 +91,10 @@ v1.0 phases archived under `.planning/archive/v1.0/`.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-06-29 — Milestone v2.0 started
+Phase: 01 (Add-on Skeleton + Config-Gen) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 01
+Last activity: 2026-06-29 — Phase 01 execution started
 
 ---
 *Last updated: 2026-06-29 — Milestone v2.0 (Home Assistant Add-on) started*

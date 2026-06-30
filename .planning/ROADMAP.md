@@ -21,7 +21,7 @@ All 14 plans complete, 34 requirements covered. Code review clean. Artifacts arc
 
 **Milestone Goal:** Argus installable via the HA add-on store — install and configure entirely through the HA UI, no manual tokens, `.env` files, or config-file editing.
 
-- [ ] **Phase 1: Add-on Skeleton + Config-Gen** - Lock base image and HA schema; implement the Supervisor integration seam that converts options.json to env vars and entities.yaml
+- [x] **Phase 1: Add-on Skeleton + Config-Gen** - Lock base image and HA schema; implement the Supervisor integration seam that converts options.json to env vars and entities.yaml <sub>(executed; 4 live-HA/Docker validation items deferred to Phase 4 CI / live HA)</sub>
 - [ ] **Phase 2: v1 Code Changes** - Conditional mTLS in orchestrator and configurable bind/model_root in detector (two parallel tracks, same env var contract)
 - [ ] **Phase 3: Process Supervision + Runtime Integration** - s6 service wiring, detector readiness gate, live MQTT credential fetch, add-on health entity
 - [ ] **Phase 4: Multi-Arch CI + Integration + Documentation** - CI workflow, aarch64 validation, end-to-end HA test, install documentation
