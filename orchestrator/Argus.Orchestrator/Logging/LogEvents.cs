@@ -34,6 +34,7 @@ public static class LogEvents
     public static readonly EventId MqttDiscoveryPublished = new(4005, nameof(MqttDiscoveryPublished));
     public static readonly EventId MqttWorkerStarted = new(4006, nameof(MqttWorkerStarted));
     public static readonly EventId MqttWorkerReady = new(4007, nameof(MqttWorkerReady));
+    public static readonly EventId MqttCredentialsRefreshed = new(4008, nameof(MqttCredentialsRefreshed));
 
     // Batch scheduler (5xxx)
     public static readonly EventId BatchSchedulerStarted   = new(5001, nameof(BatchSchedulerStarted));
