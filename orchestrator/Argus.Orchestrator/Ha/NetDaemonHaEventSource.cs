@@ -1,7 +1,6 @@
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Health;
 using Argus.Orchestrator.Logging;
-using Microsoft.Extensions.Logging;
 using NetDaemon.Client;
 using NetDaemon.Client.HomeAssistant.Extensions;
 using System.Globalization;
