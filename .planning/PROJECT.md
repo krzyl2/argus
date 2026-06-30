@@ -8,7 +8,21 @@ A self-hosted, extensible anomaly-detection system for Home Assistant sensor dat
 
 Anomalies on v1 environmental sensors appear in HA as live binary_sensor + score entities within 2 seconds of a state_changed event, with no manual entity creation and no HA restart required.
 
-## Current Milestone: v2.0 Home Assistant Add-on
+## Current Milestone: v3.0 Ingress Configuration UI
+
+**Goal:** Replace hand-edited YAML config with a Home Assistant Ingress web UI ("Open Web UI") — discover HA sensors, select which Argus tracks, assign detector algorithm(s) + parameters per sensor, applied without an add-on restart.
+
+**Target features:**
+- Ingress web endpoint served by the orchestrator (ASP.NET minimal API, HA-auth, no separately exposed port).
+- Live entity discovery + selection (reuses `get_states` / `SelectDiscoverableSensors`; wires `include_patterns`/`exclude_patterns` into real selection — closes the v2.0 gap).
+- Per-entity detector/parameter assignment using the existing `entities.yaml` `detectors:` model (today hardcoded to `hst`).
+- Validation, reload-without-restart, UI docs + CI packaging of UI assets.
+
+**Validated (shipped):** v1.0 streaming + batch detection; v2.0 HA add-on (multi-arch GHCR image, Supervisor MQTT creds, health entity, HA WebSocket via Supervisor proxy) — live-verified 2026-06-30.
+
+---
+
+## Shipped: v2.0 Home Assistant Add-on (2026-06-30)
 
 **Goal:** Argus installable via HA add-on store ("custom repository") — install and configure entirely through the UI, with no manual tokens, `.env` files, or config-file editing.
 

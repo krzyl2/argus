@@ -2,18 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ingress Configuration UI
-current_phase: 0
-status: Planning
-last_updated: "2026-06-30T16:30:00.000Z"
+status: planning
+last_updated: "2026-06-30T16:24:01.904Z"
 last_activity: 2026-06-30
-last_activity_desc: v2.0 shipped & live-verified; v3.0 (Ingress UI) roadmap drafted
 progress:
-  total_phases: 4
+  total_phases: 0
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
   percent: 0
-current_phase_name: Ingress scaffold + config persistence seam
 ---
 
 # Project State: Argus
@@ -73,3 +70,10 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 
 - Optionally test the v2.0 anomaly E2E further (change a tracked sensor sharply → binary_sensor flips ON).
 - Start v3.0: `/gsd-new-milestone` (formal questioning→research→requirements→roadmap) OR `/gsd-discuss-phase 1` to begin the Ingress UI directly from the drafted roadmap.
+
+## Current Position
+
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-30 — Milestone v3.0 started
