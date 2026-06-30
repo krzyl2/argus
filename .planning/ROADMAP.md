@@ -63,7 +63,9 @@ apply without an add-on restart.
   3. Starting the orchestrator with an empty `entities.yaml` produces a log warning (not a crash); the UI endpoint remains reachable so the user can configure entities.
   4. Config writes use atomic temp-then-rename; no partial reads are possible during a concurrent file-system watcher event.
   5. Static assets (htmx.min.js, any CSS) load via the Ingress URL with HTTP 200 — not via direct port access — confirming PathBase / `<base href>` resolution is correct.
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 01-01-PLAN.md — Config seam: empty-entities warning fix + atomic ConfigWriter (CFG-01)
+- [ ] 01-02-PLAN.md — SDK Worker→Web migration, Kestrel 0.0.0.0:8099, X-Ingress-Path middleware, placeholder page + wwwroot assets, config.yaml ingress keys (UI-01)
 **UI hint**: yes
 
 **Research flags / verification items:**
@@ -145,7 +147,7 @@ apply without an add-on restart.
 | 2. v1 Code Changes | v2.0 | 2/2 | Complete | 2026-06-30 |
 | 3. Process Supervision + Runtime Integration | v2.0 | 3/3 | Complete | 2026-06-30 |
 | 4. Multi-Arch CI + Integration + Documentation | v2.0 | 2/2 | Complete | 2026-06-30 |
-| 1. Ingress Scaffold + SDK Migration + Config Seam | v3.0 | 0/TBD | Not started | - |
+| 1. Ingress Scaffold + SDK Migration + Config Seam | v3.0 | 0/2 | Not started | - |
 | 2. Live Sensor Discovery + Entity Selection UI | v3.0 | 0/TBD | Not started | - |
 | 3. Config Read/Write + Detector Assignment + Reload | v3.0 | 0/TBD | Not started | - |
 | 4. Validation, CI Packaging + Documentation | v3.0 | 0/TBD | Not started | - |
