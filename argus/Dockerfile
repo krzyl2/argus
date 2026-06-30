@@ -54,7 +54,12 @@ COPY detector/ /opt/argus/detector/
 COPY argus/rootfs/ /
 
 # ── Build labels (injected by the composable build-image GHA action) ──────────
-ARG BUILD_ARCH
+# BUILD_ARCH defaults to buildx's automatic per-platform TARGETARCH arg so the
+# io.hass.arch label is correct for each manifest entry (amd64/arm64) without a
+# static CI build-arg — a single static value cannot be per-arch-correct in a
+# multi-platform buildx build.
+ARG TARGETARCH
+ARG BUILD_ARCH=${TARGETARCH}
 ARG BUILD_DATE
 ARG BUILD_REF
 ARG BUILD_VERSION
