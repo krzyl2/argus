@@ -108,6 +108,41 @@ entities:
         Assert.Equal(0.001, hst.FrozenVarianceThreshold, precision: 6);
     }
 
+    [Fact]
+    public void Load_EmptyEntities_LogsWarning_DoesNotThrow()
+    {
+        // Arrange
+        var yaml = "entities: []";
+        var path = WriteTempYaml(yaml);
+        var (logger, messages) = CreateCapturingLogger();
+
+        // Act — must NOT throw
+        var config = EntitiesConfigLoader.Load(path, logger);
+
+        // Assert: returned config has empty entities (not null)
+        Assert.NotNull(config);
+        Assert.Empty(config.Entities);
+
+        // Assert: warning logged mentioning empty pipeline / UI
+        Assert.Contains(messages, m =>
+            m.Contains("no entities") || m.Contains("empty pipeline") || m.Contains("configure via UI"));
+    }
+
+    [Fact]
+    public void Load_NullEntitiesKey_LogsWarning_DoesNotThrow()
+    {
+        // Arrange — YAML with no `entities:` key at all (options.json first-boot scenario)
+        var yaml = "# empty config";
+        var path = WriteTempYaml(yaml);
+        var (logger, messages) = CreateCapturingLogger();
+
+        // Act — must NOT throw
+        var config = EntitiesConfigLoader.Load(path, logger);
+
+        Assert.NotNull(config);
+        Assert.Contains(messages, m => m.Contains("no entities") || m.Contains("empty pipeline"));
+    }
+
     private static string WriteTempYaml(string content)
     {
         var path = System.IO.Path.GetTempFileName() + ".yaml";
