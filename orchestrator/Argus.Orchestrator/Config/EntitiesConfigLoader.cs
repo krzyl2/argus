@@ -51,6 +51,10 @@ public class EntitiesConfigLoader
 
         foreach (var entity in config.Entities)
         {
+            if (entity is null)
+                throw new InvalidOperationException(
+                    "entities.yaml contains a null entity entry (check for bare '-' list items)");
+
             if (string.IsNullOrWhiteSpace(entity.EntityId))
                 throw new InvalidOperationException(
                     "An entity in entities.yaml is missing 'entity_id'");
@@ -63,6 +67,7 @@ public class EntitiesConfigLoader
 
     private static void WarnIgnoredKeys(EntitiesConfig config, ILogger logger)
     {
+        if (config.Entities is null) return;
         foreach (var entity in config.Entities)
         {
             if (entity.Covariates != null || entity.Groups != null)
