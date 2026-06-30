@@ -28,14 +28,14 @@ write_optional_env() {
 }
 
 # ── HA Auth (SUPV-01) ────────────────────────────────────────────────────────
-# Add-ons reach the HA WebSocket API through the Supervisor proxy at
-# ws://supervisor/core/websocket (host supervisor, port 80, path /core/websocket),
-# authenticated with SUPERVISOR_TOKEN. NOT ws://supervisor:80 — .NET treats :80 as
-# the ws default port, so the old code overrode it to HA core's 8123 (unreachable
-# from the add-on) and used the wrong default path /api/websocket.
-# homeassistant_api: true in config.yaml ensures SUPERVISOR_TOKEN is injected.
+# Connect directly to HA core's WebSocket at ws://homeassistant:8123 (path defaults
+# to /api/websocket) and authenticate IN-PROTOCOL with SUPERVISOR_TOKEN (the add-on
+# token HA core accepts). The Supervisor proxy ws://supervisor/core/websocket rejects
+# the WS upgrade with HTTP 401 because NetDaemon.Client sends the token in the HA auth
+# message, not as an Authorization header on the upgrade request. The homeassistant
+# hostname resolves on the add-on network; homeassistant_api: true injects SUPERVISOR_TOKEN.
 # Do NOT write HA IConfiguration key overrides — Program.cs reads ARGUS_* vars directly.
-printf "ws://supervisor/core/websocket" > /var/run/s6/container_environment/ARGUS_HA_URL
+printf "ws://homeassistant:8123" > /var/run/s6/container_environment/ARGUS_HA_URL
 printf "%s" "${SUPERVISOR_TOKEN}" > /var/run/s6/container_environment/ARGUS_HA_TOKEN
 
 # ── MQTT Credentials (SUPV-02) ───────────────────────────────────────────────
