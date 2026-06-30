@@ -2,129 +2,111 @@
 
 ## Milestones
 
-- v1.0 Foundations + Batch & Model Lifecycle (Phases 1-2, 14 plans) — shipped 2026-06-10
-- v2.0 Home Assistant Add-on (Phases 1-4) — in progress
+- ✅ **v1.0 Foundations + Batch & Model Lifecycle** — Phases 1-2 (shipped 2026-06-10)
+- ✅ **v2.0 Home Assistant Add-on** — Phases 1-4 (shipped 2026-06-30)
+- 📋 **v3.0 Ingress Configuration UI** — Phases 1-4 (planned)
 
 ## Phases
 
 <details>
-<summary>v1.0 — Foundations + Batch & Model Lifecycle (SHIPPED 2026-06-10)</summary>
+<summary>✅ v1.0 — Foundations + Batch & Model Lifecycle (Phases 1-2) — SHIPPED 2026-06-10</summary>
 
-All 14 plans complete, 34 requirements covered. Code review clean. Artifacts archived under `.planning/archive/v1.0/`.
+All 14 plans complete, 34 requirements covered. Code review clean.
+Artifacts archived under `.planning/archive/v1.0/`.
 
-- [x] **Phase 1: Foundations + Streaming** — mono-repo scaffold, mTLS gRPC, HA WebSocket ingestion, River HST streaming detector, MQTT discovery stack, ScoreStreamPipeline with hysteresis
-- [x] **Phase 2: Batch Path + Model Lifecycle** — InfluxDB reader, PyOD MAD + STL detectors, ModelStore, BatchSchedulerWorker, per-entity model persistence, RES-02 restart resilience
+- [x] **Phase 1: Foundations + Streaming** — mono-repo, mTLS gRPC, HA WebSocket ingestion, River HST streaming detector, MQTT discovery, ScoreStreamPipeline with hysteresis
+- [x] **Phase 2: Batch Path + Model Lifecycle** — InfluxDB reader, PyOD MAD + STL, ModelStore, BatchSchedulerWorker, per-entity model persistence
 
 </details>
 
-### v2.0 Home Assistant Add-on (In Progress)
+<details>
+<summary>✅ v2.0 — Home Assistant Add-on (Phases 1-4) — SHIPPED 2026-06-30</summary>
 
-**Milestone Goal:** Argus installable via the HA add-on store — install and configure entirely through the HA UI, no manual tokens, `.env` files, or config-file editing.
+Argus installable via the HA add-on store and configurable through the HA UI — no manual
+tokens, `.env` files, or hand-edited config required. Full detail archived in
+`.planning/milestones/v2.0-ROADMAP.md`.
 
-- [x] **Phase 1: Add-on Skeleton + Config-Gen** - Lock base image and HA schema; implement the Supervisor integration seam that converts options.json to env vars and entities.yaml <sub>(executed; 4 live-HA/Docker validation items deferred to Phase 4 CI / live HA)</sub>
-- [x] **Phase 2: v1 Code Changes** - Conditional mTLS in orchestrator and configurable bind/model_root in detector (two parallel tracks, same env var contract)
-- [x] **Phase 3: Process Supervision + Runtime Integration** - s6 service wiring, detector readiness gate, live MQTT credential fetch, add-on health entity (completed 2026-06-30)
-- [x] **Phase 4: Multi-Arch CI + Integration + Documentation** - CI workflow, aarch64 validation, end-to-end HA test, install documentation (completed 2026-06-30)
+- [x] **Phase 1: Add-on Skeleton + Config-Gen** — repository.yaml + Supervisor-valid schema + EN/PL translations + config-gen seam (options.json → env + entities.yaml) + torch-free Dockerfile — completed 2026-06-30
+- [x] **Phase 2: v1 Code Changes** — conditional gRPC security (http→insecure / https→mTLS) + configurable detector bind/model_root — completed 2026-06-30
+- [x] **Phase 3: Process Supervision + Runtime Integration** — s6 longrun services, detector readiness gate, live Supervisor MQTT credentials, composite health entity — completed 2026-06-30
+- [x] **Phase 4: Multi-Arch CI + Integration + Documentation** — multi-arch GHCR image, image-facts gates, DOCS.md — completed 2026-06-30
+
+**Live-verified on a real HA OS install (2026-06-30):** multi-arch image (`ghcr.io/krzyl2/argus`,
+amd64+arm64) pulls and runs; both s6 services start with the readiness gate; the orchestrator
+authenticates to HA via the Supervisor proxy (`ws://supervisor/core/websocket` + Bearer header on
+a raw WebSocket client); MQTT connects with live Supervisor credentials; `binary_sensor.argus_addon_health`
+reads OFF (healthy); startup discovery logged 412 unconfigured numeric sensors.
+
+</details>
+
+### 📋 v3.0 Ingress Configuration UI (Planned)
+
+**Milestone Goal:** Replace hand-edited YAML config with a Home Assistant **Ingress** web UI served
+by the add-on ("Open Web UI"): discover HA sensors and pick which Argus tracks, and assign which
+detector algorithm(s) + parameters apply to each sensor — no manual `entities` list, and changes
+apply without an add-on restart.
+
+- [ ] Phase 1: Ingress scaffold + config persistence seam (TBD plans)
+- [ ] Phase 2: Entity discovery + selection UI (TBD plans)
+- [ ] Phase 3: Per-entity detector/parameter assignment UI (TBD plans)
+- [ ] Phase 4: Validation, reload-without-restart, docs & CI (TBD plans)
 
 ## Phase Details
 
-### Phase 1: Add-on Skeleton + Config-Gen
+### Phase 1: Ingress scaffold + config persistence seam
+**Goal**: The add-on exposes an Ingress web endpoint ("Open Web UI") served by the orchestrator
+(ASP.NET minimal API behind `ingress: true` / `ingress_port` in config.yaml; auth handled by HA
+Ingress), backed by a single configuration source of truth under `/data` that both the UI and the
+orchestrator's `EntitiesConfigLoader` read.
+**Depends on**: v2.0
+**Requirements**: UI-01, CFG-01
+**Success Criteria**:
+  1. The add-on page shows "Open Web UI"; opening it serves the Argus UI through HA Ingress with no separate login.
+  2. The UI reads current config and writes changes to a `/data` config file; the orchestrator loads from the same file.
+  3. No new publicly exposed port — Ingress-only.
 
-**Goal**: The add-on schema is Supervisor-valid and the config-gen integration seam converts options.json to env vars and /data/entities.yaml before any process starts.
-**Depends on**: Nothing (first v2.0 phase)
-**Requirements**: ADDON-01, ADDON-03, ADDON-05, SUPV-01, SUPV-02, UICFG-01, UICFG-02, UICFG-03, UICFG-04, UICFG-06, UICFG-07, UICFG-08
-**Requirement → plan map**: 01-01 [ADDON-01, UICFG-01/02/03/04/06/07] · 01-02 [SUPV-01, SUPV-02, UICFG-08] · 01-03 [ADDON-03, ADDON-05]
-**Success Criteria** (what must be TRUE):
-
-  1. User can add the Argus repository URL to HA and see "Argus" appear as an installable add-on in the store (repository.yaml + addon/config.yaml valid).
-  2. The add-on Configuration tab shows all fields (entity list, InfluxDB settings, detector_endpoint, batch schedule, include/exclude patterns) with English and Polish field labels from translations/.
-  3. `ha addon validate` (or equivalent Supervisor lint) passes with no errors against the addon/ folder.
-  4. Running the config-gen script against a sample options.json produces a valid /data/entities.yaml matching the orchestrator's expected schema and writes all required s6 environment variables (ARGUS_* and Supervisor auth vars) without error.
-  5. The Dockerfile builds on the Debian bookworm base (amd64); `ldd` confirms glibc-linked .NET 8 runtime; `python -c "import torch"` fails inside the built image confirming no PyTorch present; compressed image is under 2 GB.
-
-**Plans**: TBD
-**Plans**: 3 plans
-Plans:
-
-- [ ] 01-01-PLAN.md — Add-on metadata: repository.yaml + config.yaml schema + EN/PL translations + icons (Wave 1)
-- [ ] 01-02-PLAN.md — Config-gen seam: gen-entities.py + cont-init.d env materialization + tests (Wave 1)
-- [ ] 01-03-PLAN.md — Add-on Dockerfile (Debian bookworm, torch-free) + image-facts gate (Wave 2)
-
-**UI hint**: yes
-**Research flag**: Read `EntitiesConfigLoader` source before implementing gen-entities.py — the generated YAML must match the loader's expected structure exactly. Also resolve whether the orchestrator reads `ARGUS_HA_URL`/`ARGUS_HA_TOKEN` directly or only through `HomeAssistant__*` configuration keys (determines which env vars config-gen must write).
-
-### Phase 2: v1 Code Changes
-
-**Goal**: The orchestrator selects gRPC channel security by URI scheme (http → insecure, https → mTLS); the detector binds to a configurable address and stores models under a configurable root — both changes driven by the env var contract from Phase 1.
+### Phase 2: Entity discovery + selection UI
+**Goal**: The UI lists candidate HA sensors (reusing `get_states` + `SelectDiscoverableSensors`,
+filterable) and lets the user select which entities Argus tracks — replacing the manual `entities`
+list and wiring `include_patterns`/`exclude_patterns` into actual selection (closing the v2.0 gap).
 **Depends on**: Phase 1
-**Requirements**: CODE-01, CODE-02, CODE-03
-**Note**: CODE-01 (DetectorChannelFactory.cs in orchestrator) and CODE-02/CODE-03 (config.py + server.py in detector) touch different codebases and can be executed in parallel within this phase.
-**Success Criteria** (what must be TRUE):
+**Requirements**: UI-02, CFG-02
+**Success Criteria**:
+  1. The UI shows live numeric sensors with current values; the user checks/unchecks which to track and saves.
+  2. include/exclude patterns are honored as selection filters.
+  3. Saving updates the tracked-entity set consumed by the orchestrator.
 
-  1. The orchestrator connects to a local detector at `http://127.0.0.1:50051` with no cert files present; gRPC calls succeed and no SSL handshake error occurs (negative test: zero certs + local mode must pass).
-  2. The orchestrator connects to a remote detector at `https://host:50051` using the existing mTLS path unchanged from v1.
-  3. The detector binds to `127.0.0.1` when `ARGUS_GRPC_BIND=127.0.0.1` and to `[::]` when unset (backward-compatible default).
-  4. The detector saves and loads model files from the path set in `ARGUS_MODEL_ROOT`; when unset it defaults to the v1 path (`/var/argus/models`).
-
-**Requirement → plan map**: 02-01 [CODE-01] · 02-02 [CODE-02, CODE-03]
-**Plans**: 2 plans
-Plans:
-
-- [ ] 02-01-PLAN.md — Orchestrator conditional channel factory: http→insecure loopback / https→mTLS unchanged + zero-cert regression test (Wave 1)
-- [ ] 02-02-PLAN.md — Detector configurable ARGUS_GRPC_BIND + ARGUS_MODEL_ROOT in config.py/server.py + tests (Wave 1)
-
-### Phase 3: Process Supervision + Runtime Integration
-
-**Goal**: Both processes run as supervised s6 longrun services; the orchestrator starts only after the detector is healthy; MQTT credentials are fetched live from the Supervisor; an add-on health entity is published to HA.
+### Phase 3: Per-entity detector/parameter assignment UI
+**Goal**: For each tracked entity, the UI assigns one or more detectors (HST streaming, PyOD MAD,
+STL, …) with parameters, persisted into the per-entity `detectors:` structure the orchestrator
+already supports (currently hardcoded to `hst` in config-gen).
 **Depends on**: Phase 2
-**Requirements**: PROC-01, PROC-02, PROC-03, PROC-04, PROC-05, SUPV-03, HEALTH-01, UICFG-05
-**Requirement → plan map**: 03-01 [PROC-01, PROC-02, PROC-03, PROC-04, PROC-05] · 03-02 [SUPV-03] · 03-03 [HEALTH-01, UICFG-05]
-**Success Criteria** (what must be TRUE):
+**Requirements**: UI-03, CFG-03
+**Success Criteria**:
+  1. The UI offers available detector types with editable parameters per entity.
+  2. Assignments persist in the structure `EntitiesConfigLoader` expects (multiple detectors per entity allowed).
+  3. Sane defaults when a detector/param is unset.
 
-  1. Starting the add-on container brings up both detector and orchestrator as s6 longrun services; the orchestrator only begins consuming HA events after the detector reports gRPC health SERVING.
-  2. Killing either service causes the container to exit non-zero rather than looping; the Supervisor watchdog also restarts the add-on when the gRPC port becomes unresponsive.
-  3. Setting `detector_endpoint` to a remote URL leaves the local detector service stopped (down file written by config-gen); only the orchestrator starts.
-  4. MQTT credentials are fetched from the Supervisor service API on each connection attempt; reinstalling the Mosquitto add-on and triggering a reconnect delivers a successful connection with the new credentials without restarting the Argus add-on.
-  5. The add-on logs a list of discovered numeric HA sensors at startup before anomaly detection begins, and an Argus health/status entity appears in HA via MQTT discovery after startup.
-
-**Plans**: 3 plans
-Plans:
-
-- [x] 03-01-PLAN.md — s6 service wiring + readiness gate (wait-detector.py) + finish/halt exit-propagation + remote-mode down file + watchdog (Wave 1)
-- [x] 03-02-PLAN.md — SUPV-03 live MQTT credential fetch from Supervisor API, never cached, with env-var fallback (Wave 1)
-- [x] 03-03-PLAN.md — HEALTH-01 composite Argus health binary_sensor + UICFG-05 startup discovered-sensors log (Wave 2)
-
-**Research flag**: Confirm the Supervisor internal proxy hostname (`supervisor` vs `homeassistant`) on a live HA OS instance before finalising the ARGUS_HA_URL env var value written by config-gen. Wrong hostname causes NetDaemon.Client to fail silently.
-
-### Phase 4: Multi-Arch CI + Integration + Documentation
-
-**Goal**: The add-on is published as a verified multi-arch image by CI, passes an end-to-end anomaly detection test on a live HA OS instance, and ships with install documentation.
+### Phase 4: Validation, reload-without-restart, docs & CI
+**Goal**: Config changes apply without an add-on restart (orchestrator reloads entity config on
+change), UI inputs are validated, and the add-on ships UI docs + CI packaging of UI assets.
 **Depends on**: Phase 3
-**Requirements**: ADDON-02, ADDON-04, DOCS-01
-**Requirement → plan map**: 04-01 [ADDON-02, ADDON-04] · 04-02 [DOCS-01]
-**Scope note**: This phase is planned for autonomous execution of automatable artifacts only. The CI workflow and DOCS.md are executor tasks; live aarch64 install validation, the 2-second end-to-end anomaly test, and the real GHCR release/publish are recorded as Phase 4 UAT (see plan `must_haves` flagged `[UAT — live]`).
-**Success Criteria** (what must be TRUE):
-
-  1. A release tag triggers the composable GHA workflow and publishes an amd64 + aarch64 manifest to GHCR without manual intervention; the compressed image is under 2 GB and `import torch` fails inside both arch images.
-  2. Installing the add-on on an aarch64 HA OS host starts successfully with no Python wheel source-compilation during install. (UAT)
-  3. An anomaly on a monitored sensor appears in HA as a `binary_sensor` and score `sensor` entity within 2 seconds of the `state_changed` event on a live HA OS install from the custom repo. (UAT)
-  4. `DOCS.md` (install steps, configuration reference, Mosquitto prerequisite) and `icon.png` are present in the add-on folder and visible in the HA documentation tab.
-
-**Plans**: 2 plans
-Plans:
-
-- [x] 04-01-PLAN.md — Multi-arch CI: dotnet publish + buildx (amd64+aarch64) → GHCR + image-facts gates (Wave 1)
-- [x] 04-02-PLAN.md — argus/DOCS.md: install, Mosquitto prereq, full config reference, troubleshooting; verify icon.png (Wave 1)
-
-**Research flag**: Resolved — QEMU emulation chosen (`docker/setup-qemu-action` + `docker/build-push-action --platform linux/amd64,linux/arm64`) with `--prefer-binary` (already in Dockerfile) + 120-min build timeout. All aarch64 wheels confirmed binary-available (RESEARCH §4).
+**Requirements**: UI-04, CFG-04, DOCS-02
+**Success Criteria**:
+  1. Saving in the UI applies to the running orchestrator within seconds, no add-on restart.
+  2. Invalid input (bad entity_id, out-of-range params) is rejected with a clear message.
+  3. DOCS.md documents the UI; the multi-arch image bundles the UI assets and stays under 2 GB.
 
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Foundations + Streaming | v1.0 | 8/8 | Complete | 2026-06-10 |
-| 2. Batch Path + Model Lifecycle | v1.0 | 6/6 | Complete | 2026-06-10 |
-| 1. Add-on Skeleton + Config-Gen | v2.0 | 0/3 | Planned | - |
-| 2. v1 Code Changes | v2.0 | 0/2 | Planned | - |
-| 3. Process Supervision + Runtime Integration | v2.0 | 3/3 | Complete    | 2026-06-30 |
-| 4. Multi-Arch CI + Integration + Documentation | v2.0 | 2/2 | Complete    | 2026-06-30 |
+| 1-2. Foundations + Batch/Model Lifecycle | v1.0 | 14/14 | Complete | 2026-06-10 |
+| 1. Add-on Skeleton + Config-Gen | v2.0 | 3/3 | Complete | 2026-06-30 |
+| 2. v1 Code Changes | v2.0 | 2/2 | Complete | 2026-06-30 |
+| 3. Process Supervision + Runtime Integration | v2.0 | 3/3 | Complete | 2026-06-30 |
+| 4. Multi-Arch CI + Integration + Documentation | v2.0 | 2/2 | Complete | 2026-06-30 |
+| 1. Ingress scaffold + config seam | v3.0 | 0/TBD | Not started | - |
+| 2. Entity discovery + selection UI | v3.0 | 0/TBD | Not started | - |
+| 3. Per-entity detector assignment UI | v3.0 | 0/TBD | Not started | - |
+| 4. Validation + reload + docs/CI | v3.0 | 0/TBD | Not started | - |

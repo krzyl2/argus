@@ -1,84 +1,64 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: Home Assistant Add-on
-current_phase: 4
-status: executing
-last_updated: "2026-06-30T16:10:21.843Z"
+milestone: v3.0
+milestone_name: Ingress Configuration UI
+current_phase: 0
+status: Planning
+last_updated: "2026-06-30T16:30:00.000Z"
 last_activity: 2026-06-30
-last_activity_desc: Phase 4 complete
+last_activity_desc: v2.0 shipped & live-verified; v3.0 (Ingress UI) roadmap drafted
 progress:
   total_phases: 4
-  completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
-  percent: 100
-current_phase_name: Multi-Arch CI + Integration + Documentation
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
+current_phase_name: Ingress scaffold + config persistence seam
 ---
 
 # Project State: Argus
 
 ## Current Status
 
-- Milestone: v2.0 Home Assistant Add-on — roadmap approved (4 phases)
-- Phase: 1 (Add-on Skeleton + Config-Gen) — ready to plan
-- Last action: Created and approved v2.0 roadmap — 2026-06-29
+- Milestone: **v3.0 Ingress Configuration UI** — roadmap drafted (4 phases), requirements outlined
+- Previous: **v2.0 Home Assistant Add-on — SHIPPED & live-verified 2026-06-30**
+- Last action: Closed/archived v2.0; drafted v3.0 roadmap + requirements — 2026-06-30
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-29)
+See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds.
-**Current focus:** Phase 04 — multi-arch-ci-integration-documentation
+**Current focus:** v3.0 Phase 1 — Ingress scaffold + config persistence seam (refine via /gsd-discuss-phase)
 
-## Phase Status
+## Phase Status (v3.0)
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 1 | Add-on Skeleton + Config-Gen | Not started |
-| 2 | v1 Code Changes | Not started |
-| 3 | Process Supervision + Runtime Integration | Not started |
-| 4 | Multi-Arch CI + Integration + Documentation | Not started |
+| 1 | Ingress scaffold + config persistence seam | Not started |
+| 2 | Entity discovery + selection UI | Not started |
+| 3 | Per-entity detector/parameter assignment UI | Not started |
+| 4 | Validation + reload-without-restart + docs/CI | Not started |
 
-v1.0 phases archived under `.planning/archive/v1.0/`.
+v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 
 ## Accumulated Context
 
-> v1.0 decisions/pitfalls below are retained as historical reference. v2.0 overrides
-> (mTLS conditional, single-container default) are recorded in PROJECT.md.
+### v2.0 outcomes (relevant to v3)
 
-### Decisions
+- Add-on is a single-container image `ghcr.io/krzyl2/argus` (amd64+arm64), built locally via buildx + QEMU and pushed to GHCR (CI workflow also present in `.github/workflows/build.yml`).
+- HA connection: orchestrator uses a raw WebSocket client (`HaWebSocketClient`) to the Supervisor proxy `ws://supervisor/core/websocket` with `Authorization: Bearer SUPERVISOR_TOKEN` on the upgrade — NetDaemon.Client could not (its WS factory is internal); direct `homeassistant:8123` is refused for add-ons.
+- Config today: `config-gen` (`10-config-gen.sh`) turns add-on options → env + `/data/entities.yaml`; `gen-entities.py` builds entities **only** from the explicit `entities` list and hardcodes the `hst` detector. `include_patterns`/`exclude_patterns` are currently **ignored** (v3 closes this).
+- `EntitiesConfigLoader` already supports per-entity `detectors: [{name, params}]` — the data model for v3's detector-assignment UI exists; the UI + config-gen wiring is what's missing.
+- `SelectDiscoverableSensors` + the startup `get_states` discovery (UICFG-05) already enumerate live numeric sensors — reuse for the v3 selection UI.
+- Detector binds `0.0.0.0` in local mode (watchdog reachability); InfluxDB batch path is skipped when `influx_url` is empty (streaming-only).
+- Add-on image base: `ghcr.io/home-assistant/base-debian:bookworm`, Python 3.11 (no apt python3.12 on Debian), .NET 8 runtime via `dotnet-install.sh`.
 
-- .NET 8 orchestrator + Python gRPC detector (locked D2)
-- gRPC with mTLS for edge-to-detector transport (locked D4)
-- MQTT discovery for HA entity creation (locked D6)
-- PyOD MAD + STL + River HST as detection engines
-- Per-entity models on detector host disk, joblib (PyOD) / pickle (River) serialization
-- entity_id.txt sidecar for unambiguous slug→entity_id reconstruction (CR-02 fix)
-- Model store: models/{slug}/{detector}/v{N}/; atomic latest file; retain 3 versions; prune on save
-- BatchSchedulerWorker: PeriodicTimer, 10-min default, nightly Fit at hour 2
-- Fit RPC saves model internally in Python (no separate SaveModel call from orchestrator)
-- threading.Lock per-(entity_id, detector) for MDL-04; train outside lock on deepcopy, atomic swap
-- MDL-03 gate: NOT_SERVING before load_all_into; SERVING after
-- StlDetector is stateless (no fit); fit_one skips fit for stl detector type (WR-01 fix)
-- Mono-repo: proto/, orchestrator/, detector/, deploy/ (locked)
-- Phase 1-2 are CPU-only; GPU work is v2 (Phase 4)
+### Locked decisions (historical, still in force)
 
-### Critical Pitfalls (resolved)
-
-- RobustZScore does NOT exist in PyOD 3.6.0 — use MAD (pyod.models.mad.MAD)
-- River HST to_dict/from_dict do NOT exist — use pickle for River model persistence
-- STL 24h window (1440 points) always triggers insufficient-history guard (needs 2880 / 48h for daily period)
-- google.protobuf wrappers generate as double?/float? in C# with Grpc.Tools 2.80.0 — not as wrapper objects
-- IInfluxDataSource and IBatchDetectorClient extracted as seams (no mocking library in test project)
-- entity_id.txt sidecar required to avoid lossy slug→entity_id reconstruction
-
-### Open Questions (deferred to deployment)
-
-- Q1: Exact HA entity_ids for entities.yaml (needed for integration testing)
-- Q2: InfluxDB location/auth (needed for batch path to actually query)
-- Q3: GPU host static LAN IP/hostname (mTLS SAN placeholders in dev certs)
-- Q4: MQTT broker auth — username/password or client cert?
+- .NET 8 orchestrator + Python gRPC detector (D2); gRPC mTLS for remote, insecure loopback for local (D4)
+- MQTT discovery for HA entity creation (D6); PyOD MAD + STL + River HST detection engines
+- Mono-repo: proto/, orchestrator/, detector/, deploy/, argus/ (add-on)
 
 ### Blockers
 
@@ -86,15 +66,10 @@ v1.0 phases archived under `.planning/archive/v1.0/`.
 
 ## Session Continuity
 
-- Last session: 2026-06-29 (Archived v1.0, started v2.0 milestone)
-- Resume point: Research HA add-on ecosystem → define v2.0 requirements → roadmap
+- Last session: 2026-06-30 — debugged the add-on to a working live HA install, shipped v2.0, drafted v3.0.
+- Resume point: refine v3.0 requirements/scope, then `/gsd-discuss-phase 1` (or `/gsd-new-milestone` to formalize v3.0).
 
-## Current Position
+## Operator Next Steps
 
-Phase: 4
-Plan: Not started
-Status: Executing Phase 04
-Last activity: 2026-06-30 — Phase 4 complete
-
----
-*Last updated: 2026-06-29 — Milestone v2.0 (Home Assistant Add-on) started*
+- Optionally test the v2.0 anomaly E2E further (change a tracked sensor sharply → binary_sensor flips ON).
+- Start v3.0: `/gsd-new-milestone` (formal questioning→research→requirements→roadmap) OR `/gsd-discuss-phase 1` to begin the Ingress UI directly from the drafted roadmap.

@@ -1,7 +1,7 @@
 ---
 phase: 01-add-on-skeleton-config-gen
 verified: 2026-06-29T23:00:00Z
-status: human_needed
+status: passed
 score: 2/5 must-haves verified
 behavior_unverified: 3
 overrides_applied: 0
@@ -37,7 +37,7 @@ human_verification:
 
 **Phase Goal:** The add-on schema is Supervisor-valid and the config-gen integration seam converts options.json to env vars and /data/entities.yaml before any process starts.
 **Verified:** 2026-06-29
-**Status:** human_needed
+**Status:** passed (live-verified 2026-06-30 via working add-on + CI build)
 **Re-verification:** No — initial verification
 
 ---

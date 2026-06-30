@@ -1,106 +1,46 @@
-# Requirements — Milestone v2.0: Home Assistant Add-on
+# Requirements: Argus — v3.0 Ingress Configuration UI
 
-**Goal:** Argus installable via the HA add-on store ("custom repository"), configured entirely through the UI — no manual tokens, `.env`, or file editing.
+> v1.0 requirements archived in `.planning/milestones/v1.0-REQUIREMENTS.md`.
+> v2.0 requirements archived in `.planning/milestones/v2.0-REQUIREMENTS.md`.
+>
+> **Status:** draft outline (created at v2.0 close). Refine via `/gsd-new-milestone`
+> or `/gsd-discuss-phase` before planning each phase.
 
-Status legend: `[ ]` planned · `[x]` validated. REQ-IDs are stable references for roadmap traceability.
+## Milestone Goal
 
----
+Replace hand-edited YAML configuration with a Home Assistant **Ingress** web UI served by the
+add-on: discover HA sensors and select which Argus tracks, assign detector algorithm(s) +
+parameters per sensor, and apply changes without an add-on restart.
 
-## v2.0 Requirements
+## Requirements
 
-### Packaging & Distribution (ADDON)
+### UI — Ingress web interface
+- [ ] **UI-01** — The add-on exposes an Ingress endpoint ("Open Web UI") served by the orchestrator (ASP.NET minimal API behind `ingress: true` / `ingress_port`), authenticated by HA Ingress, with no separately exposed port.
+- [ ] **UI-02** — The UI lists live HA numeric sensors (reusing `get_states` + `SelectDiscoverableSensors`), filterable, and lets the user select which entities Argus tracks.
+- [ ] **UI-03** — The UI assigns one or more detectors (HST, MAD, STL, …) with editable parameters to each tracked entity.
+- [ ] **UI-04** — UI inputs are validated (entity_id format, parameter ranges) with clear error messages before save.
 
-- [ ] **ADDON-01**: User can add the Argus repository URL as a custom add-on repository and see "Argus" appear in the HA add-on store.
-- [x] **ADDON-02**: User can install and start Argus from the store and it runs on both amd64 and aarch64 hosts.
-- [ ] **ADDON-03**: The add-on image is built on `ghcr.io/home-assistant/base-debian:bookworm` (Debian, never Alpine).
-- [x] **ADDON-04**: Multi-arch images (amd64 + aarch64) are built and published via the composable HA GitHub Actions on a release tag.
-- [ ] **ADDON-05**: The built image stays under 2 GB compressed and contains no PyTorch (Darts core only).
+### CFG — Configuration model & lifecycle
+- [ ] **CFG-01** — A single configuration source of truth under `/data` is read by both the UI and the orchestrator's `EntitiesConfigLoader`.
+- [ ] **CFG-02** — Entity selection (incl. `include_patterns`/`exclude_patterns` honored as filters) persists to the config and is consumed by the orchestrator — replacing the manual `entities` list and closing the v2.0 patterns-ignored gap.
+- [ ] **CFG-03** — Per-entity detector/parameter assignments persist in the structure `EntitiesConfigLoader` expects (multiple detectors per entity supported; sane defaults when unset).
+- [ ] **CFG-04** — Configuration changes apply to the running orchestrator within seconds via reload, without restarting the add-on.
 
-### Supervisor Integration (SUPV)
-
-- [ ] **SUPV-01**: The add-on authenticates to Home Assistant automatically via `SUPERVISOR_TOKEN` (`homeassistant_api: true`) — the user never supplies an HA URL or token.
-- [ ] **SUPV-02**: The add-on obtains MQTT broker credentials automatically via `services: [mqtt:need]` — the user never enters MQTT host/user/password; the add-on fails loudly (exit non-zero) if no MQTT service is available.
-- [x] **SUPV-03**: MQTT credentials are re-read on every reconnect, never cached, so broker re-provisioning does not break egress.
-
-### UI Configuration (UICFG)
-
-- [ ] **UICFG-01**: User selects monitored sensors as a list of `entity_id` strings in the add-on Configuration tab.
-- [ ] **UICFG-02**: User configures InfluxDB (url, token, org, bucket, measurement, value_field) in the UI; leaving it empty disables the batch path without errors.
-- [ ] **UICFG-03**: User can optionally set `detector_endpoint` to a remote detector URL; leaving it empty runs the bundled local detector.
-- [ ] **UICFG-04**: User can set the batch schedule (interval minutes, nightly fit hour) in the UI.
-- [x] **UICFG-05**: On startup the add-on logs the discovered numeric HA sensors so the user can copy entity_ids (mitigates the missing entity picker).
-- [ ] **UICFG-06**: User can filter monitored entities via `include_patterns` / `exclude_patterns` globs as an alternative to an explicit list.
-- [ ] **UICFG-07**: Configuration-tab field labels and descriptions are localized via `translations/` (English + Polish, per D8).
-- [ ] **UICFG-08**: A startup step generates `/data/entities.yaml` from `/data/options.json` before the orchestrator starts.
-
-### Process Supervision (PROC)
-
-- [x] **PROC-01**: Both the detector and orchestrator run as s6-overlay longrun services inside the single add-on container.
-- [x] **PROC-02**: The orchestrator begins consuming HA only after the detector reports gRPC health SERVING (readiness gate, local mode).
-- [x] **PROC-03**: If either service dies, the container exits rather than entering a silent restart loop (`S6_BEHAVIOUR_IF_STAGE2_FAILS=2`).
-- [x] **PROC-04**: When `detector_endpoint` is set (remote mode), the bundled local detector does not start.
-- [x] **PROC-05**: A watchdog is declared on the gRPC port so the Supervisor restarts a hung add-on.
-
-### v1 Code Changes (CODE)
-
-- [ ] **CODE-01**: The orchestrator uses an insecure loopback gRPC channel when the detector endpoint scheme is `http://` (no certs required); the existing mTLS path is retained for `https://` (remote).
-- [ ] **CODE-02**: The detector bind address is configurable via `ARGUS_GRPC_BIND` and binds `127.0.0.1` in local mode.
-- [ ] **CODE-03**: The detector model root is configurable via `ARGUS_MODEL_ROOT` and persists models to `/data/models/`.
-
-### Add-on Health (HEALTH)
-
-- [x] **HEALTH-01**: Argus exposes its own health/status (e.g. detector SERVING / add-on alive) as an HA entity via MQTT discovery, so the user can monitor the add-on itself.
-
-### Documentation (DOCS)
-
-- [x] **DOCS-01**: The add-on ships `DOCS.md` (install from custom repo, configuration reference, Mosquitto prerequisite) and an `icon.png`.
-
----
-
-## Future Requirements (v2.1+)
-
-- Auto-discovery-only mode (monitor all numeric sensors with exclude list, no manual entity list).
-- HACS / official add-on store submission once a stable public release exists.
-
----
-
-## Out of Scope (v2.0) — with reasoning
-
-- **Ingress / sidebar panel** — Argus has no web UI; an ingress link would be dead and add maintenance cost.
-- **Alpine base image** — incompatible with .NET 8 glibc ABI and lacks aarch64 musllinux ML wheels.
-- **Zigbee2MQTT embedded-broker support** — Supervisor MQTT discovery returns nothing for the Z2M built-in broker; document the official Mosquitto add-on as a prerequisite instead of coding around it.
-- **Changing the detection algorithms** — v1 streaming + batch detection is unchanged; v2.0 is packaging only.
-- **Removing the docker-compose path** — compose remains for HA Container/Core and remote-detector deployments.
-
----
+### DOCS
+- [ ] **DOCS-02** — DOCS.md documents the Ingress UI (open, select entities, assign detectors); the multi-arch image bundles UI assets and stays under 2 GB.
 
 ## Traceability
 
-| REQ-ID | Phase | Status |
-|--------|-------|--------|
-| ADDON-01 | Phase 1 | Pending |
-| ADDON-02 | Phase 4 | Complete |
-| ADDON-03 | Phase 1 | Pending |
-| ADDON-04 | Phase 4 | Complete |
-| ADDON-05 | Phase 1 | Pending |
-| SUPV-01 | Phase 1 | Pending |
-| SUPV-02 | Phase 1 | Pending |
-| SUPV-03 | Phase 3 | Complete |
-| UICFG-01 | Phase 1 | Pending |
-| UICFG-02 | Phase 1 | Pending |
-| UICFG-03 | Phase 1 | Pending |
-| UICFG-04 | Phase 1 | Pending |
-| UICFG-05 | Phase 3 | Complete |
-| UICFG-06 | Phase 1 | Pending |
-| UICFG-07 | Phase 1 | Pending |
-| UICFG-08 | Phase 1 | Pending |
-| PROC-01 | Phase 3 | Complete |
-| PROC-02 | Phase 3 | Complete |
-| PROC-03 | Phase 3 | Complete |
-| PROC-04 | Phase 3 | Complete |
-| PROC-05 | Phase 3 | Complete |
-| CODE-01 | Phase 2 | Pending |
-| CODE-02 | Phase 2 | Pending |
-| CODE-03 | Phase 2 | Pending |
-| HEALTH-01 | Phase 3 | Complete |
-| DOCS-01 | Phase 4 | Complete |
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| UI-01, CFG-01 | v3 Phase 1 | Not started |
+| UI-02, CFG-02 | v3 Phase 2 | Not started |
+| UI-03, CFG-03 | v3 Phase 3 | Not started |
+| UI-04, CFG-04, DOCS-02 | v3 Phase 4 | Not started |
+
+## Open Questions (resolve during discuss)
+
+- Q1: UI tech — server-rendered minimal pages vs a small SPA bundled in the image? (image-size budget, build complexity)
+- Q2: Config file format — extend the existing `entities.yaml`, or a richer JSON the UI owns and config-gen/loader read?
+- Q3: Reload mechanism — file-watch + in-place reconfigure of the streaming pipeline, vs orchestrator self-restart on config change?
+- Q4: How detector parameters are surfaced/validated per detector type (schema-driven form?).
