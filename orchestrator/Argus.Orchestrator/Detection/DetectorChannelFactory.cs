@@ -8,31 +8,54 @@ using Microsoft.Extensions.Logging;
 namespace Argus.Orchestrator.Detection;
 
 /// <summary>
-/// Builds the single mTLS GrpcChannel for the orchestrator → detector connection.
+/// Builds the GrpcChannel for the orchestrator → detector connection.
 ///
-/// D-18: Uses HttpClientHandler.ClientCertificates + ServerCertificateCustomValidationCallback
-/// with X509ChainTrustMode.CustomRootTrust. The legacy Grpc.Core credential API is not used.
-/// T-04-01: CustomRootTrust pins the Argus CA; rejects certs not chaining to deploy/certs/ca.crt.
-/// T-04-03: No insecure GrpcChannel path; all connections enforce mTLS via HttpClientHandler.
+/// Two modes are supported based on the URI scheme of DetectorEndpoint:
+///
+/// - Local mode (http:// scheme or loopback host): insecure h2c channel with no cert files
+///   required. Intended for the add-on deployment where detector and orchestrator share a
+///   container and communicate on 127.0.0.1:50051. This intentionally overrides the v1
+///   constraint T-04-03 ("no insecure path") for in-container loopback only; no LAN exposure.
+///
+/// - Remote mode (https:// scheme): mTLS channel using HttpClientHandler.ClientCertificates
+///   with X509ChainTrustMode.CustomRootTrust CA pinning. D-18 is fully enforced: mutual TLS
+///   with the server cert pinned to the Argus CA. The v1 code path is byte-for-byte unchanged.
 ///
 /// ONE channel per process — register as singleton.
 /// </summary>
 public static class DetectorChannelFactory
 {
+    private const string Http2UnencryptedSupportSwitch =
+        "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport";
+
     /// <summary>
-    /// Creates the mTLS GrpcChannel. Optionally exposes the HttpClientHandler for testing.
+    /// Creates the GrpcChannel.
+    ///
+    /// Local-mode endpoints (http:// or loopback host) return an insecure h2c channel; no
+    /// cert files are loaded. Remote endpoints (https://) use the existing mTLS path.
+    /// The optional handlerCapture is only invoked in remote (mTLS) mode.
     /// </summary>
     public static GrpcChannel Create(ConnectionSettings settings,
         Action<HttpClientHandler>? handlerCapture = null)
     {
+        // Endpoint check runs first so local mode does not require cert env vars.
+        if (string.IsNullOrWhiteSpace(settings.DetectorEndpoint))
+            throw new ArgumentException("ARGUS_DETECTOR_ENDPOINT must be set");
+
+        if (IsLocalMode(settings.DetectorEndpoint))
+        {
+            // h2c (HTTP/2 cleartext) over loopback requires this process-global switch (Pitfall 11).
+            AppContext.SetSwitch(Http2UnencryptedSupportSwitch, true);
+            return GrpcChannel.ForAddress(settings.DetectorEndpoint, new GrpcChannelOptions());
+        }
+
+        // Remote path: existing mTLS logic (D-18) — unchanged from v1.
         if (string.IsNullOrWhiteSpace(settings.TlsCa))
             throw new ArgumentException("ARGUS_TLS_CA must be set (path to ca.crt)");
         if (string.IsNullOrWhiteSpace(settings.TlsCert))
             throw new ArgumentException("ARGUS_TLS_CERT must be set (path to client.crt)");
         if (string.IsNullOrWhiteSpace(settings.TlsKey))
             throw new ArgumentException("ARGUS_TLS_KEY must be set (path to client.key)");
-        if (string.IsNullOrWhiteSpace(settings.DetectorEndpoint))
-            throw new ArgumentException("ARGUS_DETECTOR_ENDPOINT must be set");
 
         // Load CA cert for custom trust store (T-04-01)
         // Note: X509CertificateLoader is .NET 9+; use X509Certificate2 ctor on .NET 8
@@ -67,13 +90,33 @@ public static class DetectorChannelFactory
     }
 
     /// <summary>
-    /// Creates the mTLS GrpcChannel and logs the established connection (OBS-01).
+    /// Creates the GrpcChannel and logs the active mode: insecure loopback or mTLS (OBS-01).
     /// </summary>
     public static GrpcChannel Create(ConnectionSettings settings, ILogger logger)
     {
         var channel = Create(settings);
-        logger.Log(LogLevel.Information, LogEvents.ChannelEstablished,
-            "mTLS gRPC channel established to {Endpoint}", settings.DetectorEndpoint);
+        if (IsLocalMode(settings.DetectorEndpoint!))
+        {
+            logger.Log(LogLevel.Information, LogEvents.ChannelEstablished,
+                "Insecure loopback gRPC channel established to {Endpoint}", settings.DetectorEndpoint);
+        }
+        else
+        {
+            logger.Log(LogLevel.Information, LogEvents.ChannelEstablished,
+                "mTLS gRPC channel established to {Endpoint}", settings.DetectorEndpoint);
+        }
         return channel;
     }
+
+    /// <summary>
+    /// Returns true when the endpoint should use an insecure h2c channel.
+    /// http:// scheme is the primary discriminator; loopback host is the safety net
+    /// (config-gen always writes http://127.0.0.1:50051 for local mode).
+    /// </summary>
+    private static bool IsLocalMode(string endpoint) =>
+        Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttp
+            || uri.Host == "127.0.0.1"
+            || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || uri.Host == "::1");
 }
