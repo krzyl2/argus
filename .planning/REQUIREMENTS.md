@@ -3,8 +3,7 @@
 > v1.0 requirements archived in `.planning/milestones/v1.0-REQUIREMENTS.md`.
 > v2.0 requirements archived in `.planning/milestones/v2.0-REQUIREMENTS.md`.
 >
-> **Status:** draft outline (created at v2.0 close). Refine via `/gsd-new-milestone`
-> or `/gsd-discuss-phase` before planning each phase.
+> **Status:** Roadmap created 2026-06-30. 9/9 v3.0 requirements mapped to phases.
 
 ## Milestone Goal
 
@@ -33,14 +32,19 @@ parameters per sensor, and apply changes without an add-on restart.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| UI-01, CFG-01 | v3 Phase 1 | Not started |
-| UI-02, CFG-02 | v3 Phase 2 | Not started |
-| UI-03, CFG-03 | v3 Phase 3 | Not started |
-| UI-04, CFG-04, DOCS-02 | v3 Phase 4 | Not started |
+| UI-01 | v3 Phase 1 | Not started |
+| CFG-01 | v3 Phase 1 | Not started |
+| UI-02 | v3 Phase 2 | Not started |
+| CFG-02 | v3 Phase 2 | Not started |
+| UI-03 | v3 Phase 3 | Not started |
+| CFG-03 | v3 Phase 3 | Not started |
+| CFG-04 | v3 Phase 3 | Not started |
+| UI-04 | v3 Phase 4 | Not started |
+| DOCS-02 | v3 Phase 4 | Not started |
 
 ## Open Questions (resolve during discuss)
 
-- Q1: UI tech — server-rendered minimal pages vs a small SPA bundled in the image? (image-size budget, build complexity)
-- Q2: Config file format — extend the existing `entities.yaml`, or a richer JSON the UI owns and config-gen/loader read?
-- Q3: Reload mechanism — file-watch + in-place reconfigure of the streaming pipeline, vs orchestrator self-restart on config change?
-- Q4: How detector parameters are surfaced/validated per detector type (schema-driven form?).
+- Q1: UI tech — server-rendered minimal pages vs a small SPA bundled in the image? (image-size budget, build complexity) — **Research recommendation: server-rendered HTML + htmx 2.0.10; no SPA, no Node.js build step.**
+- Q2: Config file format — extend the existing `entities.yaml`, or a richer JSON the UI owns and config-gen/loader read? — **Research recommendation: keep `/data/entities.yaml` as the single source of truth; UI writes the same YAML via YamlDotNet.**
+- Q3: Reload mechanism — file-watch + in-place reconfigure of the streaming pipeline, vs orchestrator self-restart on config change? — **Research recommendation: ILiveEntitiesConfig atomic swap + HaListenerWorker inner-CTS restart loop (not host restart). See Phase 3.**
+- Q4: How detector parameters are surfaced/validated per detector type (schema-driven form?). — **Research recommendation: typed parameter fields with defaults shown; validation rules derived from existing HstParams/DetectorConfig constraints.**
