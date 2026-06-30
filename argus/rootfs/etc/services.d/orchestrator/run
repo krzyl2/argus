@@ -1,0 +1,22 @@
+#!/usr/bin/with-contenv bashio
+# services.d/orchestrator/run
+# s6 longrun: gate on detector gRPC health (local mode), then exec the .NET orchestrator.
+#
+# PROC-01: both services defined as s6 longruns.
+# PROC-02: orchestrator blocks on detector SERVING in local mode (wait-detector.py).
+#          In remote mode the poll is skipped — the orchestrator dials the external
+#          endpoint itself and enforces its own in-app readiness gate
+#          (DetectionGateway.WaitForHealthyAsync).  The run-script poll is the
+#          belt-and-suspenders ordering guarantee per ARCHITECTURE.md.
+
+MODE=$(cat /run/argus/mode 2>/dev/null || echo "local")
+
+if [ "${MODE}" = "local" ]; then
+    bashio::log.info "Local mode: waiting for detector to become SERVING on 127.0.0.1:50051."
+    python3 /usr/local/bin/wait-detector.py 127.0.0.1:50051 argus.v1.DetectorService
+    bashio::log.info "Detector is SERVING — starting orchestrator."
+else
+    bashio::log.info "Remote mode: skipping local detector health poll."
+fi
+
+exec dotnet /opt/argus/orchestrator/Argus.Orchestrator.dll

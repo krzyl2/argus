@@ -1,0 +1,16 @@
+#!/usr/bin/with-contenv bashio
+# services.d/orchestrator/finish
+# s6 finish script — called when the orchestrator process exits for any reason.
+#
+# PROC-03: halt the container so HA Supervisor reports the failure instead of
+# letting s6 silently restart-loop the service.
+#
+# $1 = process exit code (passed by s6 automatically).
+# $2 = signal number that caused the exit, or -1 if clean exit.
+#
+# s6-overlay v3 halt form: /run/s6/basedir/bin/halt
+# Do NOT use s6-svscanctl -t (v2 form — has no effect on v3 base images).
+
+bashio::log.fatal "Orchestrator exited with code $1 — halting container (PROC-03)."
+
+exec /run/s6/basedir/bin/halt

@@ -1,0 +1,17 @@
+#!/usr/bin/with-contenv bashio
+# services.d/detector/run
+# s6 longrun: start the Python gRPC detector (local mode only).
+#
+# In remote mode this script is never reached because config-gen writes a
+# down file (argus/rootfs/etc/services.d/detector/down) that tells s6 not to
+# start this service — no in-script mode check needed.
+#
+# Environment variables (ARGUS_GRPC_BIND, ARGUS_MODEL_ROOT) are written to
+# /var/run/s6/container_environment/ by cont-init.d/10-config-gen.sh and
+# inherited via with-contenv — do not duplicate them here.
+
+export PYTHONPATH=/opt/argus/detector
+
+bashio::log.info "Starting Argus detector (local mode)."
+
+exec python3 -m argus_detector.server
