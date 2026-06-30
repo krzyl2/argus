@@ -40,6 +40,7 @@ public static class LogEvents
 
     // Health publisher (6xxx)
     public static readonly EventId HealthEntityPublished = new(6001, nameof(HealthEntityPublished));
+    public static readonly EventId HealthStatePublished  = new(6002, nameof(HealthStatePublished));
 
     // Batch scheduler (5xxx)
     public static readonly EventId BatchSchedulerStarted   = new(5001, nameof(BatchSchedulerStarted));

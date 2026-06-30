@@ -88,7 +88,7 @@ public sealed class HealthPublisherWorker : BackgroundService
             string payload = HealthEvaluator.Evaluate(serving, ha, mqtt);
             await _mqtt.PublishAsync(DiscoveryPublisher.HealthStateTopic, payload, retain: true, stoppingToken);
 
-            _logger.LogInformation(LogEvents.HealthEntityPublished,
+            _logger.LogInformation(LogEvents.HealthStatePublished,
                 "Health state: {Payload} (detector={Serving} ha={Ha} mqtt={Mqtt})",
                 payload, serving, ha, mqtt);
 
