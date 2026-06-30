@@ -160,7 +160,15 @@ var app = builder.Build();
 app.Use(async (ctx, next) =>
 {
     if (ctx.Request.Headers.TryGetValue("X-Ingress-Path", out var ingressPath))
-        ctx.Request.PathBase = new Microsoft.AspNetCore.Http.PathString(ingressPath.ToString());
+    {
+        var raw = ingressPath.ToString();
+        // Accept only non-empty strings that look like absolute paths (no query, fragment, or null byte)
+        if (!string.IsNullOrEmpty(raw) && raw.StartsWith('/') &&
+            !raw.Contains('?') && !raw.Contains('#') && !raw.Contains('\0'))
+        {
+            ctx.Request.PathBase = new Microsoft.AspNetCore.Http.PathString(raw);
+        }
+    }
     await next();
 });
 
