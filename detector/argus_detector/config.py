@@ -6,10 +6,12 @@ No credentials are hard-coded (CONF-03 alignment).
 
 Environment variables:
   ARGUS_GRPC_PORT    gRPC listen port          (default: 50051)
+  ARGUS_GRPC_BIND    gRPC bind address         (default: [::] — all interfaces, v1 default)
   ARGUS_TLS_CERT     Path to server certificate (default: None — insecure in unit tests)
   ARGUS_TLS_KEY      Path to server private key  (default: None)
   ARGUS_TLS_CA       Path to CA cert for mTLS client auth (default: None)
   ARGUS_LOG_LEVEL    Logging level              (default: INFO)
+  ARGUS_MODEL_ROOT   Root directory for model storage (default: /var/argus/models)
 """
 
 import os
@@ -20,10 +22,12 @@ class DetectorConfig:
 
     def __init__(self) -> None:
         self.grpc_port: int = int(os.environ.get("ARGUS_GRPC_PORT", "50051"))
+        self.grpc_bind: str = os.environ.get("ARGUS_GRPC_BIND", "[::]")
         self.tls_cert: str | None = os.environ.get("ARGUS_TLS_CERT") or None
         self.tls_key: str | None = os.environ.get("ARGUS_TLS_KEY") or None
         self.tls_ca: str | None = os.environ.get("ARGUS_TLS_CA") or None
         self.log_level: str = os.environ.get("ARGUS_LOG_LEVEL", "INFO")
+        self.model_root: str = os.environ.get("ARGUS_MODEL_ROOT", "/var/argus/models")
 
     @property
     def mtls_enabled(self) -> bool:
