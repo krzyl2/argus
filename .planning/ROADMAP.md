@@ -86,13 +86,18 @@ Plans:
 **Goal**: The add-on is published as a verified multi-arch image by CI, passes an end-to-end anomaly detection test on a live HA OS instance, and ships with install documentation.
 **Depends on**: Phase 3
 **Requirements**: ADDON-02, ADDON-04, DOCS-01
+**Requirement → plan map**: 04-01 [ADDON-02, ADDON-04] · 04-02 [DOCS-01]
+**Scope note**: This phase is planned for autonomous execution of automatable artifacts only. The CI workflow and DOCS.md are executor tasks; live aarch64 install validation, the 2-second end-to-end anomaly test, and the real GHCR release/publish are recorded as Phase 4 UAT (see plan `must_haves` flagged `[UAT — live]`).
 **Success Criteria** (what must be TRUE):
   1. A release tag triggers the composable GHA workflow and publishes an amd64 + aarch64 manifest to GHCR without manual intervention; the compressed image is under 2 GB and `import torch` fails inside both arch images.
-  2. Installing the add-on on an aarch64 HA OS host starts successfully with no Python wheel source-compilation during install.
-  3. An anomaly on a monitored sensor appears in HA as a `binary_sensor` and score `sensor` entity within 2 seconds of the `state_changed` event on a live HA OS install from the custom repo.
+  2. Installing the add-on on an aarch64 HA OS host starts successfully with no Python wheel source-compilation during install. (UAT)
+  3. An anomaly on a monitored sensor appears in HA as a `binary_sensor` and score `sensor` entity within 2 seconds of the `state_changed` event on a live HA OS install from the custom repo. (UAT)
   4. `DOCS.md` (install steps, configuration reference, Mosquitto prerequisite) and `icon.png` are present in the add-on folder and visible in the HA documentation tab.
-**Plans**: TBD
-**Research flag**: Confirm native ARM64 GitHub Actions runner availability before writing the CI matrix; if unavailable, fall back to QEMU emulation + `pip install --prefer-binary` with an extended timeout gate.
+**Plans**: 2 plans
+Plans:
+- [ ] 04-01-PLAN.md — Multi-arch CI: dotnet publish + buildx (amd64+aarch64) → GHCR + image-facts gates (Wave 1)
+- [ ] 04-02-PLAN.md — argus/DOCS.md: install, Mosquitto prereq, full config reference, troubleshooting; verify icon.png (Wave 1)
+**Research flag**: Resolved — QEMU emulation chosen (`docker/setup-qemu-action` + `docker/build-push-action --platform linux/amd64,linux/arm64`) with `--prefer-binary` (already in Dockerfile) + 120-min build timeout. All aarch64 wheels confirmed binary-available (RESEARCH §4).
 
 ## Progress
 
@@ -103,4 +108,4 @@ Plans:
 | 1. Add-on Skeleton + Config-Gen | v2.0 | 0/3 | Planned | - |
 | 2. v1 Code Changes | v2.0 | 0/2 | Planned | - |
 | 3. Process Supervision + Runtime Integration | v2.0 | 0/3 | Planned | - |
-| 4. Multi-Arch CI + Integration + Documentation | v2.0 | 0/TBD | Not started | - |
+| 4. Multi-Arch CI + Integration + Documentation | v2.0 | 0/2 | Planned | - |
