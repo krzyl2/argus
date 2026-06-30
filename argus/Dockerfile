@@ -1,15 +1,15 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:trixie
+ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:bookworm
 FROM ${BUILD_FROM}
 
 # s6-overlay: exit container when any service crashes rather than looping silently.
 # Must be set before s6 init reads stage-2 config.
 ENV S6_BEHAVIOUR_IF_STAGE2_FAILS=2
 
-# ── .NET 8 Runtime (Microsoft Debian 13 package feed) ─────────────────────────
+# ── .NET 8 Runtime (Microsoft Debian 12 package feed) ─────────────────────────
 # Runtime only (not SDK) — orchestrator is published by CI before docker build.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends wget ca-certificates \
-    && wget -q https://packages.microsoft.com/config/debian/13/packages-microsoft-prod.deb \
+    && wget -q https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
          -O /tmp/packages-microsoft-prod.deb \
     && dpkg -i /tmp/packages-microsoft-prod.deb \
     && rm /tmp/packages-microsoft-prod.deb \
@@ -17,17 +17,22 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends dotnet-runtime-8.0 \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Python 3.12 + pip ─────────────────────────────────────────────────────────
+# ── Python 3.11 (Debian bookworm native) + pip ────────────────────────────────
+# bookworm's apt ships Python 3.11 (no python3.12 package exists on any Debian
+# stable). 3.11 is what these detector deps have the broadest aarch64 binary
+# wheels for (ADDON-04: avoids source compilation). The standalone detector
+# image (deploy/) still uses the official python:3.12 base.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        python3.12 \
+        python3 \
         python3-pip \
-        python3.12-venv \
+        python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python detector dependencies ──────────────────────────────────────────────
-# --prefer-binary: mandatory for aarch64 to avoid scipy/statsmodels source compilation
-# Core darts only (no ML-framework extras) — keeps image under 2 GB (ADDON-05)
+# --prefer-binary: pull manylinux aarch64 wheels, never source-compile (ADDON-04,
+# verified locally — arm64 build pulls 0 source builds). Deps: grpcio stack, river,
+# pyod, numpy/pandas/scipy — no torch (keeps image < 2 GB, ADDON-05).
 COPY detector/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --prefer-binary --break-system-packages -r /tmp/requirements.txt
 
