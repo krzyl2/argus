@@ -1,0 +1,169 @@
+/* Argus CSS Design Foundation
+ * Phase 1: CSS custom-property token set (light + dark) + placeholder BEM classes.
+ * Phases 2-4 extend this file — do not alter token names.
+ */
+
+/* ── Color tokens (light scheme) ───────────────────────────────────────────── */
+:root {
+  --color-surface:        #f8f9fb;
+  --color-element:        #ffffff;
+  --color-accent:         #0d6efd;
+  --color-border:         #e0e0e0;
+  --color-text-primary:   #111827;
+  --color-text-secondary: #6b7280;
+  --color-destructive:    #dc3545;
+  --color-status-ok:      #198754;
+  --color-status-error:   #dc3545;
+
+  /* ── Spacing scale (4px grid) ─────────────────────────────────────────── */
+  --space-xs:  4px;
+  --space-sm:  8px;
+  --space-md:  16px;
+  --space-lg:  24px;
+  --space-xl:  32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+
+  /* ── Typography ───────────────────────────────────────────────────────── */
+  --font-family:          system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-size-body:       14px;
+  --font-size-label:      12px;
+  --font-size-heading:    20px;
+  --font-size-display:    28px;
+  --font-weight-regular:  400;
+  --font-weight-semibold: 600;
+  --line-height-body:     1.5;
+  --line-height-label:    1.4;
+  --line-height-heading:  1.2;
+  --line-height-display:  1.15;
+}
+
+/* ── Color tokens (dark scheme) ─────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-surface:        #1c1c1e;
+    --color-element:        #2c2c2e;
+    --color-accent:         #3b9eff;
+    --color-border:         #3a3a3c;
+    --color-text-primary:   #f2f2f7;
+    --color-text-secondary: #aeaeb2;
+    --color-destructive:    #ff453a;
+    --color-status-ok:      #32d74b;
+    --color-status-error:   #ff453a;
+  }
+}
+
+/* ── Base reset ──────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-body);
+  color: var(--color-text-primary);
+  background-color: var(--color-surface);
+}
+
+/* ── Accessibility: focus ring ───────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ── Links ────────────────────────────────────────────────────────────────── */
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* ── Layout shell ────────────────────────────────────────────────────────── */
+.argus-header {
+  display: flex;
+  align-items: center;
+  padding: var(--space-sm) var(--space-xl);
+  background-color: var(--color-element);
+  border-bottom: 1px solid var(--color-border);
+  min-height: 48px;
+}
+
+.argus-main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-3xl) var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.argus-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-sm) var(--space-xl);
+  background-color: var(--color-element);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+/* ── Typography classes ──────────────────────────────────────────────────── */
+.argus-heading {
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-heading);
+  color: var(--color-text-primary);
+}
+
+.argus-display {
+  font-size: var(--font-size-display);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-display);
+  color: var(--color-text-primary);
+}
+
+.argus-body {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-body);
+  color: var(--color-text-primary);
+}
+
+.argus-label {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-label);
+  color: var(--color-text-secondary);
+}
+
+/* ── Status indicator ────────────────────────────────────────────────────── */
+.argus-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.argus-status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.argus-status-dot.status-ok {
+  background-color: var(--color-status-ok);
+}
+
+.argus-status-dot.status-error {
+  background-color: var(--color-status-error);
+}
