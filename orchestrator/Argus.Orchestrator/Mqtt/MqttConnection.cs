@@ -164,6 +164,13 @@ public sealed class MqttConnection : IAsyncDisposable
                     _connectGate.Release();
                 }
             }
+            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+            {
+                // Cancellation during DisposeAsync: exit the loop cleanly instead
+                // of logging it as a failure and busy-spinning on Task.Delay, which
+                // would throw OperationCanceledException again every iteration (WR-03).
+                return;
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(LogEvents.MqttReconnecting, ex, "MQTT reconnect attempt failed");
