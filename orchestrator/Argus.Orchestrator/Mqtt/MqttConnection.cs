@@ -27,6 +27,12 @@ public sealed class MqttConnection : IAsyncDisposable
     private readonly IMqttClient _client;
     private readonly CancellationTokenSource _cts = new();
 
+    // Serializes connect attempts so the worker's initial ConnectAsync and a
+    // fired DisconnectedAsync reconnect cannot hit the same IMqttClient
+    // concurrently — MQTTnet does not guarantee thread-safety for concurrent
+    // connect attempts on one client (WR-02).
+    private readonly SemaphoreSlim _connectGate = new(1, 1);
+
     public MqttConnection(IMqttCredentialSource credentialSource, ILogger<MqttConnection> logger)
     {
         _credentialSource = credentialSource;
@@ -52,10 +58,19 @@ public sealed class MqttConnection : IAsyncDisposable
     /// </summary>
     public async Task ConnectAsync(CancellationToken ct)
     {
-        var options = await BuildConnectOptionsAsync(ct);
-        await _client.ConnectAsync(options, ct);
-        _logger.LogInformation(LogEvents.MqttConnected, "MQTT connected");
-        await PublishOnlineAsync(ct);
+        await _connectGate.WaitAsync(ct);
+        try
+        {
+            if (_client.IsConnected) return;
+            var options = await BuildConnectOptionsAsync(ct);
+            await _client.ConnectAsync(options, ct);
+            _logger.LogInformation(LogEvents.MqttConnected, "MQTT connected");
+            await PublishOnlineAsync(ct);
+        }
+        finally
+        {
+            _connectGate.Release();
+        }
     }
 
     /// <summary>
@@ -126,12 +141,28 @@ public sealed class MqttConnection : IAsyncDisposable
                 _logger.LogInformation(LogEvents.MqttReconnecting, "MQTT reconnecting in {Delay:F1}s...", totalDelay.TotalSeconds);
                 await Task.Delay(totalDelay, _cts.Token);
 
-                // Fetch credentials fresh on every reconnect attempt (SUPV-03)
-                var options = await BuildConnectOptionsAsync(_cts.Token);
-                await _client.ConnectAsync(options, _cts.Token);
-                _logger.LogInformation(LogEvents.MqttConnected, "MQTT reconnected");
-                await PublishOnlineAsync(_cts.Token);
-                return;
+                // If another path already reconnected during the backoff, stop —
+                // don't burn an attempt or double-connect (WR-02).
+                if (_client.IsConnected) return;
+
+                // Serialize the connect so this reconnect cannot race the worker's
+                // initial ConnectAsync on the same IMqttClient (WR-02).
+                await _connectGate.WaitAsync(_cts.Token);
+                try
+                {
+                    if (_client.IsConnected) return;
+
+                    // Fetch credentials fresh on every reconnect attempt (SUPV-03)
+                    var options = await BuildConnectOptionsAsync(_cts.Token);
+                    await _client.ConnectAsync(options, _cts.Token);
+                    _logger.LogInformation(LogEvents.MqttConnected, "MQTT reconnected");
+                    await PublishOnlineAsync(_cts.Token);
+                    return;
+                }
+                finally
+                {
+                    _connectGate.Release();
+                }
             }
             catch (Exception ex)
             {
@@ -150,5 +181,6 @@ public sealed class MqttConnection : IAsyncDisposable
             await _client.DisconnectAsync();
         }
         _client.Dispose();
+        _connectGate.Dispose();
     }
 }
