@@ -67,8 +67,12 @@ public class DiscoveryPayloadTests
         var json = DiscoveryPublisher.BuildBinarySensorConfig(entity);
         var doc = JsonDocument.Parse(json);
 
-        var availTopic = doc.RootElement.GetProperty("availability_topic").GetString();
-        Assert.Equal("argus/bridge/availability", availTopic);
+        // CR-05: per-entity availability list (bridge-level + per-entity), not a single availability_topic.
+        var availability = doc.RootElement.GetProperty("availability");
+        Assert.Equal(JsonValueKind.Array, availability.ValueKind);
+        Assert.Contains(
+            availability.EnumerateArray(),
+            el => el.GetProperty("topic").GetString() == "argus/bridge/availability");
     }
 
     [Fact]
@@ -78,8 +82,13 @@ public class DiscoveryPayloadTests
         var json = DiscoveryPublisher.BuildBinarySensorConfig(entity);
         var doc = JsonDocument.Parse(json);
 
-        Assert.Equal("online",  doc.RootElement.GetProperty("payload_available").GetString());
-        Assert.Equal("offline", doc.RootElement.GetProperty("payload_not_available").GetString());
+        // CR-05: online/offline payloads are carried on each availability list entry.
+        var availability = doc.RootElement.GetProperty("availability");
+        Assert.All(availability.EnumerateArray(), el =>
+        {
+            Assert.Equal("online",  el.GetProperty("payload_available").GetString());
+            Assert.Equal("offline", el.GetProperty("payload_not_available").GetString());
+        });
     }
 
     [Fact]
