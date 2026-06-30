@@ -106,3 +106,71 @@ public class DetectorChannelFactoryTests : IDisposable
         _channel?.Dispose();
     }
 }
+
+/// <summary>
+/// Tests for DetectorChannelFactory local-mode (insecure loopback) channel creation.
+/// These tests run with zero cert files on disk — no deploy/certs/ directory required.
+/// Key regression guard: http://127.0.0.1 with null TLS paths must build a channel.
+/// </summary>
+public class DetectorChannelFactoryLocalModeTests : IDisposable
+{
+    private const string Http2SwitchKey =
+        "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport";
+
+    private Grpc.Net.Client.GrpcChannel? _channel;
+
+    [Fact]
+    public void Create_WithHttpLoopback_NoCerts_ReturnsNonNullChannel()
+    {
+        // Arrange: zero cert files — TlsCa/TlsCert/TlsKey all null
+        var settings = new ConnectionSettings
+        {
+            DetectorEndpoint = "http://127.0.0.1:50051",
+            TlsCa = null,
+            TlsCert = null,
+            TlsKey = null,
+        };
+
+        // Act: must not throw even though no cert files exist anywhere on disk
+        _channel = DetectorChannelFactory.Create(settings);
+
+        // Assert
+        Assert.NotNull(_channel);
+    }
+
+    [Fact]
+    public void Create_WithHttpLoopback_SetsHttp2UnencryptedSupportSwitch()
+    {
+        // Arrange
+        var settings = new ConnectionSettings
+        {
+            DetectorEndpoint = "http://127.0.0.1:50051",
+        };
+
+        // Act
+        _channel = DetectorChannelFactory.Create(settings);
+
+        // Assert: AppContext switch must be enabled after local-mode Create (Pitfall 11)
+        bool switched = AppContext.TryGetSwitch(Http2SwitchKey, out bool isEnabled) && isEnabled;
+        Assert.True(switched, $"Expected AppContext switch '{Http2SwitchKey}' to be true after local-mode Create");
+    }
+
+    [Fact]
+    public void Create_WithNullEndpoint_ThrowsArgumentException()
+    {
+        // Arrange
+        var settings = new ConnectionSettings
+        {
+            DetectorEndpoint = null,
+        };
+
+        // Act & Assert: ARGUS_DETECTOR_ENDPOINT must be named in the exception
+        var ex = Assert.Throws<ArgumentException>(() => DetectorChannelFactory.Create(settings));
+        Assert.Contains("ARGUS_DETECTOR_ENDPOINT", ex.Message);
+    }
+
+    public void Dispose()
+    {
+        _channel?.Dispose();
+    }
+}
