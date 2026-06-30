@@ -110,27 +110,38 @@ builder.Services.AddHostedService<HealthPublisherWorker>();
 // Register ScoreStreamPipeline (Plan 08): bidi ScoreStream loop with hysteresis/frozen/MQTT
 builder.Services.AddSingleton<ScoreStreamPipeline>();
 
-// Register InfluxDB batch reader (Plan 02-02 / BTCH-01)
-// InfluxDBClient is a singleton; QueryApi obtained per-call inside InfluxDbReader
-builder.Services.AddSingleton<InfluxDBClient>(_ =>
-    new InfluxDBClient(connectionSettings.InfluxUrl ?? string.Empty, connectionSettings.InfluxToken));
-builder.Services.AddSingleton<InfluxDbReader>();
-// IInfluxDataSource resolves to the same singleton InfluxDbReader (for BatchSchedulerWorker injection)
-builder.Services.AddSingleton<IInfluxDataSource>(sp => sp.GetRequiredService<InfluxDbReader>());
+// Register the InfluxDB batch path (Plan 02-02/04, BTCH-01/03) ONLY when an
+// InfluxDB URL is configured. InfluxDBClient's ctor throws on an empty URL, and
+// BatchSchedulerWorker (a hosted service) resolves it at startup — so with no
+// InfluxDB configured the add-on must skip the batch path and run streaming-only
+// rather than crash. config-gen writes ARGUS_INFLUX_URL="" when influx_url is unset.
+if (!string.IsNullOrWhiteSpace(connectionSettings.InfluxUrl))
+{
+    // InfluxDBClient is a singleton; QueryApi obtained per-call inside InfluxDbReader
+    builder.Services.AddSingleton<InfluxDBClient>(_ =>
+        new InfluxDBClient(connectionSettings.InfluxUrl, connectionSettings.InfluxToken));
+    builder.Services.AddSingleton<InfluxDbReader>();
+    // IInfluxDataSource resolves to the same singleton InfluxDbReader (for BatchSchedulerWorker injection)
+    builder.Services.AddSingleton<IInfluxDataSource>(sp => sp.GetRequiredService<InfluxDbReader>());
 
-// Register batch detector client adapter (wraps DetectionGateway for IBatchDetectorClient)
-builder.Services.AddSingleton<IBatchDetectorClient, BatchDetectorClientAdapter>();
+    // Register batch detector client adapter (wraps DetectionGateway for IBatchDetectorClient)
+    builder.Services.AddSingleton<IBatchDetectorClient, BatchDetectorClientAdapter>();
 
-// Register BatchSchedulerWorker as hosted service (Plan 02-04 / BTCH-03)
-// Uses factory to inject DetectionGateway directly for INFRA-07 health gate
-builder.Services.AddHostedService<BatchSchedulerWorker>(sp => new BatchSchedulerWorker(
-    sp.GetRequiredService<ConnectionSettings>(),
-    sp.GetRequiredService<IInfluxDataSource>(),
-    sp.GetRequiredService<IBatchDetectorClient>(),
-    sp.GetRequiredService<IStatePublisher>(),
-    sp.GetRequiredService<EntitiesConfig>(),
-    sp.GetRequiredService<DetectionGateway>(),
-    sp.GetRequiredService<ILogger<BatchSchedulerWorker>>()));
+    // Register BatchSchedulerWorker as hosted service (Plan 02-04 / BTCH-03)
+    // Uses factory to inject DetectionGateway directly for INFRA-07 health gate
+    builder.Services.AddHostedService<BatchSchedulerWorker>(sp => new BatchSchedulerWorker(
+        sp.GetRequiredService<ConnectionSettings>(),
+        sp.GetRequiredService<IInfluxDataSource>(),
+        sp.GetRequiredService<IBatchDetectorClient>(),
+        sp.GetRequiredService<IStatePublisher>(),
+        sp.GetRequiredService<EntitiesConfig>(),
+        sp.GetRequiredService<DetectionGateway>(),
+        sp.GetRequiredService<ILogger<BatchSchedulerWorker>>()));
+}
+else
+{
+    Console.WriteLine("[Argus] InfluxDB not configured (influx_url empty) — batch path disabled; running streaming-only.");
+}
 
 var host = builder.Build();
 host.Run();
