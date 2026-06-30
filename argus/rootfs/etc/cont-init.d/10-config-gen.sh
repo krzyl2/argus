@@ -13,6 +13,20 @@
 
 set -e
 
+# Write an optional add-on option to an s6 env file, emitting "" when the key is
+# absent/null/empty. bashio::config returns the literal string "null" for an
+# absent optional key, so a plain `bashio::config 'x' || echo ""` writes "null"
+# (a truthy value downstream). bashio::config.has_value is true only when the key
+# exists AND is non-null/non-empty — the correct gate for optional fields.
+write_optional_env() {
+    local key="${1}" dest="${2}"
+    if bashio::config.has_value "${key}"; then
+        printf "%s" "$(bashio::config "${key}")" > "${dest}"
+    else
+        printf "" > "${dest}"
+    fi
+}
+
 # ── HA Auth (SUPV-01) ────────────────────────────────────────────────────────
 # ParseHaUrl in NetDaemonHaEventSource requires explicit :80 for the ws:// scheme.
 # .NET Uri does not register a default port for ws://, so omitting :80 returns port -1.
@@ -36,14 +50,14 @@ printf "%s" "$(bashio::services mqtt "password")" > /var/run/s6/container_enviro
 # ── Detector Mode (local vs remote) ─────────────────────────────────────────
 # detector_endpoint is optional (str? in schema; absent from options defaults).
 # Empty / absent = bundled local detector. Non-empty = remote gRPC with mTLS.
-DETECTOR_EP=$(bashio::config 'detector_endpoint' || echo "")
 mkdir -p /run/argus
-if [ -z "${DETECTOR_EP}" ]; then
-    printf "http://127.0.0.1:50051" > /var/run/s6/container_environment/ARGUS_DETECTOR_ENDPOINT
-    printf "127.0.0.1"              > /var/run/s6/container_environment/ARGUS_GRPC_BIND
-    printf "local"                  > /run/argus/mode
-else
-    printf "%s" "${DETECTOR_EP}"    > /var/run/s6/container_environment/ARGUS_DETECTOR_ENDPOINT
+# Use bashio::config.has_value, NOT `[ -z "$(bashio::config 'detector_endpoint')" ]`:
+# bashio returns the literal "null" for an absent optional key, which -z treats as
+# non-empty and would wrongly select remote/mTLS mode for the default (no endpoint)
+# configuration — the local detector would never start and the orchestrator would
+# try to load nonexistent cert files. has_value is true only for a real value.
+if bashio::config.has_value 'detector_endpoint'; then
+    printf "%s" "$(bashio::config 'detector_endpoint')" > /var/run/s6/container_environment/ARGUS_DETECTOR_ENDPOINT
     printf "/data/certs/ca.crt"     > /var/run/s6/container_environment/ARGUS_TLS_CA
     printf "/data/certs/client.crt" > /var/run/s6/container_environment/ARGUS_TLS_CERT
     printf "/data/certs/client.key" > /var/run/s6/container_environment/ARGUS_TLS_KEY
@@ -51,6 +65,10 @@ else
     # PROC-04: write the down file so s6 does not start the local detector in remote mode.
     # The detector/run script is never reached; only the orchestrator starts.
     touch /etc/services.d/detector/down
+else
+    printf "http://127.0.0.1:50051" > /var/run/s6/container_environment/ARGUS_DETECTOR_ENDPOINT
+    printf "127.0.0.1"              > /var/run/s6/container_environment/ARGUS_GRPC_BIND
+    printf "local"                  > /run/argus/mode
 fi
 mkdir -p /data/models
 printf "/data/models" > /var/run/s6/container_environment/ARGUS_MODEL_ROOT
@@ -58,10 +76,10 @@ printf "/data/models" > /var/run/s6/container_environment/ARGUS_MODEL_ROOT
 # ── InfluxDB (UICFG-02) ─────────────────────────────────────────────────────
 # Optional fields (url?, token?, org?, bucket?) are absent from options defaults.
 # Empty influx_url disables the batch path in the orchestrator (InfluxDbReader no-ops).
-printf "%s" "$(bashio::config 'influx_url'        || echo "")" > /var/run/s6/container_environment/ARGUS_INFLUX_URL
-printf "%s" "$(bashio::config 'influx_token'      || echo "")" > /var/run/s6/container_environment/ARGUS_INFLUX_TOKEN
-printf "%s" "$(bashio::config 'influx_org'        || echo "")" > /var/run/s6/container_environment/ARGUS_INFLUX_ORG
-printf "%s" "$(bashio::config 'influx_bucket'     || echo "")" > /var/run/s6/container_environment/ARGUS_INFLUX_BUCKET
+write_optional_env 'influx_url'    /var/run/s6/container_environment/ARGUS_INFLUX_URL
+write_optional_env 'influx_token'  /var/run/s6/container_environment/ARGUS_INFLUX_TOKEN
+write_optional_env 'influx_org'    /var/run/s6/container_environment/ARGUS_INFLUX_ORG
+write_optional_env 'influx_bucket' /var/run/s6/container_environment/ARGUS_INFLUX_BUCKET
 printf "%s" "$(bashio::config 'influx_measurement')"           > /var/run/s6/container_environment/ARGUS_INFLUX_MEASUREMENT
 printf "%s" "$(bashio::config 'influx_value_field')"           > /var/run/s6/container_environment/ARGUS_INFLUX_VALUE_FIELD
 
