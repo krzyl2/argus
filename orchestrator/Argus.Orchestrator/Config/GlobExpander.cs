@@ -75,16 +75,19 @@ public static class GlobExpander
         }
 
         // Step 5: add manually-checked entities (overrides exclusion)
+        // Only IDs present in the live snapshot are accepted — rejects arbitrary form-submitted strings
+        // that do not correspond to a real HA entity (WR-03).
         foreach (var id in manuallyChecked)
         {
-            if (!string.IsNullOrWhiteSpace(id))
+            if (!string.IsNullOrWhiteSpace(id) && allIds.Contains(id))
                 patternSelected.Add(id);
         }
 
         // Step 6: remove manually-unchecked entities LAST (final override — manual uncheck wins)
+        // Constrained to snapshot members for symmetry; removing an absent id is a no-op anyway.
         foreach (var id in manuallyUnchecked)
         {
-            if (!string.IsNullOrWhiteSpace(id))
+            if (!string.IsNullOrWhiteSpace(id) && allIds.Contains(id))
                 patternSelected.Remove(id);
         }
 

@@ -172,4 +172,21 @@ public class GlobExpanderTests
 
         Assert.DoesNotContain("sensor.outdoor_temp", result);
     }
+
+    [Fact]
+    public void Resolve_ManuallyChecked_ArbitraryIdNotInSnapshot_IsRejected()
+    {
+        // WR-03: an id submitted via form that does not exist in the live snapshot
+        // must NOT be injected into entities.yaml
+        var snapshot = MakeSnapshot("sensor.outdoor_temp", "sensor.indoor_humidity");
+
+        var result = GlobExpander.Resolve(
+            snapshot,
+            includePatterns: [],
+            excludePatterns: [],
+            manuallyChecked: ["sensor.injected_fake_entity"],
+            manuallyUnchecked: []);
+
+        Assert.DoesNotContain("sensor.injected_fake_entity", result);
+    }
 }
