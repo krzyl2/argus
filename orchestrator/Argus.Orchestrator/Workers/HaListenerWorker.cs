@@ -36,12 +36,14 @@ public class HaListenerWorker : BackgroundService
         IHaEventSource haEventSource,
         DetectionGateway gateway,
         ILiveEntitiesConfig liveConfig,
+        ScoreStreamPipeline scoreStreamPipeline,
         MqttConnection mqtt,
         ILogger<HaListenerWorker> logger)
     {
         _haEventSource = haEventSource ?? throw new ArgumentNullException(nameof(haEventSource));
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
         _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
+        _scoreStreamPipeline = scoreStreamPipeline ?? throw new ArgumentNullException(nameof(scoreStreamPipeline));
         _mqtt = mqtt; // nullable — tests may omit for retraction-free scenarios
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
