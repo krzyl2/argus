@@ -195,7 +195,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-01-PLAN.md — Server-side InputValidator + save-handler gate (UI-04)
+- [x] 04-01-PLAN.md — Server-side InputValidator + save-handler gate (UI-04)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -220,7 +220,7 @@ Plans:
 | 1. Add-on Skeleton + Config-Gen | v2.0 | 2/2 | Complete   | 2026-06-30 |
 | 2. v1 Code Changes | v2.0 | 3/3 | Complete   | 2026-07-01 |
 | 3. Process Supervision + Runtime Integration | v2.0 | 3/3 | Complete   | 2026-07-01 |
-| 4. Multi-Arch CI + Integration + Documentation | v2.0 | 2/4 | In Progress|  |
+| 4. Multi-Arch CI + Integration + Documentation | v2.0 | 3/4 | In Progress|  |
 | 1. Ingress Scaffold + SDK Migration + Config Seam | v3.0 | 0/2 | Not started | - |
 | 2. Live Sensor Discovery + Entity Selection UI | v3.0 | 0/TBD | Not started | - |
 | 3. Config Read/Write + Detector Assignment + Reload | v3.0 | 0/3 | Not started | - |
