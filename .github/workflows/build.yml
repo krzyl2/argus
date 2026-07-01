@@ -44,6 +44,9 @@ jobs:
           }
           echo "OK: wwwroot assets present in publish output"
 
+      - name: Run unit tests
+        run: dotnet test orchestrator/ -c Release --logger "console;verbosity=normal"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
