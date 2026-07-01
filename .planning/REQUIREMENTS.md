@@ -26,7 +26,7 @@ parameters per sensor, and apply changes without an add-on restart.
 - [x] **CFG-04** — Configuration changes apply to the running orchestrator within seconds via reload, without restarting the add-on.
 
 ### DOCS
-- [ ] **DOCS-02** — DOCS.md documents the Ingress UI (open, select entities, assign detectors); the multi-arch image bundles UI assets and stays under 2 GB.
+- [x] **DOCS-02** — DOCS.md documents the Ingress UI (open, select entities, assign detectors); the multi-arch image bundles UI assets and stays under 2 GB.
 
 ## Traceability
 
