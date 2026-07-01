@@ -21,6 +21,9 @@ public class ScoreStreamPipelineTests
 {
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
+    /// <summary>Wraps a static EntitiesConfig in a LiveEntitiesConfig for injection (CFG-04 test pattern).</summary>
+    private static ILiveEntitiesConfig MakeLive(EntitiesConfig cfg) => new LiveEntitiesConfig(cfg);
+
     private static HaReading MakeReading(string entityId = "sensor.test", double value = 21.0, bool suppress = false)
         => new HaReading(entityId, value, DateTimeOffset.UtcNow, suppress);
 
@@ -53,7 +56,6 @@ public class ScoreStreamPipelineTests
     {
         // Arrange: 3 high-score verdicts (min_consecutive=3) with no suppression
         var publisher = new FakeStatePublisher();
-        var entitiesConfig = MakeEntitiesConfig();
 
         // Feed 3 consecutive high verdicts to flip hysteresis ON
         // Warm-up: default window=250 readings; we set window=1 via override params
@@ -81,7 +83,7 @@ public class ScoreStreamPipelineTests
             cfg.Entities[0].Detectors[0].Params));
         entityState.RecordReading(); // warm up (window=1 means 1 reading needed)
 
-        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, cfg);
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
         var reading = MakeReading(suppress: false);
         var verdict = MakeVerdict(score: 0.9);
 
@@ -119,7 +121,7 @@ public class ScoreStreamPipelineTests
         var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
         entityState.RecordReading();
 
-        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, cfg);
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
         var reading = MakeReading(suppress: true); // SUPPRESSED
         var verdict = MakeVerdict(score: 0.9);
 
@@ -142,7 +144,7 @@ public class ScoreStreamPipelineTests
             HstParams.From(cfg.Entities[0].Detectors[0].Params));
         // Do NOT call RecordReading — not warmed up
 
-        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, cfg);
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
         var reading = MakeReading(suppress: false);
         var verdict = MakeVerdict(score: 0.9);
 
@@ -163,7 +165,7 @@ public class ScoreStreamPipelineTests
         var cfg = MakeEntitiesConfig();
         var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
 
-        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, cfg);
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
 
         // Act
         await pipeline.PublishFrozenAsync("sensor.test", entityState, CancellationToken.None);
@@ -181,7 +183,7 @@ public class ScoreStreamPipelineTests
     {
         var publisher = new FakeStatePublisher();
         var cfg = MakeEntitiesConfig();
-        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, cfg);
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
 
         // Act
         await pipeline.HandleDetectorFailureAsync("sensor.test", CancellationToken.None);
@@ -202,7 +204,7 @@ public class ScoreStreamPipelineTests
         var fakeCall = new OrderTrackingDuplexCall(callOrder);
         var publisher = new FakeStatePublisher();
         var cfg = MakeEntitiesConfig();
-        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, cfg);
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
 
         using var cts = new CancellationTokenSource();
 

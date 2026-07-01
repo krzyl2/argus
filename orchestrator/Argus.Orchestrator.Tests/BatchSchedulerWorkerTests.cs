@@ -12,7 +12,7 @@ namespace Argus.Orchestrator.Tests;
 
 /// <summary>
 /// Tests for BatchSchedulerWorker: skip-on-empty, nightly-fit flag suppression,
-/// and per-entity exception isolation.
+/// per-entity exception isolation, and live-config swap (CFG-04).
 /// Uses hand-written fakes — no live services required (BTCH-01).
 /// </summary>
 public class BatchSchedulerWorkerTests
@@ -38,9 +38,13 @@ public class BatchSchedulerWorkerTests
         public bool ScoreBatchReturnsOk { get; init; } = true;
         public bool ThrowOnScoreBatch { get; init; }
 
+        /// <summary>Tracks EntityIds received per ScoreBatch call (in order).</summary>
+        public List<string> ScoreBatchEntityIds { get; } = new();
+
         public Task<ScoreBatchResponse> ScoreBatchAsync(ScoreBatchRequest request, CancellationToken ct)
         {
             ScoreBatchCallCount++;
+            ScoreBatchEntityIds.Add(request.EntityId);
             if (ThrowOnScoreBatch) throw new InvalidOperationException("simulated ScoreBatch failure");
             var resp = new ScoreBatchResponse { Ok = ScoreBatchReturnsOk };
             if (ScoreBatchReturnsOk)
@@ -85,6 +89,9 @@ public class BatchSchedulerWorkerTests
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
+    /// <summary>Wraps a static EntitiesConfig in a LiveEntitiesConfig for injection (CFG-04 test pattern).</summary>
+    private static ILiveEntitiesConfig MakeLive(EntitiesConfig cfg) => new LiveEntitiesConfig(cfg);
+
     private static ConnectionSettings DefaultSettings() => new()
     {
         BatchIntervalMinutes = 1,
@@ -122,7 +129,7 @@ public class BatchSchedulerWorkerTests
             influx,
             detector,
             publisher,
-            OneEntityOneDetector(),
+            MakeLive(OneEntityOneDetector()),
             NullLogger<BatchSchedulerWorker>.Instance);
 
         await worker.RunBatchForTestAsync(CancellationToken.None);
@@ -142,7 +149,7 @@ public class BatchSchedulerWorkerTests
             influx,
             detector,
             publisher,
-            OneEntityOneDetector(),
+            MakeLive(OneEntityOneDetector()),
             NullLogger<BatchSchedulerWorker>.Instance);
 
         await worker.RunBatchForTestAsync(CancellationToken.None);
@@ -180,7 +187,7 @@ public class BatchSchedulerWorkerTests
             influx,
             detector,
             publisher,
-            entities,
+            MakeLive(entities),
             NullLogger<BatchSchedulerWorker>.Instance);
 
         // Should not throw even though ScoreBatch throws per entity
@@ -202,7 +209,7 @@ public class BatchSchedulerWorkerTests
             influx,
             detector,
             new FakeStatePublisher(),
-            OneEntityOneDetector(),
+            MakeLive(OneEntityOneDetector()),
             NullLogger<BatchSchedulerWorker>.Instance);
 
         // Run nightly fit twice — second call should be suppressed by _fitRunToday
@@ -224,7 +231,7 @@ public class BatchSchedulerWorkerTests
             influx,
             detector,
             new FakeStatePublisher(),
-            OneEntityOneDetector(),
+            MakeLive(OneEntityOneDetector()),
             NullLogger<BatchSchedulerWorker>.Instance);
 
         // Simulate two ticks at the same hour where nightly fit hour matches
@@ -236,5 +243,55 @@ public class BatchSchedulerWorkerTests
             CancellationToken.None);
 
         Assert.Equal(1, fitCount);
+    }
+
+    /// <summary>
+    /// CFG-04: After a Swap, RunBatchAsync iterates the new entity set — proves per-cycle live read.
+    /// </summary>
+    [Fact]
+    public async Task RunBatchAsync_AfterSwap_UsesNewEntitySet()
+    {
+        // Arrange: start with sensor.original, swap to sensor.swapped
+        var initialConfig = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig
+                {
+                    EntityId = "sensor.original",
+                    Detectors = [new DetectorConfig { Name = "mad" }],
+                },
+            ],
+        };
+        var swappedConfig = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig
+                {
+                    EntityId = "sensor.swapped",
+                    Detectors = [new DetectorConfig { Name = "mad" }],
+                },
+            ],
+        };
+
+        var liveConfig = new LiveEntitiesConfig(initialConfig);
+        var detector = new FakeBatchDetectorClient();
+        var influx = new FakeInfluxDbReader(OnePoint());
+        var worker = new BatchSchedulerWorker(
+            DefaultSettings(),
+            influx,
+            detector,
+            new FakeStatePublisher(),
+            liveConfig,
+            NullLogger<BatchSchedulerWorker>.Instance);
+
+        // Act: swap config, then run batch — must use the NEW entity set
+        liveConfig.Swap(swappedConfig);
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        // Assert: only sensor.swapped was scored, not sensor.original
+        Assert.Equal(1, detector.ScoreBatchCallCount);
+        Assert.Equal("sensor.swapped", detector.ScoreBatchEntityIds[0]);
     }
 }

@@ -34,7 +34,7 @@ public sealed class ScoreStreamPipeline
 {
     private readonly IStatePublisher _publisher;
     private readonly ILogger<ScoreStreamPipeline> _logger;
-    private readonly EntitiesConfig _entitiesConfig;
+    private readonly ILiveEntitiesConfig _liveConfig;
     private readonly DetectionGateway? _gateway;
 
     /// <summary>
@@ -43,12 +43,12 @@ public sealed class ScoreStreamPipeline
     public ScoreStreamPipeline(
         IStatePublisher publisher,
         ILogger<ScoreStreamPipeline> logger,
-        EntitiesConfig entitiesConfig,
+        ILiveEntitiesConfig liveConfig,
         DetectionGateway gateway)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _entitiesConfig = entitiesConfig ?? throw new ArgumentNullException(nameof(entitiesConfig));
+        _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
     }
 
@@ -58,11 +58,11 @@ public sealed class ScoreStreamPipeline
     public ScoreStreamPipeline(
         IStatePublisher publisher,
         ILogger<ScoreStreamPipeline> logger,
-        EntitiesConfig entitiesConfig)
+        ILiveEntitiesConfig liveConfig)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _entitiesConfig = entitiesConfig ?? throw new ArgumentNullException(nameof(entitiesConfig));
+        _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
         _gateway = null;
     }
 
@@ -246,8 +246,10 @@ public sealed class ScoreStreamPipeline
 
     private Dictionary<string, EntityRuntimeState> BuildEntityStates()
     {
+        // CFG-04: read live config at RunAsync entry — captures the post-swap entity set
+        // (not a ctor-captured stale reference — Pitfall 2 / RESEARCH Q1)
         var states = new Dictionary<string, EntityRuntimeState>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entity in _entitiesConfig.Entities)
+        foreach (var entity in _liveConfig.Get().Entities)
         {
             var hstDetector = entity.Detectors.FirstOrDefault(d =>
                 string.Equals(d.Name, "hst", StringComparison.OrdinalIgnoreCase));

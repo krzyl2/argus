@@ -34,7 +34,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
     private readonly IInfluxDataSource _influxReader;
     private readonly IBatchDetectorClient _detectorClient;
     private readonly IStatePublisher _statePublisher;
-    private readonly EntitiesConfig _entities;
+    private readonly ILiveEntitiesConfig _liveConfig;
     private readonly DetectionGateway? _gateway;
     private readonly ILogger<BatchSchedulerWorker> _logger;
 
@@ -46,14 +46,14 @@ public sealed class BatchSchedulerWorker : BackgroundService
         IInfluxDataSource influxReader,
         IBatchDetectorClient detectorClient,
         IStatePublisher statePublisher,
-        EntitiesConfig entities,
+        ILiveEntitiesConfig liveConfig,
         ILogger<BatchSchedulerWorker> logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _influxReader = influxReader ?? throw new ArgumentNullException(nameof(influxReader));
         _detectorClient = detectorClient ?? throw new ArgumentNullException(nameof(detectorClient));
         _statePublisher = statePublisher ?? throw new ArgumentNullException(nameof(statePublisher));
-        _entities = entities ?? throw new ArgumentNullException(nameof(entities));
+        _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -65,10 +65,10 @@ public sealed class BatchSchedulerWorker : BackgroundService
         IInfluxDataSource influxReader,
         IBatchDetectorClient detectorClient,
         IStatePublisher statePublisher,
-        EntitiesConfig entities,
+        ILiveEntitiesConfig liveConfig,
         DetectionGateway gateway,
         ILogger<BatchSchedulerWorker> logger)
-        : this(settings, influxReader, detectorClient, statePublisher, entities, logger)
+        : this(settings, influxReader, detectorClient, statePublisher, liveConfig, logger)
     {
         _gateway = gateway;
     }
@@ -124,7 +124,8 @@ public sealed class BatchSchedulerWorker : BackgroundService
 
     internal async Task RunBatchAsync(CancellationToken ct)
     {
-        foreach (var entity in _entities.Entities)
+        // CFG-04: read live config per-cycle so a Swap before the next tick picks up new entities
+        foreach (var entity in _liveConfig.Get().Entities)
         {
             foreach (var detectorCfg in entity.Detectors)
             {
@@ -212,7 +213,8 @@ public sealed class BatchSchedulerWorker : BackgroundService
     {
         _logger.LogInformation(LogEvents.NightlyFitStarted, "Nightly fit started");
 
-        foreach (var entity in _entities.Entities)
+        // CFG-04: read live config per-cycle so nightly fit uses the current entity set
+        foreach (var entity in _liveConfig.Get().Entities)
         {
             foreach (var detectorCfg in entity.Detectors)
             {
