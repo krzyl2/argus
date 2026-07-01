@@ -162,6 +162,9 @@ public static class InputValidator
         // period: integer ≥ 2
         ValidateIntAtLeast(p, "period", 2, "Must be a whole number ≥ 2.", errors);
 
+        // seasonal: integer ≥ 1 (T-04-03: SC1 — seasonal must be validated before write)
+        ValidateIntAtLeast(p, "seasonal", 1, "Must be a whole number ≥ 1.", errors);
+
         // threshold: number > 0
         if (TryGetDouble(p, "threshold", out var threshold))
         {

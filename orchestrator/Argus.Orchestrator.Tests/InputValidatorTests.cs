@@ -58,6 +58,7 @@ public class InputValidatorTests
         var p = new Dictionary<string, string>
         {
             ["period"]    = "24",
+            ["seasonal"]  = "7",
             ["threshold"] = "3.0",
         };
         if (overrides is not null)
@@ -305,6 +306,37 @@ public class InputValidatorTests
     public void Validate_StlValidParams_ReturnsNoErrors()
     {
         var errors = InputValidator.Validate([], OneStlDetector());
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validate_StlSeasonalAtZero_ReturnsError()
+    {
+        // seasonal must be ≥ 1 (T-04-03 / SC1)
+        var errors = InputValidator.Validate([], OneStlDetector(new() { ["seasonal"] = "0" }));
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void Validate_StlSeasonalNegative_ReturnsError()
+    {
+        var errors = InputValidator.Validate([], OneStlDetector(new() { ["seasonal"] = "-999" }));
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void Validate_StlSeasonalAtOne_ReturnsNoError()
+    {
+        // seasonal = 1 is the minimum valid value
+        var errors = InputValidator.Validate([], OneStlDetector(new() { ["seasonal"] = "1" }));
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validate_StlSeasonalNonNumeric_ReturnsNoError()
+    {
+        // Non-numeric seasonal: TryGetInt returns false → absent-key semantics, silently skipped
+        var errors = InputValidator.Validate([], OneStlDetector(new() { ["seasonal"] = "abc" }));
         Assert.Empty(errors);
     }
 
