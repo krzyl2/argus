@@ -20,7 +20,10 @@ var entitiesPath = builder.Configuration["ARGUS_ENTITIES_PATH"] ?? "entities.yam
 var entitiesLoggerFactory = LoggerFactory.Create(b => b.AddConsole());
 var entitiesLogger = entitiesLoggerFactory.CreateLogger<EntitiesConfigLoader>();
 var entitiesConfig = EntitiesConfigLoader.Load(entitiesPath, entitiesLogger);
-builder.Services.AddSingleton(entitiesConfig);
+// CFG-04: wrap raw EntitiesConfig in ILiveEntitiesConfig singleton so all consumers
+// read the current reference and react to ConfigChanged (Plan 03-02 DI migration).
+var liveConfig = new LiveEntitiesConfig(entitiesConfig);
+builder.Services.AddSingleton<ILiveEntitiesConfig>(liveConfig);
 
 // Build one authoritative ConnectionSettings instance from environment (CONF-03, WR-06).
 // Single AddSingleton registration — DI consumers receive this instance directly.
@@ -145,7 +148,7 @@ if (!string.IsNullOrWhiteSpace(connectionSettings.InfluxUrl))
         sp.GetRequiredService<IInfluxDataSource>(),
         sp.GetRequiredService<IBatchDetectorClient>(),
         sp.GetRequiredService<IStatePublisher>(),
-        sp.GetRequiredService<EntitiesConfig>(),
+        sp.GetRequiredService<ILiveEntitiesConfig>(),
         sp.GetRequiredService<DetectionGateway>(),
         sp.GetRequiredService<ILogger<BatchSchedulerWorker>>()));
 }
@@ -221,15 +224,17 @@ static bool IsAuthorizedRequest(HttpContext ctx)
 app.MapGet("/", () => Results.Redirect("sensors"));
 
 // [5] GET /sensors — full entity picker page (UI-02 SC1)
+// CFG-04: resolve ILiveEntitiesConfig and pass .Get() so the page always
+// reflects the current entity set (not a ctor-captured stale reference).
 app.MapGet("/sensors", (HttpRequest req, IHaSensorRegistry registry,
-    EntitiesConfig config, ArgusHealthSignals health) =>
+    ILiveEntitiesConfig liveCfg, ArgusHealthSignals health) =>
 {
     if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
 
     var ip = req.Headers["X-Ingress-Path"].FirstOrDefault() ?? "";
     var q  = req.Query["q"].FirstOrDefault() ?? "";
     var html = EntityPickerPage.BuildFullPage(
-        ip, registry, config, health, q,
+        ip, registry, liveCfg.Get(), health, q,
         lastIncludePatterns, lastExcludePatterns);
     return Results.Content(html, "text/html");
 });
