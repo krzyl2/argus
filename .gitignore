@@ -1,6 +1,7 @@
 # .NET build output
 bin/
 obj/
+orchestrator/publish/
 
 # Unignore add-on rootfs helper scripts that live under a 'bin' path
 !argus/rootfs/usr/local/bin/
