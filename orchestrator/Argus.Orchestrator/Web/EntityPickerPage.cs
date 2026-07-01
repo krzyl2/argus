@@ -160,10 +160,15 @@ public static class EntityPickerPage
     /// Builds the sensor list fragment only — bare &lt;li&gt; rows for htmx swap into
     /// #argus-sensor-list (GET /api/sensors). No HTML shell.
     /// </summary>
-    public static string BuildListFragment(IHaSensorRegistry registry, string q)
+    /// <param name="registry">Live sensor snapshot source.</param>
+    /// <param name="config">Currently loaded entity config — passed through to BuildListRows so
+    /// tracked-entity detector disclosure panels are preserved on htmx search refresh.
+    /// Use <see cref="ILiveEntitiesConfig.Get()"/> at the call site (not a captured stale ref).</param>
+    /// <param name="q">Current search query.</param>
+    public static string BuildListFragment(IHaSensorRegistry registry, EntitiesConfig config, string q)
     {
         var entries = registry.GetFiltered(q);
-        return BuildListRows(entries, new EntitiesConfig(), q);
+        return BuildListRows(entries, config, q);
     }
 
     /// <summary>

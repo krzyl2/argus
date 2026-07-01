@@ -240,12 +240,16 @@ app.MapGet("/sensors", (HttpRequest req, IHaSensorRegistry registry,
 });
 
 // [6] GET /api/sensors — htmx list fragment (search refresh target)
-app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry) =>
+// CFG-04: pass liveCfg.Get() so tracked entities keep their detector disclosure panels
+// on htmx search refresh (not a captured stale EntitiesConfig — WR-01 fix).
+app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEntitiesConfig liveCfg) =>
 {
     if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
 
     var q = req.Query["q"].FirstOrDefault() ?? "";
-    return Results.Content(EntityPickerPage.BuildListFragment(registry, q), "text/html");
+    return Results.Content(
+        EntityPickerPage.BuildListFragment(registry, liveCfg.Get(), q),
+        "text/html");
 });
 
 // [6b] GET /api/detectors/new-entry — htmx fragment for "Add detector" button

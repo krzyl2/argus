@@ -49,12 +49,40 @@ public class EntityPickerPageTests
     // -----------------------------------------------------------------------
 
     [Fact]
+    public void BuildListFragment_WithRealConfig_PreservesDetectorDisclosurePanelsOnSearchRefresh()
+    {
+        // WR-01 regression: BuildListFragment must pass the real config so detector panels
+        // are not lost when htmx does a search-refresh of #argus-sensor-list.
+        var entry = MakeEntry("sensor.living_room_temp", isTracked: true);
+        var registry = new FakeRegistry(entry);
+        var config = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig
+                {
+                    EntityId = "sensor.living_room_temp",
+                    FriendlyName = "",
+                    Detectors = [new DetectorConfig { Name = "hst", Params = [] }]
+                }
+            ]
+        };
+
+        var html = EntityPickerPage.BuildListFragment(registry, config, q: "");
+
+        // Detector disclosure section must be present (regression guard for WR-01)
+        Assert.Contains("argus-detectors-details", html);
+        Assert.Contains("argus-detector-entry", html);
+        Assert.Contains("Detectors (1)", html);
+    }
+
+    [Fact]
     public void BuildListFragment_TrackedEntry_RendersCheckedCheckboxAndTrackedPill()
     {
         var registry = new FakeRegistry(
             MakeEntry("sensor.living_room_temp", isTracked: true));
 
-        var html = EntityPickerPage.BuildListFragment(registry, q: "");
+        var html = EntityPickerPage.BuildListFragment(registry, new EntitiesConfig(), q: "");
 
         // Checked checkbox
         Assert.Contains("checked", html);
@@ -71,7 +99,7 @@ public class EntityPickerPageTests
         var registry = new FakeRegistry(
             MakeEntry("sensor.outdoor_humidity", isTracked: false));
 
-        var html = EntityPickerPage.BuildListFragment(registry, q: "");
+        var html = EntityPickerPage.BuildListFragment(registry, new EntitiesConfig(), q: "");
 
         // No checked attribute
         Assert.DoesNotContain(" checked", html);
@@ -91,7 +119,7 @@ public class EntityPickerPageTests
     {
         var registry = new FakeRegistry();
 
-        var html = EntityPickerPage.BuildListFragment(registry, q: "");
+        var html = EntityPickerPage.BuildListFragment(registry, new EntitiesConfig(), q: "");
 
         Assert.Contains("argus-empty", html);
         Assert.Contains("No sensors found.", html);
@@ -103,7 +131,7 @@ public class EntityPickerPageTests
         var registry = new FakeRegistry(
             MakeEntry("sensor.outdoor_temp"));
 
-        var html = EntityPickerPage.BuildListFragment(registry, q: "zzz_no_match");
+        var html = EntityPickerPage.BuildListFragment(registry, new EntitiesConfig(), q: "zzz_no_match");
 
         Assert.Contains("argus-empty", html);
         Assert.Contains("zzz_no_match", html);
@@ -121,7 +149,7 @@ public class EntityPickerPageTests
         var maliciousId = "sensor.<script>alert(1)</script>";
         var registry = new FakeRegistry(MakeEntry(maliciousId));
 
-        var html = EntityPickerPage.BuildListFragment(registry, q: "");
+        var html = EntityPickerPage.BuildListFragment(registry, new EntitiesConfig(), q: "");
 
         // The raw script tag MUST NOT appear in the output
         Assert.DoesNotContain("<script>", html);
@@ -135,7 +163,7 @@ public class EntityPickerPageTests
         var registry = new FakeRegistry(
             MakeEntry("sensor.test", friendlyName: "<b>Bold & Name</b>"));
 
-        var html = EntityPickerPage.BuildListFragment(registry, q: "");
+        var html = EntityPickerPage.BuildListFragment(registry, new EntitiesConfig(), q: "");
 
         Assert.DoesNotContain("<b>", html);
         Assert.Contains("&lt;b&gt;", html);
@@ -148,7 +176,7 @@ public class EntityPickerPageTests
         var registry = new FakeRegistry(MakeEntry("sensor.outdoor_temp"));
         var maliciousQ = "<img src=x onerror=alert(1)>";
 
-        var html = EntityPickerPage.BuildListFragment(registry, q: maliciousQ);
+        var html = EntityPickerPage.BuildListFragment(registry, new EntitiesConfig(), q: maliciousQ);
 
         // No-results path with encoded query
         Assert.DoesNotContain("<img", html);
@@ -165,7 +193,7 @@ public class EntityPickerPageTests
         var registry = new FakeRegistry(
             MakeEntry("sensor.salon_temperatura", friendlyName: "Salon temperatura"));
 
-        var html = EntityPickerPage.BuildListFragment(registry, q: "");
+        var html = EntityPickerPage.BuildListFragment(registry, new EntitiesConfig(), q: "");
 
         Assert.Contains("argus-row-friendly-name", html);
         Assert.Contains("Salon temperatura", html);
@@ -177,7 +205,7 @@ public class EntityPickerPageTests
         var registry = new FakeRegistry(
             MakeEntry("sensor.temp", friendlyName: "sensor.temp"));
 
-        var html = EntityPickerPage.BuildListFragment(registry, q: "");
+        var html = EntityPickerPage.BuildListFragment(registry, new EntitiesConfig(), q: "");
 
         // When friendly_name == entity_id: friendly-name span must NOT appear
         Assert.DoesNotContain("argus-row-friendly-name", html);
@@ -189,7 +217,7 @@ public class EntityPickerPageTests
         var registry = new FakeRegistry(
             MakeEntry("sensor.outdoor_temp", friendlyName: null));
 
-        var html = EntityPickerPage.BuildListFragment(registry, q: "");
+        var html = EntityPickerPage.BuildListFragment(registry, new EntitiesConfig(), q: "");
 
         Assert.DoesNotContain("argus-row-friendly-name", html);
     }
