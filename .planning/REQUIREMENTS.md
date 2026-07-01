@@ -23,7 +23,7 @@ parameters per sensor, and apply changes without an add-on restart.
 - [x] **CFG-01** — A single configuration source of truth under `/data` is read by both the UI and the orchestrator's `EntitiesConfigLoader`.
 - [x] **CFG-02** — Entity selection (incl. `include_patterns`/`exclude_patterns` honored as filters) persists to the config and is consumed by the orchestrator — replacing the manual `entities` list and closing the v2.0 patterns-ignored gap.
 - [ ] **CFG-03** — Per-entity detector/parameter assignments persist in the structure `EntitiesConfigLoader` expects (multiple detectors per entity supported; sane defaults when unset).
-- [ ] **CFG-04** — Configuration changes apply to the running orchestrator within seconds via reload, without restarting the add-on.
+- [x] **CFG-04** — Configuration changes apply to the running orchestrator within seconds via reload, without restarting the add-on.
 
 ### DOCS
 - [ ] **DOCS-02** — DOCS.md documents the Ingress UI (open, select entities, assign detectors); the multi-arch image bundles UI assets and stays under 2 GB.
