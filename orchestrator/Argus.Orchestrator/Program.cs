@@ -364,7 +364,11 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         // Write lock file ONLY after a successful config write — guard for gen-entities.py (CFG-02).
         // Synchronous write: if WriteAsync succeeded, the lock must also be durable before we return.
         // Using async here would introduce a crash window between the two writes (WR-02).
-        var lockPath = Path.Combine(Path.GetDirectoryName(entitiesPath)!, ".ui_config_present");
+        // Path.GetFullPath converts bare filenames (e.g. "entities.yaml") to absolute paths using
+        // CWD, so GetDirectoryName never returns null or "" — lock lands in the same dir as the YAML.
+        var entitiesDir = Path.GetDirectoryName(Path.GetFullPath(entitiesPath))
+            ?? Path.GetTempPath(); // absolute fallback; GetFullPath never returns ""
+        var lockPath = Path.Combine(entitiesDir, ".ui_config_present");
         File.WriteAllText(lockPath, string.Empty);
 
         // Phase 3: Re-read the written config and call ILiveEntitiesConfig.Swap.
