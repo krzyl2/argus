@@ -47,7 +47,7 @@ detector algorithm(s) + parameters apply to each sensor — no manual `entities`
 apply without an add-on restart.
 
 - [x] **Phase 1: Ingress Scaffold + SDK Migration + Config Seam** — SDK Worker→Web migration, Kestrel on 0.0.0.0:8099, config.yaml ingress keys, empty-entities crash fix, atomic write seam (completed 2026-06-30)
-- [ ] **Phase 2: Live Sensor Discovery + Entity Selection UI** — IHaSensorRegistry, /api/sensors, filterable entity picker, include/exclude pattern wiring, gen-entities.py guard
+- [x] **Phase 2: Live Sensor Discovery + Entity Selection UI** — IHaSensorRegistry, /api/sensors, filterable entity picker, include/exclude pattern wiring, gen-entities.py guard (completed 2026-07-01)
 - [ ] **Phase 3: Config Read/Write + Detector Assignment + Reload** — ILiveEntitiesConfig atomic swap, ConfigApiEndpoints, detector/parameter UI, HaListenerWorker inner-CTS restart, MQTT retraction
 - [ ] **Phase 4: Validation, CI Packaging + Documentation** — server+client validation, CI image-size gate, FileSystemWatcher debounce, DOCS.md
 
@@ -103,12 +103,12 @@ apply without an add-on restart.
 Plans:
 - [x] 02-01-PLAN.md — HaStateDto attributes + IHaSensorRegistry populated from get_states (UI-02 foundation)
 - [x] 02-02-PLAN.md — GlobExpander (include/exclude combine model) + gen-entities.py restart guard (CFG-02 pre-condition)
-- [ ] 02-03-PLAN.md — Entity picker page + search + save endpoint (_patterns persistence + .ui_config_present lock)
+- [x] 02-03-PLAN.md — Entity picker page + search + save endpoint (_patterns persistence + .ui_config_present lock)
 
 **Wave 1**
 
 - [x] 02-01-PLAN.md — registry + HaStateDto extension foundation
-- [ ] 02-02-PLAN.md — glob resolver + restart guard (lands before the save endpoint)
+- [x] 02-02-PLAN.md — glob resolver + restart guard (lands before the save endpoint)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -181,7 +181,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 1-2. Foundations + Batch/Model Lifecycle | v1.0 | 14/14 | Complete | 2026-06-10 |
 | 1. Add-on Skeleton + Config-Gen | v2.0 | 2/2 | Complete   | 2026-06-30 |
-| 2. v1 Code Changes | v2.0 | 2/3 | In Progress|  |
+| 2. v1 Code Changes | v2.0 | 3/3 | Complete   | 2026-07-01 |
 | 3. Process Supervision + Runtime Integration | v2.0 | 3/3 | Complete | 2026-06-30 |
 | 4. Multi-Arch CI + Integration + Documentation | v2.0 | 2/2 | Complete | 2026-06-30 |
 | 1. Ingress Scaffold + SDK Migration + Config Seam | v3.0 | 0/2 | Not started | - |

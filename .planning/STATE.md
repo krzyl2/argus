@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ingress Configuration UI
-status: executing
+status: verifying
 stopped_at: "Plan 02-02 complete: GlobExpander + restart guard"
-last_updated: "2026-07-01T06:12:08.936Z"
+last_updated: "2026-07-01T06:22:07.018Z"
 last_activity: 2026-07-01
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
-  completed_plans: 4
-  percent: 25
+  completed_plans: 5
+  percent: 50
 ---
 
 # Project State: Argus
@@ -39,7 +39,7 @@ See: .planning/PROJECT.md
 | 4 | Validation, CI Packaging + Documentation | Not started |
 
 ```
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 ```
 
 v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -100,6 +100,13 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 - `ingressPath` HTML-encoded via `WebUtility.HtmlEncode` before `<base href>` interpolation (T-01-08)
 - argus/Dockerfile unchanged — add-on uses base-debian:bookworm + dotnet-install.sh; Web SDK publish carries ASP.NET DLLs
 
+### Decisions
+
+- [Phase 02-03]: Root GET / redirects to /sensors; placeholder replaced by entity picker
+- [Phase 02-03]: Single YamlDotNet root-dict serialization (_patterns + entities) — never string-format YAML (T-02-08)
+- [Phase 02-03]: Empty checkbox selection writes entities: [] (valid, Pitfall 5)
+- [Phase 02-03]: Interim auth: X-Ingress-Path OR RemoteIpAddress=172.30.32.2/loopback (T-02-09); Phase 4 completes validate_session
+
 ### Blockers
 
 - None
@@ -115,10 +122,11 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 | Phase 01 P01-02 | 231 | - tasks | - files |
 | Phase 02 P02-01 | 4m | 3 tasks | 7 files |
 | Phase 02 P02-02 | 8m | 2 tasks | 3 files |
+| Phase 02 P02-03 | 5m | 2 tasks | 6 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-01T06:12:08.930Z
+**Last session:** 2026-07-01T06:22:07.011Z
 **Stopped at:** Plan 02-02 complete: GlobExpander + restart guard
 **Resume file:** None
 
@@ -135,5 +143,5 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 
 Phase: 02 (Live Sensor Discovery + Entity Selection UI) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-01
