@@ -418,39 +418,53 @@ public static class EntityPickerPage
         return $"""
             <div class="argus-param-grid">
               <div class="argus-param-field">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_window">window</label>
-                <input class="argus-param-field__input" type="number" id="p_{entityIdx}_{detIdx}_window"
-                       name="detectors[{entityIdx}][{detIdx}][params][window]" value="{window}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-window">window</label>
+                <input class="argus-param-field__input" type="number" id="param-{entityIdx}-{detIdx}-window"
+                       name="detectors[{entityIdx}][{detIdx}][params][window]" value="{window}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-window-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-window-err" role="alert" aria-live="assertive"></span>
               </div>
               <div class="argus-param-field">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_n_trees">n_trees</label>
-                <input class="argus-param-field__input" type="number" id="p_{entityIdx}_{detIdx}_n_trees"
-                       name="detectors[{entityIdx}][{detIdx}][params][n_trees]" value="{nTrees}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-n_trees">n_trees</label>
+                <input class="argus-param-field__input" type="number" id="param-{entityIdx}-{detIdx}-n_trees"
+                       name="detectors[{entityIdx}][{detIdx}][params][n_trees]" value="{nTrees}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-n_trees-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-n_trees-err" role="alert" aria-live="assertive"></span>
               </div>
               <div class="argus-param-field">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_high_threshold">high_threshold</label>
-                <input class="argus-param-field__input" type="number" step="0.01" id="p_{entityIdx}_{detIdx}_high_threshold"
-                       name="detectors[{entityIdx}][{detIdx}][params][high_threshold]" value="{highThreshold}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-high_threshold">high_threshold</label>
+                <input class="argus-param-field__input" type="number" step="0.01" id="param-{entityIdx}-{detIdx}-high_threshold"
+                       name="detectors[{entityIdx}][{detIdx}][params][high_threshold]" value="{highThreshold}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-high_threshold-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-high_threshold-err" role="alert" aria-live="assertive"></span>
               </div>
               <div class="argus-param-field">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_low_threshold">low_threshold</label>
-                <input class="argus-param-field__input" type="number" step="0.01" id="p_{entityIdx}_{detIdx}_low_threshold"
-                       name="detectors[{entityIdx}][{detIdx}][params][low_threshold]" value="{lowThreshold}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-low_threshold">low_threshold</label>
+                <input class="argus-param-field__input" type="number" step="0.01" id="param-{entityIdx}-{detIdx}-low_threshold"
+                       name="detectors[{entityIdx}][{detIdx}][params][low_threshold]" value="{lowThreshold}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-low_threshold-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-low_threshold-err" role="alert" aria-live="assertive"></span>
               </div>
               <div class="argus-param-field">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_min_consecutive">min_consecutive</label>
-                <input class="argus-param-field__input" type="number" id="p_{entityIdx}_{detIdx}_min_consecutive"
-                       name="detectors[{entityIdx}][{detIdx}][params][min_consecutive]" value="{minConsecutive}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-min_consecutive">min_consecutive</label>
+                <input class="argus-param-field__input" type="number" id="param-{entityIdx}-{detIdx}-min_consecutive"
+                       name="detectors[{entityIdx}][{detIdx}][params][min_consecutive]" value="{minConsecutive}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-min_consecutive-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-min_consecutive-err" role="alert" aria-live="assertive"></span>
               </div>
               <div class="argus-param-field">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_frozen_window">frozen_window</label>
-                <input class="argus-param-field__input" type="number" id="p_{entityIdx}_{detIdx}_frozen_window"
-                       name="detectors[{entityIdx}][{detIdx}][params][frozen_window]" value="{frozenWindow}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-frozen_window">frozen_window</label>
+                <input class="argus-param-field__input" type="number" id="param-{entityIdx}-{detIdx}-frozen_window"
+                       name="detectors[{entityIdx}][{detIdx}][params][frozen_window]" value="{frozenWindow}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-frozen_window-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-frozen_window-err" role="alert" aria-live="assertive"></span>
               </div>
               <div class="argus-param-field argus-param-grid--span2">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_frozen_variance_threshold">frozen_variance</label>
-                <input class="argus-param-field__input" type="number" step="0.0001" id="p_{entityIdx}_{detIdx}_frozen_variance_threshold"
-                       name="detectors[{entityIdx}][{detIdx}][params][frozen_variance_threshold]" value="{frozenVariance}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-frozen_variance_threshold">frozen_variance</label>
+                <input class="argus-param-field__input" type="number" step="0.0001" id="param-{entityIdx}-{detIdx}-frozen_variance_threshold"
+                       name="detectors[{entityIdx}][{detIdx}][params][frozen_variance_threshold]" value="{frozenVariance}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-frozen_variance_threshold-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-frozen_variance_threshold-err" role="alert" aria-live="assertive"></span>
               </div>
             </div>
             """;
@@ -465,14 +479,18 @@ public static class EntityPickerPage
         return $"""
             <div class="argus-param-grid">
               <div class="argus-param-field">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_threshold">threshold</label>
-                <input class="argus-param-field__input" type="number" step="0.1" id="p_{entityIdx}_{detIdx}_threshold"
-                       name="detectors[{entityIdx}][{detIdx}][params][threshold]" value="{threshold}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-threshold">threshold</label>
+                <input class="argus-param-field__input" type="number" step="0.1" id="param-{entityIdx}-{detIdx}-threshold"
+                       name="detectors[{entityIdx}][{detIdx}][params][threshold]" value="{threshold}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-threshold-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-threshold-err" role="alert" aria-live="assertive"></span>
               </div>
               <div class="argus-param-field">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_window">window</label>
-                <input class="argus-param-field__input" type="number" id="p_{entityIdx}_{detIdx}_window"
-                       name="detectors[{entityIdx}][{detIdx}][params][window]" value="{window}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-window">window</label>
+                <input class="argus-param-field__input" type="number" id="param-{entityIdx}-{detIdx}-window"
+                       name="detectors[{entityIdx}][{detIdx}][params][window]" value="{window}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-window-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-window-err" role="alert" aria-live="assertive"></span>
               </div>
             </div>
             """;
@@ -488,19 +506,25 @@ public static class EntityPickerPage
         return $"""
             <div class="argus-param-grid">
               <div class="argus-param-field">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_period">period</label>
-                <input class="argus-param-field__input" type="number" id="p_{entityIdx}_{detIdx}_period"
-                       name="detectors[{entityIdx}][{detIdx}][params][period]" value="{period}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-period">period</label>
+                <input class="argus-param-field__input" type="number" id="param-{entityIdx}-{detIdx}-period"
+                       name="detectors[{entityIdx}][{detIdx}][params][period]" value="{period}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-period-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-period-err" role="alert" aria-live="assertive"></span>
               </div>
               <div class="argus-param-field">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_seasonal">seasonal</label>
-                <input class="argus-param-field__input" type="number" id="p_{entityIdx}_{detIdx}_seasonal"
-                       name="detectors[{entityIdx}][{detIdx}][params][seasonal]" value="{seasonal}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-seasonal">seasonal</label>
+                <input class="argus-param-field__input" type="number" id="param-{entityIdx}-{detIdx}-seasonal"
+                       name="detectors[{entityIdx}][{detIdx}][params][seasonal]" value="{seasonal}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-seasonal-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-seasonal-err" role="alert" aria-live="assertive"></span>
               </div>
               <div class="argus-param-field argus-param-grid--span2">
-                <label class="argus-param-field__label" for="p_{entityIdx}_{detIdx}_threshold">threshold</label>
-                <input class="argus-param-field__input" type="number" step="0.1" id="p_{entityIdx}_{detIdx}_threshold"
-                       name="detectors[{entityIdx}][{detIdx}][params][threshold]" value="{threshold}">
+                <label class="argus-param-field__label" for="param-{entityIdx}-{detIdx}-threshold">threshold</label>
+                <input class="argus-param-field__input" type="number" step="0.1" id="param-{entityIdx}-{detIdx}-threshold"
+                       name="detectors[{entityIdx}][{detIdx}][params][threshold]" value="{threshold}"
+                       aria-describedby="param-{entityIdx}-{detIdx}-threshold-err" aria-invalid="false">
+                <span class="argus-param-field__error-msg" id="param-{entityIdx}-{detIdx}-threshold-err" role="alert" aria-live="assertive"></span>
               </div>
             </div>
             """;

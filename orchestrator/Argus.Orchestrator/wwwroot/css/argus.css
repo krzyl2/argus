@@ -637,3 +637,40 @@ details[open] > .argus-disclosure-toggle::before {
   background-color: var(--color-accent);
   color: #ffffff;
 }
+
+/* ── Phase 4: Validation Error States ───────────────────────────────────── */
+
+.argus-param-field__error-msg {
+  display: none;
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-label);
+  color: var(--color-status-error);
+  margin-top: var(--space-xs);
+}
+
+.argus-param-field--error .argus-param-field__input {
+  border-color: var(--color-status-error);
+  outline: none;
+}
+
+.argus-param-field--error .argus-param-field__input:focus {
+  border-color: var(--color-status-error);
+}
+
+.argus-param-field--error .argus-param-field__error-msg {
+  display: block;
+}
+
+.argus-banner--validation {
+  background-color: var(--color-status-error);
+  color: #ffffff;
+}
+
+.argus-warmup-note {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-label);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xs);
+}
