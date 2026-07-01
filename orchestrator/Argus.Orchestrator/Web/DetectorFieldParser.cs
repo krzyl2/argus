@@ -45,8 +45,10 @@ internal static partial class DetectorFieldParser
             var match = regex.Match(key);
             if (!match.Success) continue;
 
-            var ei = int.Parse(match.Groups[1].Value);
-            var di = int.Parse(match.Groups[2].Value);
+            // Use TryParse to skip malformed fields with overflowing digit groups rather than
+            // throwing OverflowException (e.g. detectors[2147483648][0][name]=hst — WR-03).
+            if (!int.TryParse(match.Groups[1].Value, out var ei)) continue;
+            if (!int.TryParse(match.Groups[2].Value, out var di)) continue;
             var field = match.Groups[3].Value;       // "name" or "params"
             var paramKey = match.Groups[4].Value;    // param key if field == "params"
 

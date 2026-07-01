@@ -152,6 +152,47 @@ public class SaveEndpointDetectorParsingTests
     }
 
     // -----------------------------------------------------------------------
+    // WR-03: int.TryParse — overflow / malformed index skip
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_OverflowingEntityIndex_IsSkippedNotThrown()
+    {
+        // WR-03: crafted input with ei > int.MaxValue must be silently skipped,
+        // not throw OverflowException. Valid fields in the same POST must still parse.
+        var formKeys = new Dictionary<string, string>
+        {
+            ["detectors[2147483648][0][name]"] = "hst",   // ei overflows int — skip
+            ["detectors[0][0][name]"]          = "mad",   // valid — must survive
+        };
+
+        // Must not throw; overflow key silently ignored
+        var result = DetectorFieldParser.Parse(formKeys);
+
+        // The overflow key produces no entry; result should have exactly 1 entry (key=0)
+        Assert.Single(result);
+        Assert.True(result.ContainsKey(0), "Valid key must still parse");
+        Assert.Equal("mad", result[0][0].Name);
+    }
+
+    [Fact]
+    public void Parse_OverflowingDetectorIndex_IsSkippedNotThrown()
+    {
+        // WR-03: crafted input with di > int.MaxValue must be silently skipped.
+        var formKeys = new Dictionary<string, string>
+        {
+            ["detectors[0][2147483648][name]"] = "hst",  // di overflows int — skip
+            ["detectors[0][0][name]"]          = "stl",  // valid
+        };
+
+        var result = DetectorFieldParser.Parse(formKeys);
+
+        Assert.True(result.ContainsKey(0));
+        Assert.Single(result[0]);   // only the valid di=0 entry
+        Assert.Equal("stl", result[0][0].Name);
+    }
+
+    // -----------------------------------------------------------------------
     // Entity index correlation (Pitfall 5 / CFG-03-critical)
     // -----------------------------------------------------------------------
 
