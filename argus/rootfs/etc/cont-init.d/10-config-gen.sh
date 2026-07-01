@@ -110,7 +110,7 @@ printf "%s" "${DOTNET_LOG}" > /var/run/s6/container_environment/Logging__LogLeve
 # ── entities.yaml Generation (UICFG-08) ────────────────────────────────────
 printf "/data/entities.yaml" > /var/run/s6/container_environment/ARGUS_ENTITIES_PATH
 if [ -f /data/.ui_config_present ]; then
-    bashio::log.info "UI config present — skipping gen-entities.py (entities.yaml preserved)."
+    bashio::log.info "UI config present — skipping gen-entities.py; ARGUS_ENTITIES_PATH=/data/entities.yaml already set."
 else
     python3 /usr/local/bin/gen-entities.py /data/options.json > /data/entities.yaml
 fi
