@@ -86,14 +86,24 @@ public sealed class ScoreStreamPipeline
             id => id,
             _ => Channel.CreateBounded<HaReading>(500));
 
-        // Fan-out task: read once, route to matching per-entity channel
+        // Fan-out task: read once, route to matching per-entity channel.
+        // try/finally ensures channel writers are always completed — even on cancellation
+        // or an unexpected exception — so per-entity stream tasks are never left blocked
+        // on ReadAllAsync waiting for a writer signal that will never arrive.
+        // TryComplete (not Complete) is safe to call more than once in edge cases.
         var fanOutTask = Task.Run(async () =>
         {
-            await foreach (var r in readings.WithCancellation(ct))
-                if (entityChannels.TryGetValue(r.EntityId, out var ch))
-                    await ch.Writer.WriteAsync(r, ct);
-            foreach (var ch in entityChannels.Values)
-                ch.Writer.Complete();
+            try
+            {
+                await foreach (var r in readings.WithCancellation(ct))
+                    if (entityChannels.TryGetValue(r.EntityId, out var ch))
+                        await ch.Writer.WriteAsync(r, ct);
+            }
+            finally
+            {
+                foreach (var ch in entityChannels.Values)
+                    ch.Writer.TryComplete();
+            }
         }, ct);
 
         var tasks = entityStates.Select(kvp =>
