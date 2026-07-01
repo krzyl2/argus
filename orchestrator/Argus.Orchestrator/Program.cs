@@ -154,7 +154,11 @@ if (!string.IsNullOrWhiteSpace(connectionSettings.InfluxUrl))
 }
 else
 {
-    Console.WriteLine("[Argus] InfluxDB not configured (influx_url empty) — batch path disabled; running streaming-only.");
+    // Use the startup logger (same factory as entitiesLogger) so this message obeys
+    // log-level filtering and appears in structured logs alongside other startup info.
+    var startupLogger = entitiesLoggerFactory.CreateLogger<Program>();
+    startupLogger.LogInformation(
+        "InfluxDB not configured (influx_url empty) — batch path disabled; running streaming-only.");
 }
 
 // Kestrel: bind 0.0.0.0:8099 — Supervisor connects from 172.30.32.2 (not loopback).
