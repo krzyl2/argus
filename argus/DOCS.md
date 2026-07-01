@@ -85,9 +85,9 @@ more detectors to each entity:
   Parameters: `window`, `n_trees`, `high_threshold`, `low_threshold`, `min_consecutive`,
   `frozen_window`, `frozen_variance_threshold`.
 - **MAD** (Median Absolute Deviation) — batch detector; trained on InfluxDB history.
-  Parameters: `threshold`, `min_consecutive`.
+  Parameters: `threshold`, `window`.
 - **STL** (Seasonal-Trend decomposition) — batch detector; trained on InfluxDB history.
-  Parameters: `period`, `threshold`, `min_consecutive`.
+  Parameters: `period`, `seasonal`, `threshold`.
 
 Use **Add detector** to attach additional detectors to an entity and **Remove** to detach one.
 Parameter fields are validated inline; the **Save** button is disabled until all fields are valid.
