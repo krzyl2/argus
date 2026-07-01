@@ -49,7 +49,8 @@ apply without an add-on restart.
 - [x] **Phase 1: Ingress Scaffold + SDK Migration + Config Seam** — SDK Worker→Web migration, Kestrel on 0.0.0.0:8099, config.yaml ingress keys, empty-entities crash fix, atomic write seam (completed 2026-06-30)
 - [x] **Phase 2: Live Sensor Discovery + Entity Selection UI** — IHaSensorRegistry, /api/sensors, filterable entity picker, include/exclude pattern wiring, gen-entities.py guard
  (completed 2026-07-01)
-- [x] **Phase 3: Config Read/Write + Detector Assignment + Reload** — ILiveEntitiesConfig atomic swap, ConfigApiEndpoints, detector/parameter UI, HaListenerWorker inner-CTS restart, MQTT retraction (completed 2026-07-01)
+- [x] **Phase 3: Config Read/Write + Detector Assignment + Reload** — ILiveEntitiesConfig atomic swap, ConfigApiEndpoints, detector/parameter UI, HaListenerWorker inner-CTS restart, MQTT retraction
+ (completed 2026-07-01)
 - [ ] **Phase 4: Validation, CI Packaging + Documentation** — server+client validation, CI image-size gate, FileSystemWatcher debounce, DOCS.md
 
 ## Phase Details
@@ -182,7 +183,11 @@ Plans:
   4. A single `FileSystemWatcher` `Renamed` event (from atomic rename) triggers exactly one reload — debounce eliminates double-fire; confirmed via log timestamps.
   5. DOCS.md includes a section on the Ingress UI covering: how to open it, how to select entities, how to assign detectors, what "apply without restart" means (including the ~4-minute HST warm-up period after any reload), and how to recover a corrupted config.
 
-**Plans**: TBD
+**Plans**: 4 plans
+- [ ] 04-01-PLAN.md — Server-side InputValidator + save-handler gate (UI-04)
+- [ ] 04-02-PLAN.md — Client-side inline validation + UI error states + warm-up banner (UI-04)
+- [ ] 04-03-PLAN.md — FileSystemWatcher 300ms-debounce reload service (SC4)
+- [ ] 04-04-PLAN.md — CI wwwroot assertion + DOCS.md Ingress UI section (DOCS-02)
 **UI hint**: yes
 
 **Research flags / verification items:**
