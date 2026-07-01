@@ -49,7 +49,7 @@ apply without an add-on restart.
 - [x] **Phase 1: Ingress Scaffold + SDK Migration + Config Seam** — SDK Worker→Web migration, Kestrel on 0.0.0.0:8099, config.yaml ingress keys, empty-entities crash fix, atomic write seam (completed 2026-06-30)
 - [x] **Phase 2: Live Sensor Discovery + Entity Selection UI** — IHaSensorRegistry, /api/sensors, filterable entity picker, include/exclude pattern wiring, gen-entities.py guard
  (completed 2026-07-01)
-- [ ] **Phase 3: Config Read/Write + Detector Assignment + Reload** — ILiveEntitiesConfig atomic swap, ConfigApiEndpoints, detector/parameter UI, HaListenerWorker inner-CTS restart, MQTT retraction
+- [x] **Phase 3: Config Read/Write + Detector Assignment + Reload** — ILiveEntitiesConfig atomic swap, ConfigApiEndpoints, detector/parameter UI, HaListenerWorker inner-CTS restart, MQTT retraction (completed 2026-07-01)
 - [ ] **Phase 4: Validation, CI Packaging + Documentation** — server+client validation, CI image-size gate, FileSystemWatcher debounce, DOCS.md
 
 ## Phase Details
@@ -143,7 +143,7 @@ Plans:
 Plans:
 - [x] 03-01-PLAN.md — ILiveEntitiesConfig volatile-swap singleton + DiscoveryPublisher.RetractAsync (reload-core building blocks)
 - [x] 03-02-PLAN.md — Migrate config consumers to ILiveEntitiesConfig + HaListenerWorker inner-CTS restart loop + retraction/republish + Program.cs DI
-- [ ] 03-03-PLAN.md — Detector-assignment UI (disclosure rows + params) + /api/detectors/new-entry + extended save + Swap
+- [x] 03-03-PLAN.md — Detector-assignment UI (disclosure rows + params) + /api/detectors/new-entry + extended save + Swap
 
 **Wave 1**
 
@@ -151,7 +151,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 03-02-PLAN.md — consumer migration + restart loop + DI rewiring (CFG-04)
+- [x] 03-02-PLAN.md — consumer migration + restart loop + DI rewiring (CFG-04)
 
 **Wave 3** *(blocked on Wave 2 — shares Program.cs)*
 
@@ -201,7 +201,7 @@ Plans:
 | 1-2. Foundations + Batch/Model Lifecycle | v1.0 | 14/14 | Complete | 2026-06-10 |
 | 1. Add-on Skeleton + Config-Gen | v2.0 | 2/2 | Complete   | 2026-06-30 |
 | 2. v1 Code Changes | v2.0 | 3/3 | Complete   | 2026-07-01 |
-| 3. Process Supervision + Runtime Integration | v2.0 | 2/3 | In Progress|  |
+| 3. Process Supervision + Runtime Integration | v2.0 | 3/3 | Complete   | 2026-07-01 |
 | 4. Multi-Arch CI + Integration + Documentation | v2.0 | 2/2 | Complete | 2026-06-30 |
 | 1. Ingress Scaffold + SDK Migration + Config Seam | v3.0 | 0/2 | Not started | - |
 | 2. Live Sensor Discovery + Entity Selection UI | v3.0 | 0/TBD | Not started | - |

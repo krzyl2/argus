@@ -16,13 +16,13 @@ parameters per sensor, and apply changes without an add-on restart.
 ### UI — Ingress web interface
 - [x] **UI-01** — The add-on exposes an Ingress endpoint ("Open Web UI") served by the orchestrator (ASP.NET minimal API behind `ingress: true` / `ingress_port`), authenticated by HA Ingress, with no separately exposed port.
 - [x] **UI-02** — The UI lists live HA numeric sensors (reusing `get_states` + `SelectDiscoverableSensors`), filterable, and lets the user select which entities Argus tracks.
-- [ ] **UI-03** — The UI assigns one or more detectors (HST, MAD, STL, …) with editable parameters to each tracked entity.
+- [x] **UI-03** — The UI assigns one or more detectors (HST, MAD, STL, …) with editable parameters to each tracked entity.
 - [ ] **UI-04** — UI inputs are validated (entity_id format, parameter ranges) with clear error messages before save.
 
 ### CFG — Configuration model & lifecycle
 - [x] **CFG-01** — A single configuration source of truth under `/data` is read by both the UI and the orchestrator's `EntitiesConfigLoader`.
 - [x] **CFG-02** — Entity selection (incl. `include_patterns`/`exclude_patterns` honored as filters) persists to the config and is consumed by the orchestrator — replacing the manual `entities` list and closing the v2.0 patterns-ignored gap.
-- [ ] **CFG-03** — Per-entity detector/parameter assignments persist in the structure `EntitiesConfigLoader` expects (multiple detectors per entity supported; sane defaults when unset).
+- [x] **CFG-03** — Per-entity detector/parameter assignments persist in the structure `EntitiesConfigLoader` expects (multiple detectors per entity supported; sane defaults when unset).
 - [x] **CFG-04** — Configuration changes apply to the running orchestrator within seconds via reload, without restarting the add-on.
 
 ### DOCS

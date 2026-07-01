@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ingress Configuration UI
-status: executing
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-07-01T07:59:24.701Z"
+status: verifying
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-07-01T08:12:34.509Z"
 last_activity: 2026-07-01
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
-  completed_plans: 7
-  percent: 50
+  completed_plans: 8
+  percent: 75
 ---
 
 # Project State: Argus
@@ -39,7 +39,7 @@ See: .planning/PROJECT.md
 | 4 | Validation, CI Packaging + Documentation | Not started |
 
 ```
-Progress: [█████████░] 88%
+Progress: [██████████] 100%
 ```
 
 v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -108,6 +108,9 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 - [Phase 02-03]: Interim auth: X-Ingress-Path OR RemoteIpAddress=172.30.32.2/loopback (T-02-09); Phase 4 completes validate_session
 - [Phase ?]: RetractAsync delegate overload for testability — mirrors PublishAllAsync pattern, avoids IMqttConnection interface
 - [Phase ?]: HaListenerWorker inner-CTS restart loop: virtual seams for testability; null-before-dispose Pitfall 3 guard; MakeLive() test wrapper pattern; fire-and-forget ConfigChanged republish in MqttPublisherWorker
+- [Phase ?]: BuildDetectorEntry is public static on EntityPickerPage for direct test access and reuse by /api/detectors/new-entry
+- [Phase ?]: DetectorFieldParser extracted as internal static — directly testable, accepts IEnumerable<KVP> for offline tests
+- [Phase ?]: Validate-before-Swap: EntitiesConfigLoader.Load runs Validate() before Swap; bad config cannot crash live pipeline
 
 ### Blockers
 
@@ -127,11 +130,12 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 | Phase 02 P02-03 | 5m | 2 tasks | 6 files |
 | Phase 03 P03-01 | 10m | 2 tasks | 5 files |
 | Phase 03 P03-02 | 9m10s | 3 tasks | 8 files |
+| Phase 03 P03-03 | 8m43s | 2 tasks | 7 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-01T07:59:24.694Z
-**Stopped at:** Completed 03-02-PLAN.md
+**Last session:** 2026-07-01T08:12:34.502Z
+**Stopped at:** Completed 03-03-PLAN.md
 **Resume file:** None
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
@@ -147,5 +151,5 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 
 Phase: 03 (Config Read/Write + Detector Assignment + Reload) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-01
