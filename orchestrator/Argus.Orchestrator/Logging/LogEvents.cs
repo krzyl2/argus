@@ -52,6 +52,10 @@ public static class LogEvents
     public static readonly EventId ConfigReloadComplete      = new(7005, nameof(ConfigReloadComplete));
     public static readonly EventId MqttRetractionPublished   = new(7006, nameof(MqttRetractionPublished));
 
+    // Phase 4 Input Validation (7007–7008)
+    public static readonly EventId ConfigFileWatcherReloadFailed = new(7007, nameof(ConfigFileWatcherReloadFailed));
+    public static readonly EventId UiValidationBlocked           = new(7008, nameof(UiValidationBlocked));
+
     // Batch scheduler (5xxx)
     public static readonly EventId BatchSchedulerStarted   = new(5001, nameof(BatchSchedulerStarted));
     public static readonly EventId BatchSchedulerStopped   = new(5002, nameof(BatchSchedulerStopped));
