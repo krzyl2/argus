@@ -47,7 +47,8 @@ detector algorithm(s) + parameters apply to each sensor — no manual `entities`
 apply without an add-on restart.
 
 - [x] **Phase 1: Ingress Scaffold + SDK Migration + Config Seam** — SDK Worker→Web migration, Kestrel on 0.0.0.0:8099, config.yaml ingress keys, empty-entities crash fix, atomic write seam (completed 2026-06-30)
-- [x] **Phase 2: Live Sensor Discovery + Entity Selection UI** — IHaSensorRegistry, /api/sensors, filterable entity picker, include/exclude pattern wiring, gen-entities.py guard (completed 2026-07-01)
+- [x] **Phase 2: Live Sensor Discovery + Entity Selection UI** — IHaSensorRegistry, /api/sensors, filterable entity picker, include/exclude pattern wiring, gen-entities.py guard
+ (completed 2026-07-01)
 - [ ] **Phase 3: Config Read/Write + Detector Assignment + Reload** — ILiveEntitiesConfig atomic swap, ConfigApiEndpoints, detector/parameter UI, HaListenerWorker inner-CTS restart, MQTT retraction
 - [ ] **Phase 4: Validation, CI Packaging + Documentation** — server+client validation, CI image-size gate, FileSystemWatcher debounce, DOCS.md
 
@@ -137,7 +138,25 @@ Plans:
   4. Entities removed via the UI have their MQTT discovery topics retracted within 30 seconds; the corresponding HA entities stop showing "unavailable" and disappear.
   5. Config writes are serialized (SemaphoreSlim(1)) and atomic (temp-then-rename); a concurrent save and file-watcher event never leaves a partial or corrupt `/data/entities.yaml`.
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — ILiveEntitiesConfig volatile-swap singleton + DiscoveryPublisher.RetractAsync (reload-core building blocks)
+- [ ] 03-02-PLAN.md — Migrate config consumers to ILiveEntitiesConfig + HaListenerWorker inner-CTS restart loop + retraction/republish + Program.cs DI
+- [ ] 03-03-PLAN.md — Detector-assignment UI (disclosure rows + params) + /api/detectors/new-entry + extended save + Swap
+
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — LiveEntitiesConfig + RetractAsync + LogEvents (CFG-04 foundation)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 03-02-PLAN.md — consumer migration + restart loop + DI rewiring (CFG-04)
+
+**Wave 3** *(blocked on Wave 2 — shares Program.cs)*
+
+- [ ] 03-03-PLAN.md — detector UI + endpoints + save/Swap (UI-03, CFG-03)
+
 **UI hint**: yes
 
 **Research flags / verification items:**
@@ -186,5 +205,5 @@ Plans:
 | 4. Multi-Arch CI + Integration + Documentation | v2.0 | 2/2 | Complete | 2026-06-30 |
 | 1. Ingress Scaffold + SDK Migration + Config Seam | v3.0 | 0/2 | Not started | - |
 | 2. Live Sensor Discovery + Entity Selection UI | v3.0 | 0/TBD | Not started | - |
-| 3. Config Read/Write + Detector Assignment + Reload | v3.0 | 0/TBD | Not started | - |
+| 3. Config Read/Write + Detector Assignment + Reload | v3.0 | 0/3 | Not started | - |
 | 4. Validation, CI Packaging + Documentation | v3.0 | 0/TBD | Not started | - |

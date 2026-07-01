@@ -2,9 +2,11 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ingress Configuration UI
+current_phase: 02
+current_phase_name: Live Sensor Discovery + Entity Selection UI
 status: verifying
-stopped_at: "Plan 02-02 complete: GlobExpander + restart guard"
-last_updated: "2026-07-01T06:22:07.018Z"
+stopped_at: Phase 2 executed; live-HA verification deferred (02-UAT.md)
+last_updated: "2026-07-01T06:35:26.188Z"
 last_activity: 2026-07-01
 progress:
   total_phases: 4
@@ -126,9 +128,9 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 
 ## Session Continuity
 
-**Last session:** 2026-07-01T06:22:07.011Z
-**Stopped at:** Plan 02-02 complete: GlobExpander + restart guard
-**Resume file:** None
+**Last session:** 2026-07-01T06:35:26.180Z
+**Stopped at:** Phase 2 executed; live-HA verification deferred (02-UAT.md)
+**Resume file:** .planning/phases/02-live-sensor-discovery-entity-selection-ui/02-UAT.md
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
 - Resume point: Live-HA verification per 01-02-SUMMARY.md "Pending Live-HA Verification" section, then Phase 2 planning.
