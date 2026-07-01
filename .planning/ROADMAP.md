@@ -49,8 +49,10 @@ apply without an add-on restart.
 - [x] **Phase 1: Ingress Scaffold + SDK Migration + Config Seam** — SDK Worker→Web migration, Kestrel on 0.0.0.0:8099, config.yaml ingress keys, empty-entities crash fix, atomic write seam (completed 2026-06-30)
 - [x] **Phase 2: Live Sensor Discovery + Entity Selection UI** — IHaSensorRegistry, /api/sensors, filterable entity picker, include/exclude pattern wiring, gen-entities.py guard
  (completed 2026-07-01)
+
 - [x] **Phase 3: Config Read/Write + Detector Assignment + Reload** — ILiveEntitiesConfig atomic swap, ConfigApiEndpoints, detector/parameter UI, HaListenerWorker inner-CTS restart, MQTT retraction
  (completed 2026-07-01)
+
 - [ ] **Phase 4: Validation, CI Packaging + Documentation** — server+client validation, CI image-size gate, FileSystemWatcher debounce, DOCS.md
 
 ## Phase Details
@@ -103,6 +105,7 @@ apply without an add-on restart.
 **Plans**: 3 plans
 
 Plans:
+
 - [x] 02-01-PLAN.md — HaStateDto attributes + IHaSensorRegistry populated from get_states (UI-02 foundation)
 - [x] 02-02-PLAN.md — GlobExpander (include/exclude combine model) + gen-entities.py restart guard (CFG-02 pre-condition)
 - [x] 02-03-PLAN.md — Entity picker page + search + save endpoint (_patterns persistence + .ui_config_present lock)
@@ -142,6 +145,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
+
 - [x] 03-01-PLAN.md — ILiveEntitiesConfig volatile-swap singleton + DiscoveryPublisher.RetractAsync (reload-core building blocks)
 - [x] 03-02-PLAN.md — Migrate config consumers to ILiveEntitiesConfig + HaListenerWorker inner-CTS restart loop + retraction/republish + Program.cs DI
 - [x] 03-03-PLAN.md — Detector-assignment UI (disclosure rows + params) + /api/detectors/new-entry + extended save + Swap
@@ -184,10 +188,19 @@ Plans:
   5. DOCS.md includes a section on the Ingress UI covering: how to open it, how to select entities, how to assign detectors, what "apply without restart" means (including the ~4-minute HST warm-up period after any reload), and how to recover a corrupted config.
 
 **Plans**: 4 plans
-- [ ] 04-01-PLAN.md — Server-side InputValidator + save-handler gate (UI-04)
+**Wave 1**
+
 - [ ] 04-02-PLAN.md — Client-side inline validation + UI error states + warm-up banner (UI-04)
-- [ ] 04-03-PLAN.md — FileSystemWatcher 300ms-debounce reload service (SC4)
 - [ ] 04-04-PLAN.md — CI wwwroot assertion + DOCS.md Ingress UI section (DOCS-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04-01-PLAN.md — Server-side InputValidator + save-handler gate (UI-04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04-03-PLAN.md — FileSystemWatcher 300ms-debounce reload service (SC4)
+
 **UI hint**: yes
 
 **Research flags / verification items:**
