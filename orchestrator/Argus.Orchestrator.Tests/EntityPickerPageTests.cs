@@ -260,4 +260,279 @@ public class EntityPickerPageTests
         Assert.Contains("role=\"alert\"", html);
         Assert.Contains("aria-live=\"assertive\"", html);
     }
+
+    // -----------------------------------------------------------------------
+    // Phase 3: Detector disclosure rows — BuildFullPage + BuildDetectorEntry
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void BuildFullPage_TrackedEntityWithHstDetector_RendersDisclosureSection()
+    {
+        // Arrange: tracked entity with one saved HST detector
+        var entry = MakeEntry("sensor.living_room_temp", isTracked: true);
+        var registry = new FakeRegistry(entry);
+        var config = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig
+                {
+                    EntityId = "sensor.living_room_temp",
+                    FriendlyName = "",
+                    Detectors = [new DetectorConfig { Name = "hst", Params = [] }]
+                }
+            ]
+        };
+        var health = MakeHealth();
+
+        var html = EntityPickerPage.BuildFullPage("/ingress/abc", registry, config, health, "");
+
+        // Disclosure section present for tracked entity
+        Assert.Contains("argus-detectors-details", html);
+        Assert.Contains("argus-disclosure-toggle", html);
+        // Summary shows count of 1
+        Assert.Contains("Detectors (1)", html);
+        // Detector entry
+        Assert.Contains("argus-detector-entry", html);
+    }
+
+    [Fact]
+    public void BuildFullPage_TrackedEntityWithTwoDetectors_RendersTwoEntriesWithCorrectIndices()
+    {
+        // Arrange: tracked entity with two detectors (HST + MAD)
+        var entry = MakeEntry("sensor.outdoor_humidity", isTracked: true);
+        var registry = new FakeRegistry(entry);
+        var config = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig
+                {
+                    EntityId = "sensor.outdoor_humidity",
+                    FriendlyName = "",
+                    Detectors =
+                    [
+                        new DetectorConfig { Name = "hst", Params = [] },
+                        new DetectorConfig { Name = "mad", Params = [] }
+                    ]
+                }
+            ]
+        };
+        var health = MakeHealth();
+
+        var html = EntityPickerPage.BuildFullPage("/ingress/abc", registry, config, health, "");
+
+        // Summary shows count of 2
+        Assert.Contains("Detectors (2)", html);
+        // Two detector entries present
+        var count = System.Text.RegularExpressions.Regex.Matches(html, "argus-detector-entry").Count;
+        Assert.True(count >= 2, $"Expected at least 2 argus-detector-entry blocks but found {count}");
+        // First detector: index [0][0], second: [0][1]
+        Assert.Contains("detectors[0][0][name]", html);
+        Assert.Contains("detectors[0][1][name]", html);
+    }
+
+    [Fact]
+    public void BuildFullPage_UntrackedEntity_RendersNoDisclosureSection()
+    {
+        // Arrange: untracked entity — Phase 2 shape unchanged
+        var entry = MakeEntry("sensor.test_sensor", isTracked: false);
+        var registry = new FakeRegistry(entry);
+        var config = new EntitiesConfig();
+        var health = MakeHealth();
+
+        var html = EntityPickerPage.BuildFullPage("/ingress/abc", registry, config, health, "");
+
+        // No disclosure section for untracked rows
+        Assert.DoesNotContain("argus-detectors-details", html);
+        Assert.DoesNotContain("argus-detector-entry", html);
+    }
+
+    [Fact]
+    public void BuildDetectorEntry_HstType_RendersSevenParamFields()
+    {
+        // Arrange: HST detector with default params
+        var detector = new DetectorConfig { Name = "hst", Params = [] };
+
+        var html = EntityPickerPage.BuildDetectorEntry(0, 0, detector);
+
+        // HST must render 7 param fields
+        Assert.Contains("detectors[0][0][params][window]", html);
+        Assert.Contains("detectors[0][0][params][n_trees]", html);
+        Assert.Contains("detectors[0][0][params][high_threshold]", html);
+        Assert.Contains("detectors[0][0][params][low_threshold]", html);
+        Assert.Contains("detectors[0][0][params][min_consecutive]", html);
+        Assert.Contains("detectors[0][0][params][frozen_window]", html);
+        Assert.Contains("detectors[0][0][params][frozen_variance_threshold]", html);
+        // Timing caption
+        Assert.Contains("streaming (live, ~2 s reload)", html);
+        // Name select
+        Assert.Contains("detectors[0][0][name]", html);
+    }
+
+    [Fact]
+    public void BuildDetectorEntry_HstType_PreFillsDefaultsWhenParamsEmpty()
+    {
+        var detector = new DetectorConfig { Name = "hst", Params = [] };
+
+        var html = EntityPickerPage.BuildDetectorEntry(0, 0, detector);
+
+        // Default values rendered in inputs
+        Assert.Contains("value=\"250\"", html);   // window
+        Assert.Contains("value=\"25\"", html);    // n_trees
+        Assert.Contains("value=\"0.7\"", html);   // high_threshold
+        Assert.Contains("value=\"0.3\"", html);   // low_threshold
+        Assert.Contains("value=\"3\"", html);     // min_consecutive
+        Assert.Contains("value=\"10\"", html);    // frozen_window
+        Assert.Contains("value=\"0.001\"", html); // frozen_variance_threshold
+    }
+
+    [Fact]
+    public void BuildDetectorEntry_HstType_PreFillsStoredParamOverDefault()
+    {
+        // If a param value is stored in the entity config, it overrides the default
+        var detector = new DetectorConfig
+        {
+            Name = "hst",
+            Params = new Dictionary<string, string> { ["window"] = "500" }
+        };
+
+        var html = EntityPickerPage.BuildDetectorEntry(0, 0, detector);
+
+        Assert.Contains("value=\"500\"", html);   // stored override
+    }
+
+    [Fact]
+    public void BuildDetectorEntry_MadType_RendersTwoParamFields()
+    {
+        var detector = new DetectorConfig { Name = "mad", Params = [] };
+
+        var html = EntityPickerPage.BuildDetectorEntry(1, 0, detector);
+
+        Assert.Contains("detectors[1][0][params][threshold]", html);
+        Assert.Contains("detectors[1][0][params][window]", html);
+        Assert.Contains("batch (runs every N min)", html);
+        // MAD should NOT contain HST-specific fields
+        Assert.DoesNotContain("detectors[1][0][params][n_trees]", html);
+    }
+
+    [Fact]
+    public void BuildDetectorEntry_StlType_RendersThreeParamFields()
+    {
+        var detector = new DetectorConfig { Name = "stl", Params = [] };
+
+        var html = EntityPickerPage.BuildDetectorEntry(0, 2, detector);
+
+        Assert.Contains("detectors[0][2][params][period]", html);
+        Assert.Contains("detectors[0][2][params][seasonal]", html);
+        Assert.Contains("detectors[0][2][params][threshold]", html);
+        Assert.Contains("batch (runs every N min)", html);
+    }
+
+    [Fact]
+    public void BuildDetectorEntry_ParamValueContainingScript_IsHtmlEncoded()
+    {
+        // T-03-11: stored XSS defense — param values must be HTML-encoded
+        var detector = new DetectorConfig
+        {
+            Name = "hst",
+            Params = new Dictionary<string, string> { ["window"] = "<script>alert(1)</script>" }
+        };
+
+        var html = EntityPickerPage.BuildDetectorEntry(0, 0, detector);
+
+        Assert.DoesNotContain("<script>", html);
+        Assert.Contains("&lt;script&gt;", html);
+    }
+
+    [Fact]
+    public void BuildDetectorEntry_DetectorNameIsHtmlEncoded()
+    {
+        // T-03-11: detector Name in select element must be HTML-encoded
+        var detector = new DetectorConfig { Name = "<evil>", Params = [] };
+
+        var html = EntityPickerPage.BuildDetectorEntry(0, 0, detector);
+
+        Assert.DoesNotContain("<evil>", html);
+    }
+
+    [Fact]
+    public void BuildDetectorEntry_RendersRemoveButton()
+    {
+        var detector = new DetectorConfig { Name = "hst", Params = [] };
+
+        var html = EntityPickerPage.BuildDetectorEntry(0, 0, detector);
+
+        Assert.Contains("type=\"button\"", html);
+        Assert.Contains("argus-btn--destructive-ghost", html);
+        Assert.Contains(".argus-detector-entry", html); // inline onclick reference
+    }
+
+    [Fact]
+    public void BuildFullPage_TrackedEntityWithNoSavedDetectors_RendersDefaultHstEntry()
+    {
+        // When an entity is tracked but has no detectors saved (first-time), render a default HST entry
+        var entry = MakeEntry("sensor.new_entity", isTracked: true);
+        var registry = new FakeRegistry(entry);
+        // Entity in config with empty detectors list
+        var config = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig
+                {
+                    EntityId = "sensor.new_entity",
+                    FriendlyName = "",
+                    Detectors = []
+                }
+            ]
+        };
+        var health = MakeHealth();
+
+        var html = EntityPickerPage.BuildFullPage("/ingress/abc", registry, config, health, "");
+
+        // Should still render a detector entry (default HST)
+        Assert.Contains("argus-detector-entry", html);
+        // HST timing caption should appear
+        Assert.Contains("streaming (live, ~2 s reload)", html);
+    }
+
+    [Fact]
+    public void BuildFullPage_TrackedEntityNotInConfig_RendersDefaultHstEntry()
+    {
+        // When a tracked entity has no entry in config at all, render default HST
+        var entry = MakeEntry("sensor.brand_new", isTracked: true);
+        var registry = new FakeRegistry(entry);
+        var config = new EntitiesConfig(); // empty — no entities at all
+        var health = MakeHealth();
+
+        var html = EntityPickerPage.BuildFullPage("/ingress/abc", registry, config, health, "");
+
+        Assert.Contains("argus-detector-entry", html);
+        Assert.Contains("streaming (live, ~2 s reload)", html);
+    }
+
+    [Fact]
+    public void BuildFullPage_PageSubheadingUpdated()
+    {
+        // Plan requires subheading to read "Select the sensors Argus monitors and assign detectors to each."
+        var registry = new FakeRegistry();
+        var config = new EntitiesConfig();
+        var health = MakeHealth();
+
+        var html = EntityPickerPage.BuildFullPage("/ingress/abc", registry, config, health, "");
+
+        Assert.Contains("Select the sensors Argus monitors and assign detectors to each.", html);
+    }
+
+    [Fact]
+    public void BuildReloadingBanner_ContainsExpectedCopy()
+    {
+        var html = EntityPickerPage.BuildReloadingBanner(3);
+
+        Assert.Contains("argus-banner--reloading", html);
+        Assert.Contains("role=\"status\"", html);
+        Assert.Contains("aria-live=\"polite\"", html);
+        Assert.Contains("Saved — pipeline reloading", html);
+    }
 }
