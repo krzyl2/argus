@@ -146,6 +146,48 @@ public class DiscoveryPublisher
     }
 
     /// <summary>
+    /// Retracts discovery entities for removed entities by publishing empty retained payloads
+    /// to their binary_sensor and sensor config topics (MQTT §3.3.1-7 retained-message deletion).
+    ///
+    /// Only the passed <paramref name="removedEntities"/> are retracted — no other topics are touched
+    /// (T-03-01: retraction scope limited to the passed set; topic ids derived from server-controlled
+    /// EntityConfig via UniqueId.Slug).
+    /// </summary>
+    public static Task RetractAsync(
+        MqttConnection mqtt,
+        IEnumerable<EntityConfig> removedEntities,
+        CancellationToken ct)
+        => RetractAsync(
+            (topic, payload, retain, token) => mqtt.PublishAsync(topic, payload, retain, token),
+            removedEntities,
+            ct);
+
+    /// <summary>
+    /// Testable overload: accepts a publish delegate instead of a live MqttConnection.
+    /// Production code uses the MqttConnection overload above.
+    /// </summary>
+    public static async Task RetractAsync(
+        Func<string, string, bool, CancellationToken, Task> publish,
+        IEnumerable<EntityConfig> removedEntities,
+        CancellationToken ct)
+    {
+        foreach (var entity in removedEntities)
+        {
+            var detector  = GetDetectorName(entity);
+            var anomalyId = UniqueId.AnomalyId(entity.EntityId, detector);
+            var scoreId   = UniqueId.ScoreId(entity.EntityId, detector);
+
+            await publish(
+                $"homeassistant/binary_sensor/{anomalyId}/config",
+                string.Empty, true, ct);
+
+            await publish(
+                $"homeassistant/sensor/{scoreId}/config",
+                string.Empty, true, ct);
+        }
+    }
+
+    /// <summary>
     /// Builds the health binary_sensor discovery JSON payload for the Argus add-on itself (HEALTH-01).
     /// device_class "problem" — ON means problem/unavailable, OFF means healthy.
     /// Stable unique_id == object_id == argus_addon_health (D-14, prevents HA mangling).
