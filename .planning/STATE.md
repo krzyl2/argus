@@ -2,18 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ingress Configuration UI
-current_phase: 01
-current_phase_name: Ingress Scaffold + SDK Migration + Config Seam
-status: verifying
+status: executing
 stopped_at: Phase 1 executed; live-HA verification deferred (01-UAT.md)
-last_updated: "2026-07-01T06:00:25.517Z"
+last_updated: "2026-07-01T06:07:14.392Z"
 last_activity: 2026-07-01
-last_activity_desc: Phase 2 planning complete
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 5
+  completed_plans: 3
   percent: 25
 ---
 
@@ -30,7 +27,7 @@ progress:
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds.
-**Current focus:** Phase 01 — Ingress Scaffold + SDK Migration + Config Seam
+**Current focus:** Phase 02 — Live Sensor Discovery + Entity Selection UI
 
 ## Phase Status (v3.0)
 
@@ -42,7 +39,7 @@ See: .planning/PROJECT.md
 | 4 | Validation, CI Packaging + Documentation | Not started |
 
 ```
-Progress: [██████████] 100%
+Progress: [██████░░░░] 60%
 ```
 
 v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -116,12 +113,13 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 | Requirements mapped | 9/9 | 9/9 |
 | Phase 01 P01-01 | 2 | 2 tasks | 5 files |
 | Phase 01 P01-02 | 231 | - tasks | - files |
+| Phase 02 P02-01 | 4m | 3 tasks | 7 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-01T05:11:51.680Z
+**Last session:** 2026-07-01T06:07:14.385Z
 **Stopped at:** Phase 1 executed; live-HA verification deferred (01-UAT.md)
-**Resume file:** .planning/phases/01-ingress-scaffold-sdk-migration-config-seam/01-UAT.md
+**Resume file:** None
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
 - Resume point: Live-HA verification per 01-02-SUMMARY.md "Pending Live-HA Verification" section, then Phase 2 planning.
@@ -134,7 +132,7 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 
 ## Current Position
 
-Phase: 01 (Ingress Scaffold + SDK Migration + Config Seam) — PHASE COMPLETE (code), live-HA verification pending
-Plan: 2 of 2 (all plans executed)
-Status: Awaiting live-HA verification (see 01-02-SUMMARY.md Pending Live-HA Verification section)
-Last activity: 2026-07-01 — Phase 2 planning complete
+Phase: 02 (Live Sensor Discovery + Entity Selection UI) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-07-01
