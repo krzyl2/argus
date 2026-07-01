@@ -26,6 +26,16 @@ public static class EntityPickerPage
     private static readonly string _version =
         Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
 
+    // Inline JS validation block — non-interpolated to avoid C# brace-escaping conflicts with JS.
+    // Size budget: must stay under 2 KB minified (04-UI-SPEC §Inline JS).
+    // T-04-08: No eval/Function/dynamic import/network — static authored JS only.
+    private static readonly string _validationScript =
+        """
+        <script>
+        (function(){var IC="argus-param-field__input",EC="argus-param-field--error",HI="Must be between 0 and 1, and greater than low threshold.",LO="Must be between 0 and 1, and less than high threshold.",IN1="Must be a whole number ≥ 1.",IN2="Must be a whole number ≥ 2.";var PR={window:{m:1,i:1},n_trees:{m:1,i:1},high_threshold:{m:0,x:1,ex:1,cr:1},low_threshold:{m:0,x:1,ex2:1,cr:1},min_consecutive:{m:1,i:1},frozen_window:{m:1,i:1},frozen_variance_threshold:{m:0},threshold:{m:0,ex:1},period:{m:2,i:1}};function pk(n){var p=n.split("][params][");return p.length==2?p[1].replace("]",""):null;}function se(inp,m){var f=inp.closest(".argus-param-field");if(f){f.classList.add(EC);inp.setAttribute("aria-invalid","true");var s=document.getElementById(inp.id+"-err");if(s)s.textContent=m;}}function ce(inp){var f=inp.closest(".argus-param-field");if(f){f.classList.remove(EC);inp.setAttribute("aria-invalid","false");var s=document.getElementById(inp.id+"-err");if(s)s.textContent="";}}function vf(inp,frm){var k=pk(inp.name||"");if(!k||!PR[k])return!0;var r=PR[k],v=parseFloat(inp.value);if(!inp.value.trim()||isNaN(v)){se(inp,"Must provide a value.");return!1;}if(r.i&&!Number.isInteger(v)){se(inp,r.m>=2?IN2:IN1);return!1;}if(r.ex&&v<=r.m){se(inp,k=="high_threshold"?HI:"Must be greater than 0.");return!1;}if(r.ex2&&v>=r.x){se(inp,LO);return!1;}if(v<r.m){se(inp,r.i?(r.m>=2?IN2:IN1):"Must be 0 or greater.");return!1;}if(r.cr){var ck=k=="high_threshold"?"low_threshold":"high_threshold",o=Array.from(frm.querySelectorAll("input."+IC)).find(function(i){return i!==inp&&pk(i.name||"")==ck;});if(o){var ov=parseFloat(o.value);if(!isNaN(ov)&&((k=="high_threshold"&&v<=ov)||(k=="low_threshold"&&v>=ov))){se(inp,k=="high_threshold"?HI:LO);return!1;}}}ce(inp);return!0;}function usb(f){var b=f.querySelector("button[type=submit]");if(b)f.querySelectorAll("."+EC).length?b.setAttribute("disabled",""):b.removeAttribute("disabled");}var form=document.getElementById("argus-picker-form");if(form){function h(e){var i=e.target;if(!i.classList.contains(IC))return;if(e.type=="input"&&!i.closest("."+EC))return;if(e.type=="submit"){var ok=!0;form.querySelectorAll("input."+IC).forEach(function(x){if(!vf(x,form))ok=!1;});usb(form);if(!ok)e.preventDefault();return;}vf(i,form);usb(form);}["focusout","input","submit"].forEach(function(t){form.addEventListener(t,h);});}})();
+        </script>
+        """;
+
     // HST defaults (D-09/D-11/D-12)
     private const string HstWindowDefault = "250";
     private const string HstNTreesDefault = "25";
@@ -151,6 +161,7 @@ public static class EntityPickerPage
               <footer class="argus-footer">
                 <span class="argus-label">v{{_version}}</span>
               </footer>
+            {{_validationScript}}
             </body>
             </html>
             """;
@@ -229,13 +240,32 @@ public static class EntityPickerPage
 
     /// <summary>
     /// Builds the save-success banner fragment (POST /api/sensors/save → success path).
+    /// When hasHst is true, appends the HST warm-up disclosure note.
     /// </summary>
-    public static string BuildSuccessBanner(int count)
+    public static string BuildSuccessBanner(int count, bool hasHst = false)
     {
+        var warmupNote = hasHst
+            ? "\n              <p class=\"argus-warmup-note\">\n                HST detectors need ~4 minutes of readings to warm up (window=250 at ~1 reading/s).\n                Anomaly scores will be low until warm-up completes.\n              </p>"
+            : "";
+
         return $"""
             <div class="argus-banner argus-banner--success"
                  role="status" aria-live="polite">
-              Saved — pipeline active. {count} {(count == 1 ? "entity" : "entities")} tracked.
+              Saved — pipeline active. {count} {(count == 1 ? "entity" : "entities")} tracked.{warmupNote}
+            </div>
+            """;
+    }
+
+    /// <summary>
+    /// Builds the server validation-rejection banner fragment (POST /api/sensors/save → validation failure path).
+    /// T-04-06: errorCount is a server-computed integer — no user string interpolated.
+    /// </summary>
+    public static string BuildValidationBanner(int errorCount)
+    {
+        return $"""
+            <div class="argus-banner argus-banner--validation"
+                 role="alert" aria-live="assertive">
+              Save blocked: {errorCount} field(s) have invalid values. Correct the highlighted fields and try again.
             </div>
             """;
     }

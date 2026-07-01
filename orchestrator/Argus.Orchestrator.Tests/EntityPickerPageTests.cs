@@ -563,4 +563,113 @@ public class EntityPickerPageTests
         Assert.Contains("aria-live=\"polite\"", html);
         Assert.Contains("Saved — pipeline reloading", html);
     }
+
+    // -----------------------------------------------------------------------
+    // Phase 4: BuildValidationBanner
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void BuildValidationBanner_ContainsErrorCountAndBannerClass()
+    {
+        var html = EntityPickerPage.BuildValidationBanner(2);
+
+        Assert.Contains("Save blocked: 2 field(s)", html);
+        Assert.Contains("argus-banner--validation", html);
+        Assert.Contains("role=\"alert\"", html);
+        Assert.Contains("aria-live=\"assertive\"", html);
+        Assert.Contains("Correct the highlighted fields and try again.", html);
+    }
+
+    [Fact]
+    public void BuildValidationBanner_SingleError_ContainsCount1()
+    {
+        var html = EntityPickerPage.BuildValidationBanner(1);
+
+        Assert.Contains("Save blocked: 1 field(s)", html);
+        Assert.Contains("argus-banner--validation", html);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 4: BuildSuccessBanner — warm-up disclosure
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void BuildSuccessBanner_HasHstFalse_DoesNotContainWarmupNote()
+    {
+        var html = EntityPickerPage.BuildSuccessBanner(3, hasHst: false);
+
+        Assert.Contains("argus-banner--success", html);
+        Assert.Contains("3", html);
+        Assert.DoesNotContain("argus-warmup-note", html);
+        Assert.DoesNotContain("warm up", html);
+    }
+
+    [Fact]
+    public void BuildSuccessBanner_HasHstTrue_ContainsWarmupNote()
+    {
+        var html = EntityPickerPage.BuildSuccessBanner(3, hasHst: true);
+
+        Assert.Contains("argus-banner--success", html);
+        Assert.Contains("argus-warmup-note", html);
+        Assert.Contains("HST detectors need ~4 minutes", html);
+        Assert.Contains("window=250 at ~1 reading/s", html);
+        Assert.Contains("warm-up completes", html);
+    }
+
+    [Fact]
+    public void BuildSuccessBanner_DefaultHasHstIsFalse_NoWarmupNote()
+    {
+        // Existing single-arg call site still compiles and produces no warm-up note
+        var html = EntityPickerPage.BuildSuccessBanner(5);
+
+        Assert.Contains("argus-banner--success", html);
+        Assert.DoesNotContain("argus-warmup-note", html);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 4: Inline validation JS in BuildFullPage
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void BuildFullPage_ContainsInlineValidationScript()
+    {
+        var registry = new FakeRegistry();
+        var config = new EntitiesConfig();
+        var health = MakeHealth();
+
+        var html = EntityPickerPage.BuildFullPage("/ingress/abc", registry, config, health, "");
+
+        // Validation param rules must be present (PR = shorthand for PARAM_RULES in minified script)
+        Assert.Contains("var PR=", html);
+        // Event delegation on form
+        Assert.Contains("argus-picker-form", html);
+        Assert.Contains("focusout", html);
+        Assert.Contains("submit", html);
+        // Validation script must be inline — PR (param rules) is embedded directly in the page body
+        // (htmx is loaded via src=, but the validation script must not have a src attribute)
+        var prIdx = html.IndexOf("var PR=", StringComparison.Ordinal);
+        Assert.True(prIdx > 0, "var PR= (validation rules) not found in page");
+        // Ensure it is not in a script[src] element — look backwards for the opening script tag
+        var scriptOpenBefore = html.LastIndexOf("<script", prIdx, StringComparison.Ordinal);
+        Assert.True(scriptOpenBefore >= 0, "No preceding <script> tag found");
+        var scriptTagContent = html.Substring(scriptOpenBefore, prIdx - scriptOpenBefore);
+        Assert.DoesNotContain("src=", scriptTagContent);
+    }
+
+    [Fact]
+    public void BuildFullPage_ParamInputs_HaveAriaDescribedByAndAriaInvalid()
+    {
+        var entry = MakeEntry("sensor.test_sensor", isTracked: true);
+        var registry = new FakeRegistry(entry);
+        var config = new EntitiesConfig();
+        var health = MakeHealth();
+
+        var html = EntityPickerPage.BuildFullPage("/ingress/abc", registry, config, health, "");
+
+        // ARIA attributes must be present on param inputs (migrated id format)
+        Assert.Contains("aria-describedby=\"param-", html);
+        Assert.Contains("aria-invalid=\"false\"", html);
+        // Error spans must be present
+        Assert.Contains("argus-param-field__error-msg", html);
+    }
 }
