@@ -4,7 +4,6 @@ namespace Argus.Orchestrator.Ha;
 /// Thread-safe read cache for the live numeric-sensor snapshot from Home Assistant.
 /// Written exclusively by NetDaemonHaEventSource on every HA connect (get_states snapshot).
 /// Read by Kestrel HTTP threads (Wave 2 entity-picker endpoints).
-/// Internal because HaStateDto (WebSocket DTO) is internal; all consumers are in this assembly.
 /// </summary>
 public interface IHaSensorRegistry
 {
