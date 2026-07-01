@@ -210,9 +210,9 @@ public class SaveEndpointPatternsTests
                     Detectors = [new() { Name = "hst", Params = [] }] }
         });
 
-        // Act — mirror the Program.cs save handler logic
+        // Act — mirror the Program.cs save handler logic (lock is written synchronously per WR-02 fix)
         await writer.WriteAsync(entitiesPath, yaml);
-        await File.WriteAllTextAsync(lockPath, string.Empty);
+        File.WriteAllText(lockPath, string.Empty);
 
         // Assert — entities.yaml written
         Assert.True(File.Exists(entitiesPath), "entities.yaml must exist after save");
@@ -231,20 +231,28 @@ public class SaveEndpointPatternsTests
     }
 
     [Fact]
-    public async Task LockFile_NotCreatedBeforeSave()
+    public async Task LockFile_NotCreatedWhenWriteAsyncFails()
     {
-        // Lock file must NOT be created if WriteAsync fails
-        // (This is a logical assertion: lock is only written AFTER WriteAsync succeeds)
+        // Asserts the ordering guarantee: .ui_config_present must NOT be created if ConfigWriter
+        // fails, so gen-entities.py cannot be skipped after a half-written save.
         var tmpDir = Path.Combine(Path.GetTempPath(), $"argus-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tmpDir);
         var lockPath = Path.Combine(tmpDir, ".ui_config_present");
 
-        // We do NOT call WriteAsync or create the lock file — assert lock is absent
-        Assert.False(File.Exists(lockPath), ".ui_config_present must not exist before a save");
+        // Use an invalid target path (null byte triggers ArgumentException in File.Move inside WriteAsync)
+        var invalidEntitiesPath = Path.Combine(tmpDir, "entities-invalid\0.yaml");
+        var writer = new ConfigWriter();
+
+        // Act — WriteAsync must throw due to invalid path
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            writer.WriteAsync(invalidEntitiesPath, BuildCombinedYaml([], [], [])));
+
+        // Assert — lock file must NOT be created when write fails
+        Assert.False(File.Exists(lockPath),
+            ".ui_config_present must not be created when ConfigWriter.WriteAsync fails");
 
         // Cleanup
         Directory.Delete(tmpDir, recursive: true);
-        await Task.CompletedTask;
     }
 
     // -----------------------------------------------------------------------
