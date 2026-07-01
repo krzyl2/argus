@@ -54,6 +54,76 @@ Leave all `influx_*` fields empty to run in streaming-only mode.
    discovered so you can copy them into the `entities` list. Check the **Log** tab after
    startup to see the discovery output.
 
+## Using the Ingress UI
+
+> The Ingress UI replaces manual YAML editing for entity selection and detector configuration.
+> You can configure Argus entirely through the UI with zero manual YAML editing.
+
+### Opening the UI
+
+1. Open **Settings → Add-ons** in Home Assistant and click **Argus Anomaly Detection**.
+2. Click **Open Web UI** on the add-on detail page.
+
+The UI is served through HA Ingress — it is not accessible on a separate port and does not
+require you to open any firewall rules. Home Assistant handles authentication automatically.
+
+### Selecting Entities
+
+The main page lists all numeric sensors currently live in Home Assistant. Use the search box
+to filter by name or entity ID, then tick the checkbox next to each sensor you want to monitor.
+
+Only numeric sensors produce meaningful anomaly scores. Non-numeric entities are not listed.
+You can add or remove sensors at any time; saving applies the change immediately without
+restarting the add-on.
+
+### Assigning Detectors
+
+Each selected entity has a detector section below its checkbox row. You can assign one or
+more detectors to each entity:
+
+- **HST** (Half-Space Trees) — online streaming detector; updates with every reading.
+  Parameters: `window`, `n_trees`, `high_threshold`, `low_threshold`, `min_consecutive`,
+  `frozen_window`, `frozen_variance_threshold`.
+- **MAD** (Median Absolute Deviation) — batch detector; trained on InfluxDB history.
+  Parameters: `threshold`, `min_consecutive`.
+- **STL** (Seasonal-Trend decomposition) — batch detector; trained on InfluxDB history.
+  Parameters: `period`, `threshold`, `min_consecutive`.
+
+Use **Add detector** to attach additional detectors to an entity and **Remove** to detach one.
+Parameter fields are validated inline; the **Save** button is disabled until all fields are valid.
+
+### Applying Changes (No Restart Required)
+
+Click **Save** to write the configuration and reload the anomaly pipeline. The add-on does not
+restart — only the pipeline is swapped out. MQTT and gRPC connections remain alive during the
+reload; the streaming gap is under one second.
+
+**HST warm-up:** After saving a configuration that includes HST detectors, allow approximately
+**4 minutes** before anomaly scores reflect real patterns. This figure is derived from River's
+HST `window=250` (the number of readings required to build the initial model) at a typical rate
+of one reading per second per entity: 250 s ≈ 4 minutes. Anomaly scores will be low or
+near-zero until the warm-up completes. MAD and STL are batch detectors trained on InfluxDB
+historical data and have no comparable warm-up period.
+
+### Recovering a Corrupted Configuration
+
+If you manually edit `/data/entities.yaml` and introduce a YAML syntax or structural error,
+the orchestrator will fail to load the file on the next restart and the add-on will keep
+restarting in a crash loop. To recover:
+
+1. Open the add-on **Log** tab — the error message identifies the exact YAML problem.
+2. **Option A (fix YAML):** SSH into the host, open `/data/entities.yaml` in a text editor,
+   correct the error, then restart the add-on from the HA UI.
+3. **Option B (reset to UI re-entry):** Delete `/data/entities.yaml` **and**
+   `/data/.ui_config_present`, then restart the add-on. The orchestrator starts with an empty
+   pipeline. Open the UI to re-configure from scratch.
+
+**How the lock file works:** After each successful UI save, Argus writes a `/data/.ui_config_present`
+marker file. The `gen-entities.py` script that runs at add-on startup checks for this marker;
+if present, it skips overwriting `entities.yaml` — so a restart after a UI save never silently
+erases your configuration. Deleting the marker (Option B) lets the startup script regenerate a
+clean baseline, which the orchestrator accepts as an empty pipeline.
+
 ## Configuration
 
 ### `entities`
