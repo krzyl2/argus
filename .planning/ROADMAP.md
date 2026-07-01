@@ -98,7 +98,22 @@ apply without an add-on restart.
   4. `include_patterns` and `exclude_patterns` entered in the UI are applied as real selection filters (not ignored as in v2.0).
   5. Restarting the add-on after a UI save preserves the UI-authored config — `gen-entities.py` does not overwrite it.
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — HaStateDto attributes + IHaSensorRegistry populated from get_states (UI-02 foundation)
+- [ ] 02-02-PLAN.md — GlobExpander (include/exclude combine model) + gen-entities.py restart guard (CFG-02 pre-condition)
+- [ ] 02-03-PLAN.md — Entity picker page + search + save endpoint (_patterns persistence + .ui_config_present lock)
+
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — registry + HaStateDto extension foundation
+- [ ] 02-02-PLAN.md — glob resolver + restart guard (lands before the save endpoint)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-03-PLAN.md — picker UI + endpoints + save (writes the .ui_config_present lock)
+
 **UI hint**: yes
 
 **Research flags / verification items:**
