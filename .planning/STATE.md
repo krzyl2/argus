@@ -2,8 +2,11 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ingress Configuration UI
+current_phase: 01
+current_phase_name: Ingress Scaffold + SDK Migration + Config Seam
 status: verifying
-last_updated: "2026-06-30T19:22:04.090Z"
+stopped_at: Phase 1 executed; live-HA verification deferred (01-UAT.md)
+last_updated: "2026-07-01T05:11:51.688Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 4
@@ -114,6 +117,10 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 | Phase 01 P01-02 | 231 | - tasks | - files |
 
 ## Session Continuity
+
+**Last session:** 2026-07-01T05:11:51.680Z
+**Stopped at:** Phase 1 executed; live-HA verification deferred (01-UAT.md)
+**Resume file:** .planning/phases/01-ingress-scaffold-sdk-migration-config-seam/01-UAT.md
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
 - Resume point: Live-HA verification per 01-02-SUMMARY.md "Pending Live-HA Verification" section, then Phase 2 planning.
