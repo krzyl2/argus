@@ -181,7 +181,6 @@ public static class EntityPickerPage
     /// <param name="detector">The detector config to render (pre-filled from entities.yaml or defaults).</param>
     public static string BuildDetectorEntry(int entityIdx, int detIdx, DetectorConfig detector)
     {
-        var safeDetectorName = WebUtility.HtmlEncode(detector.Name);
         var detectorNameLower = detector.Name?.ToLowerInvariant() ?? "hst";
 
         // Select options — mark the current detector type as selected
