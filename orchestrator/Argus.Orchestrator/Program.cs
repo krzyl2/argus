@@ -118,6 +118,11 @@ builder.Services.AddHostedService<MqttPublisherWorker>();
 // Register HealthPublisherWorker (HEALTH-01): publishes composite health entity to HA via MQTT
 builder.Services.AddHostedService<HealthPublisherWorker>();
 
+// Register ConfigFileWatcherService (Plan 04-03 / SC4): watches entitiesPath for atomic renames
+// (ConfigWriter temp→rename + external edits) and reloads live config with 300ms debounce.
+// ILiveEntitiesConfig and ConnectionSettings are already registered singletons above.
+builder.Services.AddHostedService<ConfigFileWatcherService>();
+
 // Register ScoreStreamPipeline (Plan 08): bidi ScoreStream loop with hysteresis/frozen/MQTT
 builder.Services.AddSingleton<ScoreStreamPipeline>();
 
