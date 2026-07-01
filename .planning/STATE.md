@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ingress Configuration UI
 status: executing
-stopped_at: Phase 1 executed; live-HA verification deferred (01-UAT.md)
-last_updated: "2026-07-01T06:07:14.392Z"
+stopped_at: "Plan 02-02 complete: GlobExpander + restart guard"
+last_updated: "2026-07-01T06:12:08.936Z"
 last_activity: 2026-07-01
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
   percent: 25
 ---
 
@@ -39,7 +39,7 @@ See: .planning/PROJECT.md
 | 4 | Validation, CI Packaging + Documentation | Not started |
 
 ```
-Progress: [██████░░░░] 60%
+Progress: [████████░░] 80%
 ```
 
 v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -114,11 +114,12 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 | Phase 01 P01-01 | 2 | 2 tasks | 5 files |
 | Phase 01 P01-02 | 231 | - tasks | - files |
 | Phase 02 P02-01 | 4m | 3 tasks | 7 files |
+| Phase 02 P02-02 | 8m | 2 tasks | 3 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-01T06:07:14.385Z
-**Stopped at:** Phase 1 executed; live-HA verification deferred (01-UAT.md)
+**Last session:** 2026-07-01T06:12:08.930Z
+**Stopped at:** Plan 02-02 complete: GlobExpander + restart guard
 **Resume file:** None
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
@@ -133,6 +134,6 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 ## Current Position
 
 Phase: 02 (Live Sensor Discovery + Entity Selection UI) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-01
