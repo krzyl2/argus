@@ -4,10 +4,14 @@ using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Detection;
 using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Health;
+using Argus.Orchestrator.Logging;
 using Argus.Orchestrator.Mqtt;
+using Argus.Orchestrator.Web;
 using Argus.Orchestrator.Workers;
 using Grpc.Net.Client;
 using InfluxDB.Client;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -184,12 +188,157 @@ app.UseRouting();
 // T-01-07: only committed wwwroot/ tree; no directory listing; no /data exposure.
 app.UseStaticFiles();
 
-// [4] Placeholder page handler — reads X-Ingress-Path header, emits <base href>, renders
-// server-side HTML with detector status from ArgusHealthSignals (zero-latency).
-app.MapGet("/", (HttpRequest req, ArgusHealthSignals health) =>
+// ── Phase-2 in-memory patterns holder ─────────────────────────────────────
+// Keeps the last-saved raw patterns in memory so GET /sensors can pre-fill
+// the textareas without re-reading entities.yaml on every page load.
+// Initialized empty; updated on each successful POST /api/sensors/save.
+// A fresh restart shows empty pattern boxes — acceptable (resolved entities preserved).
+var lastIncludePatterns = "";
+var lastExcludePatterns = "";
+
+// ── Interim auth helper (Phase 2 — full validate_session deferred to Phase 4) ──
+// Accepts requests carrying X-Ingress-Path header OR from Supervisor IP / loopback.
+// Uses RemoteIpAddress (real TCP peer, not spoofable X-Forwarded-For) — T-02-09.
+static bool IsAuthorizedRequest(HttpContext ctx)
 {
+    if (ctx.Request.Headers.ContainsKey("X-Ingress-Path"))
+        return true;
+
+    var remote = ctx.Connection.RemoteIpAddress;
+    if (remote is null) return false;
+
+    // Loopback: 127.0.0.1 (IPv4) or ::1 (IPv6) — for local dev
+    if (System.Net.IPAddress.IsLoopback(remote)) return true;
+
+    // Supervisor IP: 172.30.32.2 (add-on container network)
+    if (remote.Equals(System.Net.IPAddress.Parse("172.30.32.2"))) return true;
+
+    return false;
+}
+
+// [4] Root redirect — Phase 2 replaces placeholder page with entity picker
+app.MapGet("/", () => Results.Redirect("sensors"));
+
+// [5] GET /sensors — full entity picker page (UI-02 SC1)
+app.MapGet("/sensors", (HttpRequest req, IHaSensorRegistry registry,
+    EntitiesConfig config, ArgusHealthSignals health) =>
+{
+    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
+
     var ip = req.Headers["X-Ingress-Path"].FirstOrDefault() ?? "";
-    return Results.Content(PlaceholderPage.Build(ip, health), "text/html");
+    var q  = req.Query["q"].FirstOrDefault() ?? "";
+    var html = EntityPickerPage.BuildFullPage(
+        ip, registry, config, health, q,
+        lastIncludePatterns, lastExcludePatterns);
+    return Results.Content(html, "text/html");
+});
+
+// [6] GET /api/sensors — htmx list fragment (search refresh target)
+app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry) =>
+{
+    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
+
+    var q = req.Query["q"].FirstOrDefault() ?? "";
+    return Results.Content(EntityPickerPage.BuildListFragment(registry, q), "text/html");
+});
+
+// [7] POST /api/sensors/save — expand patterns, write entities.yaml, create lock file
+app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry registry,
+    Argus.Orchestrator.Config.ConfigWriter writer, ConnectionSettings settings,
+    ILogger<Program> logger, CancellationToken ct) =>
+{
+    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
+
+    try
+    {
+        var form = await req.ReadFormAsync(ct);
+
+        // Selected entity ids from checkboxes (may be empty — valid per Pitfall 5)
+        var selectedIds = form["entities"]
+            .Where(s => !string.IsNullOrEmpty(s))
+            .ToList();
+
+        // Split include/exclude textarea content by newline
+        var includeRaw = form["include_patterns"].FirstOrDefault() ?? "";
+        var excludeRaw = form["exclude_patterns"].FirstOrDefault() ?? "";
+        var include = includeRaw.Split('\n',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var exclude = excludeRaw.Split('\n',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        // Resolve: GlobExpander.Resolve with selectedIds as manuallyChecked, [] as manuallyUnchecked
+        // (the UI model: checkboxes ARE the manual selection — patterns feed the base set)
+        var resolvedIds = GlobExpander.Resolve(
+            registry.GetAll(), include, exclude,
+            selectedIds.Where(s => s is not null).Select(s => s!), []);
+
+        // Build EntityConfig list: each resolved id defaults to hst with empty params
+        var snapshotById = registry.GetAll()
+            .ToDictionary(e => e.EntityId, StringComparer.OrdinalIgnoreCase);
+
+        var entities = resolvedIds
+            .Select(id =>
+            {
+                snapshotById.TryGetValue(id, out var entry);
+                return new EntityConfig
+                {
+                    EntityId = id,
+                    FriendlyName = entry?.FriendlyName ?? "",
+                    Detectors = [new DetectorConfig { Name = "hst", Params = [] }],
+                };
+            })
+            .OrderBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Serialize BOTH entities and _patterns via a single YamlDotNet SerializerBuilder
+        // (never string-format YAML — T-02-08 / CLAUDE.md rule)
+        var serializer = new SerializerBuilder()
+            .WithNamingConvention(UnderscoredNamingConvention.Instance)
+            .Build();
+
+        // Build a single root dictionary: { _patterns: {...}, entities: [...] }
+        // The _patterns key name starts with underscore — bypasses UnderscoredNamingConvention
+        // conversion which only applies to PascalCase property names; use explicit key.
+        var patternsMap = new Dictionary<string, object>
+        {
+            ["include"] = include.ToList(),
+            ["exclude"] = exclude.ToList(),
+        };
+
+        // Use an ordered dictionary to ensure _patterns appears before entities
+        var root = new Dictionary<string, object>
+        {
+            ["_patterns"] = patternsMap,
+            ["entities"] = entities,
+        };
+
+        var fullYaml = serializer.Serialize(root);
+
+        // Write atomically via ConfigWriter (temp-then-rename + SemaphoreSlim — T-02-10)
+        var entitiesPath = settings.EntitiesPath ?? "/data/entities.yaml";
+        await writer.WriteAsync(entitiesPath, fullYaml, ct);
+
+        // Write lock file ONLY after a successful config write — guard for gen-entities.py (CFG-02)
+        var lockPath = Path.Combine(Path.GetDirectoryName(entitiesPath)!, ".ui_config_present");
+        await File.WriteAllTextAsync(lockPath, string.Empty, ct);
+
+        // Update in-memory patterns holder for next GET /sensors pre-fill
+        lastIncludePatterns = includeRaw;
+        lastExcludePatterns = excludeRaw;
+
+        logger.LogInformation(LogEvents.UiSaveSuccess,
+            "UI save succeeded: {EntityCount} entities written to {Path}", entities.Count, entitiesPath);
+
+        return Results.Content(EntityPickerPage.BuildSuccessBanner(entities.Count), "text/html");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "UI save failed");  // Full exception to add-on log only (T-02-11)
+
+        // Generic reason exposed to browser — no internal exception detail (T-02-11)
+        var reason = ex is IOException ? "disk error" : "unexpected error";
+        return Results.Content(EntityPickerPage.BuildErrorBanner(reason), "text/html");
+    }
 });
 
 app.Run();

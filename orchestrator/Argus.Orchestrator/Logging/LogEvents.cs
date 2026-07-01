@@ -44,6 +44,8 @@ public static class LogEvents
 
     // Phase 2 UI / Sensor Registry (7xxx)
     public static readonly EventId SensorRegistryUpdated = new(7001, nameof(SensorRegistryUpdated));
+    public static readonly EventId UiSaveSuccess = new(7002, nameof(UiSaveSuccess));
+    public static readonly EventId UiSaveFailed  = new(7003, nameof(UiSaveFailed));
 
     // Batch scheduler (5xxx)
     public static readonly EventId BatchSchedulerStarted   = new(5001, nameof(BatchSchedulerStarted));
