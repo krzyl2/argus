@@ -775,9 +775,11 @@ app.MapPost("/api/sensors/save", async (HttpRequest req,
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **X-Ingress-Path strip behavior (live HA)**
+> All three items below have de-facto answers captured in their Recommendation lines and are treated as RESOLVED for planning. None block Phase 2 execution.
+
+1. **X-Ingress-Path strip behavior (live HA)** — RESOLVED: follow the Phase 1 pattern (read `X-Ingress-Path` for base href); Phase 2 adds no new middleware, so Phase 1's deferred live-HA check covers it.
    - What we know: Phase 1 implemented dual PathBase + `<base href>` defense. Live-HA verification was deferred per 01-02-SUMMARY.md.
    - What's unclear: Does the Supervisor strip `X-Ingress-Path` after setting it, meaning the static file paths resolve correctly from the base href but the PathBase is empty? Or does the Supervisor pass both header and path prefix?
    - Recommendation: Phase 2 endpoints follow the same Phase 1 pattern (`req.Headers["X-Ingress-Path"]` for base href). The behavior is already tested by Phase 1; Phase 2 adds no new middleware.
