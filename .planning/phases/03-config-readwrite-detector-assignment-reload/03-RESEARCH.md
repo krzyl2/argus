@@ -315,8 +315,11 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
             }
             finally
             {
-                innerCts.Dispose();
+                // Pitfall 3: null the field BEFORE Dispose so the ConfigChanged
+                // handler (which reads innerCts) never touches a disposed CTS.
+                var toDispose = innerCts;
                 innerCts = null;
+                toDispose?.Dispose();
             }
         }
     }
@@ -767,9 +770,13 @@ finally { _liveConfig.ConfigChanged -= OnChanged; innerCts?.Dispose(); }
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **MqttPublisherWorker ConfigChanged subscription: CancellationToken for the republish call**
+> RESOLVED for planning: Q1 uses the stored `stoppingToken`; Q2 is resolved by publishing `online`
+> availability (not just discovery) for current entities in the reload path (see 03-02); Q3 replaces
+> the test constructors with a `LiveEntitiesConfig` wrapper. None block execution.
+
+1. **MqttPublisherWorker ConfigChanged subscription: CancellationToken for the republish call** — RESOLVED: use the stored `stoppingToken`.
    - What we know: `MqttPublisherWorker.ExecuteAsync` runs until `stoppingToken`. After the initial publish it blocks on `Task.Delay(Timeout.Infinite, stoppingToken)`. A `ConfigChanged` handler needs a CT for the republish.
    - What's unclear: Should the handler use `stoppingToken` (correct lifetime) or a short-lived CT? Can the handler be a proper async subscriber?
    - Recommendation: Store `stoppingToken` as a field; use it in the `ConfigChanged` handler with `Task.Run(() => DiscoveryPublisher.PublishAllAsync(..., _stoppingToken))`. Fire-and-forget with logged errors is acceptable for a single-user tool.
@@ -778,6 +785,7 @@ finally { _liveConfig.ConfigChanged -= OnChanged; innerCts?.Dispose(); }
    - What we know: On startup, `MqttPublisherWorker` publishes `online` availability for each entity. On reload, new entities have no availability message yet — HA considers them unavailable.
    - What's unclear: Does `ScoreStreamPipeline.RunAsync` publish `online` availability when it first starts reading for an entity?
    - Recommendation: Add an availability `online` publish in the `HaListenerWorker` reload path for each entity in the new config, or in `MqttPublisherWorker`'s `ConfigChanged` handler alongside re-discovery. Planner should decide; it is a small addition.
+   - **RESOLVED:** the `MqttPublisherWorker` `ConfigChanged` handler publishes BOTH discovery (`PublishAllAsync`) AND `online` availability for every current entity (mirroring the startup availability publish), so newly-added entities are not shown "unavailable" until the pipeline warm-up. Encoded in 03-02 Task 1.
 
 3. **Test constructor impact for ScoreStreamPipeline and BatchSchedulerWorker**
    - What we know: Both classes have test constructors that take `EntitiesConfig` directly. 161 existing `[Fact]` tests use these.
