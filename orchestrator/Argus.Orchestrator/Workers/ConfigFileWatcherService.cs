@@ -33,7 +33,7 @@ public sealed class ConfigFileWatcherService : BackgroundService
     private readonly ILogger<ConfigFileWatcherService> _logger;
 
     private volatile Timer? _debounce;
-    private int _debounceMs = 300;
+    private volatile int _debounceMs = 300;
 
     public ConfigFileWatcherService(
         ILiveEntitiesConfig liveCfg,
