@@ -286,7 +286,12 @@ public static class EntityPickerPage
         var entityConfigById = config.Entities
             .ToDictionary(e => e.EntityId, StringComparer.OrdinalIgnoreCase);
 
-        // Track entity index within the TRACKED set (for detector field correlation)
+        // trackedEntityIdx is the entity's 0-based position in the sorted tracked-entity list.
+        // This MUST match the correlation used in the save handler (POST /api/sensors/save):
+        //   sortedIds = resolvedIds.OrderBy(id => id, OrdinalIgnoreCase) — same alphabetical sort.
+        // On GET, only IsTracked entries increment this counter (unchecked entries are not tracked).
+        // On POST, only checked entities appear in resolvedIds and sortedIds.
+        // Both sides iterate the same alphabetical order, so detectors[ei] maps to the correct entity.
         var trackedEntityIdx = 0;
 
         var sb = new StringBuilder();
