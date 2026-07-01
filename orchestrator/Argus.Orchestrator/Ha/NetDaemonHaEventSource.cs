@@ -31,34 +31,49 @@ public class NetDaemonHaEventSource : IHaEventSource
     private const int BackoffMaxSeconds = 60;
 
     private readonly ConnectionSettings _settings;
-    private readonly EntitiesConfig _entitiesConfig;
+    private readonly ILiveEntitiesConfig _liveConfig;
     private readonly ReconnectCooldown _cooldown;
     private readonly ArgusHealthSignals _signals;
     private readonly IHaSensorRegistry _sensorRegistry;
     private readonly ILogger<NetDaemonHaEventSource> _logger;
 
-    // Precomputed O(1) lookup set of configured entity_ids
-    private readonly HashSet<string> _configuredEntities;
+    // Live O(1) lookup set of configured entity_ids.
+    // Single writer: ConfigChanged handler (volatile reference swap — mirrors HaSensorRegistry pattern).
+    // Readers (OnStateChanged, FeedStatesAsync, LogDiscoverableSensors) read the current reference.
+    private volatile HashSet<string> _configuredEntities;
 
     public NetDaemonHaEventSource(
         ConnectionSettings settings,
-        EntitiesConfig entitiesConfig,
+        ILiveEntitiesConfig liveConfig,
         ReconnectCooldown cooldown,
         ArgusHealthSignals signals,
         IHaSensorRegistry registry,
         ILogger<NetDaemonHaEventSource> logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _entitiesConfig = entitiesConfig ?? throw new ArgumentNullException(nameof(entitiesConfig));
+        _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
         _cooldown = cooldown ?? throw new ArgumentNullException(nameof(cooldown));
         _signals = signals ?? throw new ArgumentNullException(nameof(signals));
         _sensorRegistry = registry ?? throw new ArgumentNullException(nameof(registry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        _configuredEntities = new HashSet<string>(
-            entitiesConfig.Entities.Select(e => e.EntityId),
-            StringComparer.OrdinalIgnoreCase);
+        _configuredEntities = BuildEntitySet(_liveConfig.Get());
+
+        // CFG-04: rebuild the filter set on every config swap so new entities are
+        // accepted immediately without restarting the event source.
+        _liveConfig.ConfigChanged += (_, _) =>
+            _configuredEntities = BuildEntitySet(_liveConfig.Get());
     }
+
+    /// <summary>Builds an OrdinalIgnoreCase HashSet of entity_ids from <paramref name="cfg"/>.</summary>
+    private static HashSet<string> BuildEntitySet(EntitiesConfig cfg) =>
+        new(cfg.Entities.Select(e => e.EntityId), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Test seam: returns the current entity filter set (the volatile reference snapshot).
+    /// Internal so that unit tests (via InternalsVisibleTo) can assert CFG-04 live-filter semantics.
+    /// </summary>
+    internal HashSet<string> InternalConfiguredEntities => _configuredEntities;
 
     /// <inheritdoc/>
     public async IAsyncEnumerable<HaReading> ReadAllAsync(
