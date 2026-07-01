@@ -6,7 +6,9 @@ FROM ${BUILD_FROM}
 ENV S6_BEHAVIOUR_IF_STAGE2_FAILS=2
 
 # ── .NET 8 Runtime (official dotnet-install.sh, NOT the apt feed) ──────────────
-# Runtime only (not SDK) — orchestrator is published by CI before docker build.
+# ASP.NET Core runtime (not SDK) — orchestrator is a Web SDK app (v3 Ingress UI)
+# and needs Microsoft.AspNetCore.App; --runtime aspnetcore also carries the base
+# Microsoft.NETCore.App runtime. Orchestrator is published by CI before docker build.
 # The packages.microsoft.com Debian 12 feed only ships dotnet-runtime-8.0 for
 # amd64; the arm64 component has 10.0 only, so apt install fails on aarch64.
 # dotnet-install.sh pulls the arch-correct 8.0 runtime from the global CDN and
@@ -16,7 +18,7 @@ RUN apt-get update \
         wget ca-certificates \
         libicu72 libssl3 zlib1g libstdc++6 \
     && wget -q https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh \
-    && bash /tmp/dotnet-install.sh --channel 8.0 --runtime dotnet --install-dir /usr/share/dotnet \
+    && bash /tmp/dotnet-install.sh --channel 8.0 --runtime aspnetcore --install-dir /usr/share/dotnet \
     && ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
     && rm /tmp/dotnet-install.sh \
     && rm -rf /var/lib/apt/lists/*
