@@ -7,7 +7,9 @@ namespace Argus.Orchestrator.Ha;
 /// <summary>
 /// A configured-entity-agnostic HA state snapshot row from get_states / state_changed.
 /// </summary>
-internal sealed record HaStateDto(string EntityId, string? State, DateTime LastChangedUtc);
+internal sealed record HaStateDto(
+    string EntityId, string? State, DateTime LastChangedUtc,
+    string? UnitOfMeasurement, string? FriendlyName);
 
 /// <summary>
 /// Minimal Home Assistant WebSocket client built on a raw <see cref="ClientWebSocket"/>.
@@ -71,7 +73,13 @@ internal sealed class HaWebSocketClient : IAsyncDisposable
                     if (!st.TryGetProperty("entity_id", out var eid) || eid.GetString() is not { } entityId)
                         continue;
                     var state = st.TryGetProperty("state", out var stv) ? stv.GetString() : null;
-                    list.Add(new HaStateDto(entityId, state, ParseUtc(st, "last_changed")));
+                    string? unit = null, friendlyName = null;
+                    if (st.TryGetProperty("attributes", out var attrs))
+                    {
+                        if (attrs.TryGetProperty("unit_of_measurement", out var u)) unit = u.GetString();
+                        if (attrs.TryGetProperty("friendly_name", out var fn)) friendlyName = fn.GetString();
+                    }
+                    list.Add(new HaStateDto(entityId, state, ParseUtc(st, "last_changed"), unit, friendlyName));
                 }
             }
             return list;
@@ -122,7 +130,13 @@ internal sealed class HaWebSocketClient : IAsyncDisposable
                 continue;
 
             var state = ns.TryGetProperty("state", out var stv) ? stv.GetString() : null;
-            onState(new HaStateDto(entityId, state, ParseUtc(ns, "last_changed")));
+            string? unit = null, friendlyName = null;
+            if (ns.TryGetProperty("attributes", out var attrs))
+            {
+                if (attrs.TryGetProperty("unit_of_measurement", out var u)) unit = u.GetString();
+                if (attrs.TryGetProperty("friendly_name", out var fn)) friendlyName = fn.GetString();
+            }
+            onState(new HaStateDto(entityId, state, ParseUtc(ns, "last_changed"), unit, friendlyName));
         }
     }
 
