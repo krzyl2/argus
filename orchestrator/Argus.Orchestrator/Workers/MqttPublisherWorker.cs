@@ -103,8 +103,9 @@ public sealed class MqttPublisherWorker : BackgroundService
 
             _logger.LogInformation(LogEvents.MqttWorkerReady, "MqttPublisherWorker ready — discovery + availability published");
 
-            // Keep alive until cancellation
-            await Task.Delay(Timeout.Infinite, stoppingToken).ContinueWith(_ => Task.CompletedTask);
+            // Keep alive until cancellation — TaskCanceledException on stop; finally still runs
+            try { await Task.Delay(Timeout.Infinite, stoppingToken); }
+            catch (OperationCanceledException) { /* normal host shutdown — do not rethrow */ }
         }
         finally
         {
