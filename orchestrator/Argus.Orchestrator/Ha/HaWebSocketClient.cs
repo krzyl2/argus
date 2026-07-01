@@ -164,6 +164,10 @@ internal sealed class HaWebSocketClient : IAsyncDisposable
             .ConfigureAwait(false);
     }
 
+    // 4 MB cap: HA get_states responses are well under this even for large instances.
+    // Prevents unbounded MemoryStream growth from malformed or adversarial messages (WR-04).
+    private const int MaxMessageBytes = 4 * 1024 * 1024;
+
     private async Task<JsonDocument> ReceiveMessageAsync(CancellationToken ct)
     {
         using var ms = new MemoryStream();
@@ -175,6 +179,9 @@ internal sealed class HaWebSocketClient : IAsyncDisposable
             if (result.MessageType == WebSocketMessageType.Close)
                 throw new WebSocketException(WebSocketError.ConnectionClosedPrematurely,
                     $"HA closed the WebSocket ({result.CloseStatus}: {result.CloseStatusDescription})");
+            if (ms.Length + result.Count > MaxMessageBytes)
+                throw new InvalidOperationException(
+                    $"HA WebSocket message exceeded {MaxMessageBytes} bytes — dropping connection.");
             ms.Write(buffer, 0, result.Count);
         }
         while (!result.EndOfMessage);
