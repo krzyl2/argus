@@ -142,12 +142,12 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md — ILiveEntitiesConfig volatile-swap singleton + DiscoveryPublisher.RetractAsync (reload-core building blocks)
-- [ ] 03-02-PLAN.md — Migrate config consumers to ILiveEntitiesConfig + HaListenerWorker inner-CTS restart loop + retraction/republish + Program.cs DI
+- [x] 03-02-PLAN.md — Migrate config consumers to ILiveEntitiesConfig + HaListenerWorker inner-CTS restart loop + retraction/republish + Program.cs DI
 - [ ] 03-03-PLAN.md — Detector-assignment UI (disclosure rows + params) + /api/detectors/new-entry + extended save + Swap
 
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — LiveEntitiesConfig + RetractAsync + LogEvents (CFG-04 foundation)
+- [x] 03-01-PLAN.md — LiveEntitiesConfig + RetractAsync + LogEvents (CFG-04 foundation)
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -201,7 +201,7 @@ Plans:
 | 1-2. Foundations + Batch/Model Lifecycle | v1.0 | 14/14 | Complete | 2026-06-10 |
 | 1. Add-on Skeleton + Config-Gen | v2.0 | 2/2 | Complete   | 2026-06-30 |
 | 2. v1 Code Changes | v2.0 | 3/3 | Complete   | 2026-07-01 |
-| 3. Process Supervision + Runtime Integration | v2.0 | 1/3 | In Progress|  |
+| 3. Process Supervision + Runtime Integration | v2.0 | 2/3 | In Progress|  |
 | 4. Multi-Arch CI + Integration + Documentation | v2.0 | 2/2 | Complete | 2026-06-30 |
 | 1. Ingress Scaffold + SDK Migration + Config Seam | v3.0 | 0/2 | Not started | - |
 | 2. Live Sensor Discovery + Entity Selection UI | v3.0 | 0/TBD | Not started | - |
