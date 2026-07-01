@@ -34,6 +34,7 @@ public class NetDaemonHaEventSource : IHaEventSource
     private readonly EntitiesConfig _entitiesConfig;
     private readonly ReconnectCooldown _cooldown;
     private readonly ArgusHealthSignals _signals;
+    private readonly IHaSensorRegistry _sensorRegistry;
     private readonly ILogger<NetDaemonHaEventSource> _logger;
 
     // Precomputed O(1) lookup set of configured entity_ids
@@ -44,12 +45,14 @@ public class NetDaemonHaEventSource : IHaEventSource
         EntitiesConfig entitiesConfig,
         ReconnectCooldown cooldown,
         ArgusHealthSignals signals,
+        IHaSensorRegistry registry,
         ILogger<NetDaemonHaEventSource> logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _entitiesConfig = entitiesConfig ?? throw new ArgumentNullException(nameof(entitiesConfig));
         _cooldown = cooldown ?? throw new ArgumentNullException(nameof(cooldown));
         _signals = signals ?? throw new ArgumentNullException(nameof(signals));
+        _sensorRegistry = registry ?? throw new ArgumentNullException(nameof(registry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _configuredEntities = new HashSet<string>(
@@ -115,6 +118,13 @@ public class NetDaemonHaEventSource : IHaEventSource
 
                     // get_states snapshot must happen BEFORE subscribe (no events interleave).
                     var states = await client.GetStatesAsync(ct).ConfigureAwait(false);
+
+                    // Populate sensor registry on EVERY connect (first + reconnect) — ADR-4: no second WebSocket.
+                    _sensorRegistry.UpdateSnapshot(states, _configuredEntities);
+                    _logger.LogInformation(LogEvents.SensorRegistryUpdated,
+                        "Sensor registry updated: {Count} numeric sensors cached", states.Count(
+                            s => double.TryParse(s.State, System.Globalization.NumberStyles.Any,
+                                System.Globalization.CultureInfo.InvariantCulture, out _)));
 
                     if (isFirstConnection)
                     {

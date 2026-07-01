@@ -76,8 +76,12 @@ builder.Services.AddSingleton<ReconnectCooldown>();
 // NetDaemonHaEventSource (writer) and HealthPublisherWorker (reader).
 builder.Services.AddSingleton<ArgusHealthSignals>();
 
+// Register sensor registry singleton (Plan 02-01): caches live numeric-sensor snapshot.
+// Written by NetDaemonHaEventSource on every HA connect; read by Wave 2 HTTP handlers.
+builder.Services.AddSingleton<IHaSensorRegistry, HaSensorRegistry>();
+
 // Register HA event source (NetDaemon.Client WebSocket subscription — STRM-01/STRM-02)
-// ArgusHealthSignals is resolved automatically from DI (injected into NetDaemonHaEventSource ctor).
+// ArgusHealthSignals + IHaSensorRegistry are resolved automatically from DI.
 builder.Services.AddSingleton<IHaEventSource, NetDaemonHaEventSource>();
 
 // Register HA listener worker (consumes IHaEventSource after health gate)
