@@ -167,3 +167,272 @@ a:hover {
 .argus-status-dot.status-error {
   background-color: var(--color-status-error);
 }
+
+/* ── Phase 2: Entity Picker ───────────────────────────────────────────────── */
+
+/* Search input */
+.argus-search {
+  position: relative;
+  margin-bottom: var(--space-md);
+}
+
+.argus-search__input {
+  width: 100%;
+  font-size: var(--font-size-body);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-element);
+  color: var(--color-text-primary);
+  font-family: var(--font-family);
+}
+
+.argus-search__input:focus {
+  border-color: var(--color-accent);
+  outline: none;
+}
+
+/* Sensor list */
+.argus-list {
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-element);
+}
+
+.argus-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  min-height: 44px;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  background: var(--color-element);
+}
+
+.argus-list-row:last-child {
+  border-bottom: none;
+}
+
+.argus-list-row:hover {
+  background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+}
+
+/* .argus-list-row--tracked: no additional color change — pill is the visual distinction */
+.argus-list-row--tracked {
+}
+
+/* Checkbox */
+.argus-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-accent);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* Row content (entity_id + friendly_name) */
+.argus-row-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.argus-row-entity-id {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.argus-row-friendly-name {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-label);
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Row meta (value + pill) */
+.argus-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.argus-row-value {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-label);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+/* Status pill */
+.argus-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-xs);
+  border-radius: 4px;
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-label);
+  white-space: nowrap;
+}
+
+.argus-pill--tracked {
+  background-color: var(--color-status-ok);
+  color: #ffffff;
+}
+
+/* Pattern filters panel */
+.argus-filters {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: var(--space-lg);
+  background: var(--color-element);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+@media (max-width: 600px) {
+  .argus-filters {
+    grid-template-columns: 1fr;
+  }
+}
+
+.argus-filters__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.argus-filters__label {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.argus-filters__textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: var(--font-size-label);
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.argus-filters__textarea:focus {
+  border-color: var(--color-accent);
+  outline: none;
+}
+
+/* Save bar */
+.argus-save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  padding-top: var(--space-md);
+}
+
+/* Primary button */
+.argus-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  min-height: 44px;
+  transition: opacity 0.15s ease;
+}
+
+.argus-btn--primary {
+  background-color: var(--color-accent);
+  color: #ffffff;
+}
+
+.argus-btn--primary:hover {
+  opacity: 0.88;
+}
+
+.argus-btn--primary:active {
+  opacity: 0.75;
+}
+
+.argus-btn[disabled],
+.argus-btn.htmx-request {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Spinner — Pitfall 3: .htmx-request is added TO the indicator element, not an ancestor */
+#argus-spinner {
+  display: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: argus-spin 0.6s linear infinite;
+}
+
+#argus-spinner.htmx-request {
+  display: inline-block;
+}
+
+@keyframes argus-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Save result banner */
+.argus-banner {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: 6px;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-body);
+  margin-top: var(--space-md);
+}
+
+.argus-banner--success {
+  background-color: var(--color-status-ok);
+  color: #ffffff;
+}
+
+.argus-banner--error {
+  background-color: var(--color-status-error);
+  color: #ffffff;
+}
+
+/* Empty state */
+.argus-empty {
+  padding: var(--space-lg) var(--space-md);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  color: var(--color-text-secondary);
+}
