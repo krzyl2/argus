@@ -42,6 +42,9 @@ public static class LogEvents
     public static readonly EventId HealthEntityPublished = new(6001, nameof(HealthEntityPublished));
     public static readonly EventId HealthStatePublished  = new(6002, nameof(HealthStatePublished));
 
+    // Phase 2 UI / Sensor Registry (7xxx)
+    public static readonly EventId SensorRegistryUpdated = new(7001, nameof(SensorRegistryUpdated));
+
     // Batch scheduler (5xxx)
     public static readonly EventId BatchSchedulerStarted   = new(5001, nameof(BatchSchedulerStarted));
     public static readonly EventId BatchSchedulerStopped   = new(5002, nameof(BatchSchedulerStopped));

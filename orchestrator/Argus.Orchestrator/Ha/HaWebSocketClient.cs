@@ -6,8 +6,9 @@ namespace Argus.Orchestrator.Ha;
 
 /// <summary>
 /// A configured-entity-agnostic HA state snapshot row from get_states / state_changed.
+/// Public so IHaSensorRegistry (public interface) can reference it in UpdateSnapshot.
 /// </summary>
-internal sealed record HaStateDto(
+public sealed record HaStateDto(
     string EntityId, string? State, DateTime LastChangedUtc,
     string? UnitOfMeasurement, string? FriendlyName);
 
