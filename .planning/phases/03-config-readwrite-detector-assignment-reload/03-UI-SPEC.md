@@ -132,6 +132,10 @@ The entity picker page from Phase 2 is extended in-place. The layout shell, sear
 list, filter panel, save bar, and flash banner are all inherited. The only layout change is
 that tracked entity rows gain an expandable disclosure section below the checkbox/meta row.
 
+**Primary focal point:** the sensor list with its expandable detector rows (the content the user
+acts on). **Secondary focal point:** the "Save configuration" button in the save bar (accent color),
+which is the terminal action that triggers the pipeline reload.
+
 `max-width: 880px` override on `.argus-main` is inherited from Phase 2 unchanged.
 
 ```
@@ -316,7 +320,7 @@ render the default value above as the `<input value="...">` attribute.
 <button type="button"
         class="argus-btn argus-btn--destructive-ghost"
         aria-label="Remove this detector from {entity_id}">
-  Remove
+  Remove detector
 </button>
 ```
 
@@ -456,7 +460,7 @@ Two-column parameter field grid.
 One label + input pair inside the param grid.
 
 ```
-.argus-param-field         — display: flex; flex-direction: column; gap: 2px
+.argus-param-field         — display: flex; flex-direction: column; gap: var(--space-xs)
 .argus-param-field__label  — font-size: var(--font-size-label); font-weight: var(--font-weight-semibold);
                              line-height: var(--line-height-label); color: var(--color-text-secondary)
 .argus-param-field__input  — font-family: var(--font-family); font-size: var(--font-size-body);
@@ -721,7 +725,7 @@ Extends Phase 2 baseline.
 - Reloading banner: `role="status"` + `aria-live="polite"`. Success: same. Error: `role="alert"`
   + `aria-live="assertive"`.
 - Color alone does not distinguish detector types or validation states — text labels are always present.
-- The Remove button uses both destructive color AND the text label "Remove" — never icon-only.
+- The Remove button uses both destructive color AND the text label "Remove detector" — never icon-only.
 
 ---
 
