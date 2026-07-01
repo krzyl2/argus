@@ -31,6 +31,19 @@ jobs:
           dotnet publish orchestrator/Argus.Orchestrator/Argus.Orchestrator.csproj
           -c Release --self-contained false -o orchestrator/publish/
 
+      - name: Assert wwwroot assets present in publish output
+        shell: bash
+        run: |
+          test -f orchestrator/publish/wwwroot/js/htmx.min.js || {
+            echo "FAIL: htmx.min.js not in publish output"
+            exit 1
+          }
+          test -f orchestrator/publish/wwwroot/css/argus.css || {
+            echo "FAIL: argus.css not in publish output"
+            exit 1
+          }
+          echo "OK: wwwroot assets present in publish output"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
