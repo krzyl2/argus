@@ -248,10 +248,31 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry) =>
     return Results.Content(EntityPickerPage.BuildListFragment(registry, q), "text/html");
 });
 
-// [7] POST /api/sensors/save — expand patterns, write entities.yaml, create lock file
+// [6b] GET /api/detectors/new-entry — htmx fragment for "Add detector" button
+// Returns a new .argus-detector-entry block with HST defaults at the given indices.
+// T-03-12: same IsAuthorizedRequest guard as all endpoints (Phase 2 interim auth).
+// T-03-14: entity_idx/det_idx are int.Parse'd; used only as name= indices — no file/DB access.
+app.MapGet("/api/detectors/new-entry", (HttpRequest req) =>
+{
+    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
+
+    var entityIdxStr = req.Query["entity_idx"].FirstOrDefault() ?? "0";
+    var detIdxStr    = req.Query["det_idx"].FirstOrDefault() ?? "0";
+
+    if (!int.TryParse(entityIdxStr, out var ei)) ei = 0;
+    if (!int.TryParse(detIdxStr, out var dj)) dj = 0;
+
+    var fragment = EntityPickerPage.BuildDetectorEntry(
+        ei, dj, new DetectorConfig { Name = "hst", Params = [] });
+
+    return Results.Content(fragment, "text/html");
+});
+
+// [7] POST /api/sensors/save — expand patterns, write entities.yaml, create lock file,
+//     parse detector fields, call ILiveEntitiesConfig.Swap (Phase 3 extension).
 app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry registry,
     Argus.Orchestrator.Config.ConfigWriter writer, ConnectionSettings settings,
-    ILogger<Program> logger, CancellationToken ct) =>
+    ILiveEntitiesConfig liveCfg, ILogger<Program> logger, CancellationToken ct) =>
 {
     if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
 
@@ -278,22 +299,38 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
             registry.GetAll(), include, exclude,
             selectedIds.Where(s => s is not null).Select(s => s!), []);
 
-        // Build EntityConfig list: each resolved id defaults to hst with empty params
+        // Parse indexed detector form fields (Phase 3 — CFG-03)
+        // detectors[{ei}][{di}][name] and detectors[{ei}][{di}][params][{key}]
+        // {ei} correlates positionally to the sorted (alphabetical EntityId) resolved entity list.
+        var formPairs = form.Keys
+            .Select(k => new KeyValuePair<string, string>(k, form[k].FirstOrDefault() ?? string.Empty));
+        var parsedDetectors = DetectorFieldParser.Parse(formPairs);
+
+        // Build EntityConfig list: sorted alphabetically by EntityId so ei=0 → first alpha
         var snapshotById = registry.GetAll()
             .ToDictionary(e => e.EntityId, StringComparer.OrdinalIgnoreCase);
 
-        var entities = resolvedIds
-            .Select(id =>
+        var sortedIds = resolvedIds
+            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var entities = sortedIds
+            .Select((id, ei) =>
             {
                 snapshotById.TryGetValue(id, out var entry);
+
+                // Get detector list for this entity index; default to HST if empty (Pitfall 7 / CFG-03)
+                var detectors = parsedDetectors.TryGetValue(ei, out var dets) && dets.Count > 0
+                    ? dets
+                    : [new DetectorConfig { Name = "hst", Params = [] }];
+
                 return new EntityConfig
                 {
                     EntityId = id,
                     FriendlyName = entry?.FriendlyName ?? "",
-                    Detectors = [new DetectorConfig { Name = "hst", Params = [] }],
+                    Detectors = detectors,
                 };
             })
-            .OrderBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         // Serialize BOTH entities and _patterns via a single YamlDotNet SerializerBuilder
@@ -330,12 +367,18 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         var lockPath = Path.Combine(Path.GetDirectoryName(entitiesPath)!, ".ui_config_present");
         File.WriteAllText(lockPath, string.Empty);
 
-        // Update in-memory patterns holder for next GET /sensors pre-fill
-        lastIncludePatterns = includeRaw;
-        lastExcludePatterns = excludeRaw;
+        // Phase 3: Re-read the written config and call ILiveEntitiesConfig.Swap.
+        // Validate-before-Swap: EntitiesConfigLoader.Validate runs during Load; empty detector
+        // lists are never written (defaulted to HST above) so Validate never throws — T-03-13.
+        var newConfig = EntitiesConfigLoader.Load(entitiesPath, logger);
+        liveCfg.Swap(newConfig);  // fires ConfigChanged → HaListenerWorker restart
 
         logger.LogInformation(LogEvents.UiSaveSuccess,
             "UI save succeeded: {EntityCount} entities written to {Path}", entities.Count, entitiesPath);
+
+        // Update in-memory patterns holder for next GET /sensors pre-fill
+        lastIncludePatterns = includeRaw;
+        lastExcludePatterns = excludeRaw;
 
         return Results.Content(EntityPickerPage.BuildSuccessBanner(entities.Count), "text/html");
     }

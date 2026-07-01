@@ -1,6 +1,7 @@
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Web;
 using Microsoft.Extensions.Logging.Abstractions;
+#pragma warning disable CS8602 // Tests explicitly construct valid objects
 using Xunit;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
