@@ -45,7 +45,7 @@ public sealed class ConfigFileWatcherService : BackgroundService
         _logger   = logger   ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var entitiesPath = _settings.EntitiesPath ?? "/data/entities.yaml";
         var fullPath     = Path.GetFullPath(entitiesPath);
@@ -54,7 +54,7 @@ public sealed class ConfigFileWatcherService : BackgroundService
 
         using var watcher = new FileSystemWatcher(dir)
         {
-            NotifyFilter       = NotifyFilters.FileName,
+            NotifyFilter        = NotifyFilters.FileName,
             EnableRaisingEvents = true,
         };
 
@@ -64,12 +64,14 @@ public sealed class ConfigFileWatcherService : BackgroundService
             ResetDebounce(fullPath);
         };
 
-        stoppingToken.WaitHandle.WaitOne();
+        try
+        {
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+        }
+        catch (OperationCanceledException) { /* expected on cooperative shutdown */ }
 
         // Dispose the debounce timer so no reload fires against a torn-down container (T-04-12).
         Interlocked.Exchange(ref _debounce, null)?.Dispose();
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
