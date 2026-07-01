@@ -197,13 +197,14 @@ var lastIncludePatterns = "";
 var lastExcludePatterns = "";
 
 // ── Interim auth helper (Phase 2 — full validate_session deferred to Phase 4) ──
-// Accepts requests carrying X-Ingress-Path header OR from Supervisor IP / loopback.
+// Authorizes only connections from the Supervisor IP (172.30.32.2) or loopback.
 // Uses RemoteIpAddress (real TCP peer, not spoofable X-Forwarded-For) — T-02-09.
+//
+// NOTE: X-Ingress-Path is NOT treated as an auth credential — any LAN peer can
+// fabricate the header. The header is read separately (above) only to set PathBase.
+// Full validate_session cookie-based auth is scheduled for Phase 4.
 static bool IsAuthorizedRequest(HttpContext ctx)
 {
-    if (ctx.Request.Headers.ContainsKey("X-Ingress-Path"))
-        return true;
-
     var remote = ctx.Connection.RemoteIpAddress;
     if (remote is null) return false;
 
@@ -318,9 +319,11 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         var entitiesPath = settings.EntitiesPath ?? "/data/entities.yaml";
         await writer.WriteAsync(entitiesPath, fullYaml, ct);
 
-        // Write lock file ONLY after a successful config write — guard for gen-entities.py (CFG-02)
+        // Write lock file ONLY after a successful config write — guard for gen-entities.py (CFG-02).
+        // Synchronous write: if WriteAsync succeeded, the lock must also be durable before we return.
+        // Using async here would introduce a crash window between the two writes (WR-02).
         var lockPath = Path.Combine(Path.GetDirectoryName(entitiesPath)!, ".ui_config_present");
-        await File.WriteAllTextAsync(lockPath, string.Empty, ct);
+        File.WriteAllText(lockPath, string.Empty);
 
         // Update in-memory patterns holder for next GET /sensors pre-fill
         lastIncludePatterns = includeRaw;
