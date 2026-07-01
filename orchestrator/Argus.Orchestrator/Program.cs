@@ -314,6 +314,19 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
             .Select(k => new KeyValuePair<string, string>(k, form[k].FirstOrDefault() ?? string.Empty));
         var parsedDetectors = DetectorFieldParser.Parse(formPairs);
 
+        // Phase 4 input validation gate (UI-04 / T-04-01–T-04-05):
+        // Validate raw parsedDetectors BEFORE defaulting and BEFORE any write.
+        // A tampered or malformed POST body must never reach disk or the live pipeline.
+        var validationErrors = InputValidator.Validate(resolvedIds, parsedDetectors);
+        if (validationErrors.Count > 0)
+        {
+            logger.LogWarning(LogEvents.UiValidationBlocked,
+                "UI save blocked: {ErrorCount} validation error(s)", validationErrors.Count);
+            return Results.Content(
+                EntityPickerPage.BuildValidationBanner(validationErrors.Count),
+                "text/html");
+        }
+
         // Build EntityConfig list: sorted alphabetically by EntityId so ei=0 → first alpha
         var snapshotById = registry.GetAll()
             .ToDictionary(e => e.EntityId, StringComparer.OrdinalIgnoreCase);
@@ -392,7 +405,10 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         lastIncludePatterns = includeRaw;
         lastExcludePatterns = excludeRaw;
 
-        return Results.Content(EntityPickerPage.BuildSuccessBanner(entities.Count), "text/html");
+        // SC5: pass real hasHst so the ~4-min warm-up note renders when HST detectors are present.
+        var hasHst = entities.Any(e => e.Detectors.Any(
+            d => d.Name.Equals("hst", StringComparison.OrdinalIgnoreCase)));
+        return Results.Content(EntityPickerPage.BuildSuccessBanner(entities.Count, hasHst), "text/html");
     }
     catch (Exception ex)
     {
