@@ -53,7 +53,7 @@ apply without an add-on restart.
 - [x] **Phase 3: Config Read/Write + Detector Assignment + Reload** — ILiveEntitiesConfig atomic swap, ConfigApiEndpoints, detector/parameter UI, HaListenerWorker inner-CTS restart, MQTT retraction
  (completed 2026-07-01)
 
-- [ ] **Phase 4: Validation, CI Packaging + Documentation** — server+client validation, CI image-size gate, FileSystemWatcher debounce, DOCS.md
+- [x] **Phase 4: Validation, CI Packaging + Documentation** — server+client validation, CI image-size gate, FileSystemWatcher debounce, DOCS.md (completed 2026-07-01)
 
 ## Phase Details
 
@@ -199,7 +199,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-03-PLAN.md — FileSystemWatcher 300ms-debounce reload service (SC4)
+- [x] 04-03-PLAN.md — FileSystemWatcher 300ms-debounce reload service (SC4)
 
 **UI hint**: yes
 
@@ -220,7 +220,7 @@ Plans:
 | 1. Add-on Skeleton + Config-Gen | v2.0 | 2/2 | Complete   | 2026-06-30 |
 | 2. v1 Code Changes | v2.0 | 3/3 | Complete   | 2026-07-01 |
 | 3. Process Supervision + Runtime Integration | v2.0 | 3/3 | Complete   | 2026-07-01 |
-| 4. Multi-Arch CI + Integration + Documentation | v2.0 | 3/4 | In Progress|  |
+| 4. Multi-Arch CI + Integration + Documentation | v2.0 | 4/4 | Complete   | 2026-07-01 |
 | 1. Ingress Scaffold + SDK Migration + Config Seam | v3.0 | 0/2 | Not started | - |
 | 2. Live Sensor Discovery + Entity Selection UI | v3.0 | 0/TBD | Not started | - |
 | 3. Config Read/Write + Detector Assignment + Reload | v3.0 | 0/3 | Not started | - |
