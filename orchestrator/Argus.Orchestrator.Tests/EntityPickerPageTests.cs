@@ -208,7 +208,7 @@ public class EntityPickerPageTests
         var html = EntityPickerPage.BuildFullPage("/ingress/abc", registry, config, health, "");
 
         Assert.Contains("Entity Selection", html);
-        Assert.Contains("Changes take effect on the next pipeline cycle.", html);
+        Assert.Contains("Select the sensors Argus monitors and assign detectors to each.", html);
         Assert.Contains("argus-picker-form", html);
         Assert.Contains("argus-sensor-list", html);
         Assert.Contains("argus-flash", html);
@@ -242,7 +242,7 @@ public class EntityPickerPageTests
     {
         var html = EntityPickerPage.BuildSuccessBanner(5);
 
-        Assert.Contains("Configuration saved.", html);
+        Assert.Contains("Saved — pipeline active.", html);
         Assert.Contains("5", html);
         Assert.Contains("argus-banner--success", html);
         Assert.Contains("role=\"status\"", html);

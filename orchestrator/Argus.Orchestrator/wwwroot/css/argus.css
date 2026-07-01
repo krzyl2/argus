@@ -436,3 +436,204 @@ a:hover {
   gap: var(--space-xs);
   color: var(--color-text-secondary);
 }
+
+/* ── Phase 3: Detector Assignment ────────────────────────────────────────── */
+
+/* Detector disclosure wrapper inside a tracked list row */
+.argus-detectors-details {
+  display: block;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+/* Disclosure toggle (<summary>) */
+.argus-disclosure-toggle {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-md);
+  min-height: 44px;
+  cursor: pointer;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-secondary);
+  user-select: none;
+}
+
+.argus-disclosure-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.argus-disclosure-toggle::before {
+  content: "▶";
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+
+details[open] > .argus-disclosure-toggle::before {
+  transform: rotate(90deg);
+}
+
+.argus-disclosure-toggle:hover {
+  color: var(--color-text-primary);
+}
+
+/* Detector panel — container for all detector entries + add-detector row */
+.argus-detectors-panel {
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  background: var(--color-surface);
+}
+
+/* One detector assignment block */
+.argus-detector-entry {
+  background: var(--color-element);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* Header row: type dropdown + timing caption + remove button */
+.argus-detector-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+/* Detector type <select> */
+.argus-detector-select {
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-element);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.argus-detector-select:focus {
+  border-color: var(--color-accent);
+  outline: none;
+}
+
+/* Timing label ("streaming…" / "batch…") */
+.argus-timing-caption {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-label);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+/* Two-column parameter grid */
+.argus-param-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-xs) var(--space-md);
+}
+
+@media (max-width: 480px) {
+  .argus-param-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.argus-param-grid--span2 {
+  grid-column: 1 / -1;
+}
+
+/* One label + input pair */
+.argus-param-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.argus-param-field__label {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-label);
+  color: var(--color-text-secondary);
+}
+
+.argus-param-field__input {
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-element);
+  color: var(--color-text-primary);
+  width: 100%;
+  min-height: 36px;
+}
+
+.argus-param-field__input:focus {
+  border-color: var(--color-accent);
+  outline: none;
+}
+
+/* Remove detector button — ghost style with destructive color */
+.argus-btn--destructive-ghost {
+  background: transparent;
+  color: var(--color-destructive);
+  border: 1px solid var(--color-destructive);
+  padding: var(--space-xs) var(--space-sm);
+  min-height: 32px;
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  margin-left: auto;
+}
+
+.argus-btn--destructive-ghost:hover {
+  background: color-mix(in srgb, var(--color-destructive) 8%, transparent);
+}
+
+.argus-btn--destructive-ghost:active {
+  background: color-mix(in srgb, var(--color-destructive) 16%, transparent);
+}
+
+/* Add detector button — secondary style (accent border, no fill) */
+.argus-btn--add-detector {
+  background: transparent;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  padding: var(--space-sm) var(--space-md);
+  min-height: 44px;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.argus-btn--add-detector:hover {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.argus-btn--add-detector:active {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+
+/* Add-detector row sentinel */
+.argus-add-detector-row {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: var(--space-xs);
+}
+
+/* Reloading state banner */
+.argus-banner--reloading {
+  background-color: var(--color-accent);
+  color: #ffffff;
+}
