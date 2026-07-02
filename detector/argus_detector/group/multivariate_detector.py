@@ -109,6 +109,17 @@ class GroupMultivariateDetector:
         """True after fit() has been called at least once."""
         return self._fitted
 
+    def is_anomaly(self, score: float) -> bool:
+        """True if score exceeds the underlying PyOD detector's fitted threshold_.
+
+        WR-02: public accessor so callers (servicer.py) do not need to reach
+        into the private `_model` attribute to apply the threshold decision.
+        Deliberately does NOT call predict() — see score_batch() docstring:
+        re-invoking decision_function() would corrupt the just-extracted
+        ECOD/COPOD self.O attribution (RESEARCH.md Pitfall 1).
+        """
+        return bool(score > self._model.threshold_)
+
     def bundle(self) -> dict:
         """Return the persistable state — passed to ModelStore.save as one object."""
         return {"scaler": self._scaler, "detector": self._model, "name": self._name}

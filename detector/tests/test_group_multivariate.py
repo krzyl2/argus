@@ -89,6 +89,24 @@ class TestGroupMultivariateDetectorFitScore:
             GroupMultivariateDetector("not_a_real_detector")
 
 
+class TestGroupMultivariateDetectorIsAnomaly:
+    """WR-02: public is_anomaly() accessor replaces servicer reaching into
+    the private _model.threshold_ attribute."""
+
+    def test_is_anomaly_matches_private_threshold(self):
+        det = GroupMultivariateDetector("ecod")
+        det.fit(X_TRAIN_JOINT)
+        scores, _ = det.score_batch(X_TEST_JOINT_ANOMALY)
+        score = scores[-1]
+        assert det.is_anomaly(score) == bool(score > det._model.threshold_)
+
+    def test_is_anomaly_returns_bool(self):
+        det = GroupMultivariateDetector("ecod")
+        det.fit(X_TRAIN_JOINT)
+        scores, _ = det.score_batch(X_TEST_IN_DISTRIBUTION)
+        assert isinstance(det.is_anomaly(scores[-1]), bool)
+
+
 class TestGroupMultivariateDetectorJointAnomaly:
     @pytest.mark.parametrize("detector_name", ["ecod", "copod", "pca", "iforest"])
     def test_joint_anomaly_scores_higher_than_in_distribution(self, detector_name):

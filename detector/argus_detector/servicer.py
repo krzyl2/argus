@@ -287,8 +287,10 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
             # calling predict() again, which would re-invoke decision_function()
             # and corrupt the just-extracted ECOD/COPOD attribution — RESEARCH.md
             # Pitfall 1: self._model.O is mutated on every decision_function call).
+            # WR-02: use the public is_anomaly() accessor instead of reaching
+            # into the private _model attribute.
             group_score = scores[-1]
-            is_anomaly = bool(group_score > model._model.threshold_)
+            is_anomaly = model.is_anomaly(group_score)
             group_verdict = argus_pb2.Verdict(
                 entity_id=group_slug,
                 score=wrappers_pb2.DoubleValue(value=group_score),
