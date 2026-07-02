@@ -74,32 +74,32 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GRP-01 | TBD | Pending |
-| GRP-02 | TBD | Pending |
-| GRP-03 | TBD | Pending |
-| GRP-04 | TBD | Pending |
-| GRP-05 | TBD | Pending |
-| GRP-06 | TBD | Pending |
-| GRP-07 | TBD | Pending |
-| GRP-08 | TBD | Pending |
-| GRP-09 | TBD | Pending |
-| ALGO-01 | TBD | Pending |
-| ALGO-02 | TBD | Pending |
-| ALGO-03 | TBD | Pending |
-| ALGO-04 | TBD | Pending |
-| SRCH-01 | TBD | Pending |
-| SRCH-02 | TBD | Pending |
-| SRCH-03 | TBD | Pending |
-| UI-01 | TBD | Pending |
-| UI-02 | TBD | Pending |
-| UI-03 | TBD | Pending |
-| UI-04 | TBD | Pending |
+| GRP-01 | Phase 6 | Pending |
+| GRP-02 | Phase 6 | Pending |
+| GRP-03 | Phase 5 | Pending |
+| GRP-04 | Phase 5 | Pending |
+| GRP-05 | Phase 5 | Pending |
+| GRP-06 | Phase 5 | Pending |
+| GRP-07 | Phase 5 | Pending |
+| GRP-08 | Phase 6 | Pending |
+| GRP-09 | Phase 8 | Pending |
+| ALGO-01 | Phase 8 | Pending |
+| ALGO-02 | Phase 8 | Pending |
+| ALGO-03 | Phase 8 | Pending |
+| ALGO-04 | Phase 8 | Pending |
+| SRCH-01 | Phase 8 | Pending |
+| SRCH-02 | Phase 8 | Pending |
+| SRCH-03 | Phase 8 | Pending |
+| UI-01 | Phase 7 | Pending |
+| UI-02 | Phase 7 | Pending |
+| UI-03 | Phase 7 | Pending |
+| UI-04 | Phase 7 | Pending |
 
 **Coverage:**
 - v4.0 requirements: 20 total
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 20 ⚠️
+- Mapped to phases: 20 (Phase 5: 5, Phase 6: 3, Phase 7: 4, Phase 8: 8)
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-07-02*
-*Last updated: 2026-07-02 after initial v4.0 definition*
+*Last updated: 2026-07-02 after v4.0 roadmap creation (Phases 5-8)*

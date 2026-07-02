@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-07-02T10:09:55.057Z"
 last_activity: 2026-07-02
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,10 +17,10 @@ progress:
 
 ## Current Status
 
-- Milestone: **v3.0 Ingress Configuration UI — SHIPPED & archived 2026-07-02** (add-on 2.0.9)
-- Previous: **v2.0 Home Assistant Add-on — SHIPPED & live-verified 2026-06-30**
-- Next: **v4.0 Group & Multivariate Anomaly Detection + UX** — planned; start with `/gsd-new-milestone`
-- Last action: v3.0 completed and archived; formal UAT/verification deferred by operator decision (see Deferred Items)
+- Milestone: **v4.0 Group & Multivariate Anomaly Detection + UX — ROADMAP CREATED 2026-07-02** (Phases 5-8)
+- Previous: **v3.0 Ingress Configuration UI — SHIPPED & archived 2026-07-02** (add-on 2.0.9)
+- Next: Plan Phase 5 with `/gsd-plan-phase 5`
+- Last action: v4.0 roadmap written (4 phases, 20/20 requirements mapped, coarse granularity)
 
 ## Deferred Items
 
@@ -47,23 +47,23 @@ not formally signed off.
 
 See: .planning/PROJECT.md
 
-**Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds.
-**Current focus:** Phase 04 — Validation, CI Packaging + Documentation
+**Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
+**Current focus:** Phase 5 — Group Detection Core (Proto + Python Detectors)
 
-## Phase Status (v3.0)
+## Phase Status (v4.0)
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 1 | Ingress Scaffold + SDK Migration + Config Seam | Code complete — live-HA verify pending |
-| 2 | Live Sensor Discovery + Entity Selection UI | Not started |
-| 3 | Config Read/Write + Detector Assignment + Reload | Not started |
-| 4 | Validation, CI Packaging + Documentation | Not started |
+| 5 | Group Detection Core (Proto + Python Detectors) | Not started |
+| 6 | Batch Group Pipeline | Not started |
+| 7 | SPA Scaffolding | Not started |
+| 8 | Group Config UI + Algorithm Chooser | Not started |
 
 ```
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 ```
 
-v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
+v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive/`.
 
 ## Accumulated Context
 
@@ -165,11 +165,11 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan Phase 5 with /gsd-plan-phase 5
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-07-02 — Milestone v4.0 started
+Phase: 5 of 8 (Group Detection Core — Proto + Python Detectors)
+Plan: TBD — not yet planned
+Status: Roadmap created, ready to plan Phase 5
+Last activity: 2026-07-02 — v4.0 ROADMAP.md created (Phases 5-8, 20/20 requirements mapped)

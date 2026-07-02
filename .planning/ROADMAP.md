@@ -5,7 +5,7 @@
 - ✅ **v1.0 Foundations + Batch & Model Lifecycle** — Phases 1-2 (shipped 2026-06-10)
 - ✅ **v2.0 Home Assistant Add-on** — Phases 1-4 (shipped 2026-06-30)
 - ✅ **v3.0 Ingress Configuration UI** — Phases 1-4 (shipped 2026-07-02)
-- 📋 **v4.0 Group & Multivariate Anomaly Detection + UX** — phases TBD (planned)
+- 🚧 **v4.0 Group & Multivariate Anomaly Detection + UX** — Phases 5-8 (in progress)
 
 ## Phases
 
@@ -54,21 +54,72 @@ aspnet runtime (2.0.7), ScoreStreamPipeline DI (2.0.8), GlobExpander empty-patte
 
 </details>
 
-### 📋 v4.0 Group & Multivariate Anomaly Detection + UX (Planned)
+### 🚧 v4.0 Group & Multivariate Anomaly Detection + UX (In Progress)
 
 **Milestone Goal:** Analyze groups of sensors, not just single ones — both peer-divergence (which
 member diverges from its group, e.g. one tire pressure rising unlike the others) and joint
 multivariate (values jointly abnormal, e.g. room humidity → leak). Support more algorithms with a
 user-friendly chooser (readable parameter presets + "best for" descriptions), search sensors by
-friendly name, and a modern readable UI.
+friendly name, and a modern readable UI (light SPA — Preact + Vite).
 
 **Locked scope decisions (2026-07-02):**
-- Both group modes (peer-divergence + joint multivariate) in parallel.
-- Batch-first (InfluxDB resampling for time-alignment); streaming groups later. InfluxDB confirmed available.
-- UI approach (htmx+CSS redesign vs light SPA) decided during v4.0 planning.
+- Both group modes (peer-divergence + joint multivariate) ship this milestone.
+- Batch-first (InfluxDB resampling for time-alignment, server-side Flux); streaming groups deferred (STRM-01/02).
+- UI rebuilt as a light SPA (Preact + Vite, built at Docker build-time) — overrides v3.0's htmx/no-Node-build decision.
+- GRP-09 (per-feature attribution for joint-multivariate) ships this milestone but is sequenced late, after base joint-multivariate detection and the UI shell both exist — attribution is meaningless without somewhere to display the ranked contribution.
 
-Phases to be defined via `/gsd-new-milestone`. Model already has `EntityConfig.Groups`/`Covariates`
-placeholders (parsed-and-ignored today, D-09); proto is univariate and needs a multi-series extension.
+- [ ] **Phase 5: Group Detection Core (Proto + Python Detectors)** - Peer-divergence and joint-multivariate scoring work correctly in isolation, verified without any .NET or UI involvement
+- [ ] **Phase 6: Batch Group Pipeline** - Operators define groups in config and see real, time-aligned group anomalies published to MQTT/HA without orphaning entities
+- [ ] **Phase 7: SPA Scaffolding** - The configuration UI is rebuilt as a Preact+Vite SPA that loads and functions correctly under real HA Ingress, with all v3.0 capabilities intact
+- [ ] **Phase 8: Group Config UI + Algorithm Chooser** - Operators author groups, choose algorithms via presets/guided chooser, and see ranked per-feature attribution for joint-multivariate anomalies
+
+## Phase Details
+
+### Phase 5: Group Detection Core (Proto + Python Detectors)
+**Goal**: Peer-divergence and joint-multivariate detection produce correct, independently-verifiable scores at the Python/proto layer before any orchestrator or UI code depends on them.
+**Depends on**: Phase 4 (v3.0 — existing detector/proto foundation)
+**Requirements**: GRP-03, GRP-04, GRP-05, GRP-06, GRP-07
+**Success Criteria** (what must be TRUE):
+  1. Given a group's pre-aligned value matrix, peer-divergence detection correctly identifies which member diverges from the group's robust (median/MAD) consensus, and does not emit a verdict for groups below the minimum-member-count floor
+  2. Given a group's pre-aligned value matrix with mixed units (e.g. hPa + %RH), joint-multivariate detection (PyOD PCA/ECOD/COPOD/IForest) flags jointly-abnormal vectors without one feature's scale dominating the score, because features are scaled/normalized before fitting and the scaler is persisted with the model
+  3. The proto contract carries a real 2D matrix (not a loop of univariate calls) for group scoring, so genuine joint anomalies that no single feature would trigger are still caught
+  4. Group models Fit/Save/Load using group_id + detector + version as the key, and this never collides with an existing per-entity model key
+**Plans**: TBD
+
+### Phase 6: Batch Group Pipeline
+**Goal**: Operators can define a group in config and see it flow end-to-end — time-aligned InfluxDB history, scored via Phase 5's detectors, published/retracted as MQTT-discovered HA entities — with unit and membership guards preventing broken groups from silently producing nonsense.
+**Depends on**: Phase 5
+**Requirements**: GRP-01, GRP-02, GRP-08
+**Success Criteria** (what must be TRUE):
+  1. Operator can define a named group of sensor members in config, keyed by a stable operator-assigned group_id, with no auto-discovery involved
+  2. Group members' history is resampled onto a common time grid server-side (InfluxDB aggregateWindow+pivot) before scoring, with a staleness cap so stale forward-filled gaps don't get scored as real data
+  3. Group anomaly entities (per-member for peer-divergence, group-level for joint-multivariate) are published via MQTT discovery on group creation and correctly retracted on membership change, without orphaning stale HA entities
+  4. A group with incompatible units across members, or with membership below the minimum-N floor, is rejected or degrades safely at config-load time rather than producing a silently-wrong score
+**Plans**: TBD
+
+### Phase 7: SPA Scaffolding
+**Goal**: The v3.0 Ingress configuration UI is rebuilt on a Preact+Vite SPA foundation that is verified against real HA Supervisor Ingress before any new feature UI is built on top of it, with zero loss of existing v3.0 capability.
+**Depends on**: Phase 4 (v3.0 — existing Ingress UI to replace)
+**Requirements**: UI-01, UI-02, UI-03, UI-04
+**Success Criteria** (what must be TRUE):
+  1. The SPA is built at Docker build-time (Preact + Vite) and shipped as static assets only — no Node.js present in the runtime image
+  2. Opening the add-on's Web UI via HA's "Open Web UI" (never a direct port) loads and fully functions under Supervisor's dynamic Ingress base path
+  3. Every `/api/*` endpoint the SPA calls enforces the same Ingress auth guarantees the v3.0 server-rendered UI had
+  4. All v3.0 capabilities — sensor discovery/selection, per-entity detector assignment, hot-reload without restart — work identically through the new SPA
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 8: Group Config UI + Algorithm Chooser
+**Goal**: Operators can author groups, pick detection algorithms through a transparent, guided chooser instead of raw parameters, find sensors by friendly name/area, and see which member/feature drove a joint-multivariate anomaly instead of a flat boolean.
+**Depends on**: Phase 6, Phase 7
+**Requirements**: GRP-09, ALGO-01, ALGO-02, ALGO-03, ALGO-04, SRCH-01, SRCH-02, SRCH-03
+**Success Criteria** (what must be TRUE):
+  1. Operator selects a Low/Med/High sensitivity preset for a group detector without seeing raw parameters, and an Advanced toggle reveals/overrides the underlying values behind that preset
+  2. Each selectable algorithm in the chooser shows a "best for…" description, and a guided "what are you monitoring?" flow pre-selects and visibly explains an algorithm choice while always allowing one-click override
+  3. Operator can find sensors by searching friendly_name (not just entity_id) and by browsing a list categorized by HA area/domain
+  4. The group-config UI suggests area-scoped candidate groups for operator approval (never auto-groups), and joint-multivariate anomalies display a ranked per-feature/per-member contribution rather than a flat boolean
+**Plans**: TBD
+**UI hint**: yes
 
 ## Progress
 
@@ -83,4 +134,7 @@ placeholders (parsed-and-ignored today, D-09); proto is univariate and needs a m
 | 2. Live Sensor Discovery + Entity Selection UI | v3.0 | 3/3 | Complete | 2026-07-01 |
 | 3. Config Read/Write + Detector Assignment + Reload | v3.0 | 3/3 | Complete | 2026-07-01 |
 | 4. Validation, CI Packaging + Documentation | v3.0 | 4/4 | Complete | 2026-07-01 |
-| v4.0 Group & Multivariate Detection + UX | v4.0 | TBD | Planned | - |
+| 5. Group Detection Core (Proto + Python Detectors) | v4.0 | 0/TBD | Not started | - |
+| 6. Batch Group Pipeline | v4.0 | 0/TBD | Not started | - |
+| 7. SPA Scaffolding | v4.0 | 0/TBD | Not started | - |
+| 8. Group Config UI + Algorithm Chooser | v4.0 | 0/TBD | Not started | - |
