@@ -2,10 +2,12 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Ingress Configuration UI
-status: verifying
+current_phase: 0
+status: Awaiting next milestone
 stopped_at: Phase 3 executed (gap closure done); live-HA verification deferred (03-UAT.md)
-last_updated: "2026-07-01T11:08:33.872Z"
-last_activity: 2026-07-01
+last_updated: "2026-07-02T10:00:57.009Z"
+last_activity: 2026-07-02
+last_activity_desc: Milestone v3.0 completed and archived
 progress:
   total_phases: 4
   completed_phases: 4
@@ -18,9 +20,31 @@ progress:
 
 ## Current Status
 
-- Milestone: **v3.0 Ingress Configuration UI** — roadmap created (4 phases), requirements mapped
+- Milestone: **v3.0 Ingress Configuration UI — SHIPPED & archived 2026-07-02** (add-on 2.0.9)
 - Previous: **v2.0 Home Assistant Add-on — SHIPPED & live-verified 2026-06-30**
-- Last action: Plan 01-02 complete — SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path middleware, placeholder page + wwwroot assets, config.yaml ingress keys — 2026-06-30 (live-HA verification deferred)
+- Next: **v4.0 Group & Multivariate Anomaly Detection + UX** — planned; start with `/gsd-new-milestone`
+- Last action: v3.0 completed and archived; formal UAT/verification deferred by operator decision (see Deferred Items)
+
+## Deferred Items
+
+Items acknowledged and deferred at v3.0 milestone close on 2026-07-02 (operator chose to skip formal
+UAT after live bring-up of add-on 2.0.9 in real HA confirmed core flows work):
+
+| Category | Item | Status |
+|----------|------|--------|
+| uat | Phase 01 — 01-UAT.md (4 scenarios) | testing (deferred) |
+| uat | Phase 02 — 02-UAT.md (3 scenarios) | testing (deferred) |
+| uat | Phase 03 — 03-UAT.md (3 scenarios) | testing (deferred) |
+| uat | Phase 04 — 04-UAT.md (4 scenarios) | testing (deferred) |
+| verification | Phase 01 — 01-VERIFICATION.md | human_needed (deferred) |
+| verification | Phase 02 — 02-VERIFICATION.md | human_needed (deferred) |
+| verification | Phase 03 — 03-VERIFICATION.md | human_needed (deferred) |
+| verification | Phase 04 — 04-VERIFICATION.md | human_needed (deferred) |
+
+Live bring-up on 2026-07-02 informally confirmed: add-on starts, Ingress UI serves, HA WebSocket
+connects, entity save + hot-reload work. The deferred items are the formal wall-clock/propagation
+checks (sub-2s reload latency, MQTT retraction within 30s, detector pre-fill) — not blockers, but
+not formally signed off.
 
 ## Project Reference
 
@@ -144,13 +168,11 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 
 ## Operator Next Steps
 
-1. PENDING: Live-HA verification of Plan 01-02 — rebuild and deploy add-on, confirm "Open Web UI", assets HTTP 200, ss -tlnp shows 0.0.0.0:8099, binary_sensor.argus_addon_health healthy. Record X-Ingress-Path strip behavior to close STACK-vs-PITFALLS conflict (see 01-02-SUMMARY.md).
-2. Before Phase 2 save endpoint: land `gen-entities.py` guard (`_source: ui` marker) to prevent add-on restart erasing UI config.
-3. Phase 2 planning: live sensor discovery + entity selection UI.
+- Start the next milestone with /gsd-new-milestone
 
 ## Current Position
 
-Phase: 04 (Validation, CI Packaging + Documentation) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
-Last activity: 2026-07-01
+Phase: Milestone v3.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-02 — Milestone v3.0 completed and archived
