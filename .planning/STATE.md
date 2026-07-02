@@ -4,16 +4,16 @@ milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
 current_phase: 06
 current_phase_name: Batch Group Pipeline
-status: executing
+status: verifying
 stopped_at: Completed 06-03-PLAN.md — MQTT group entity layer
-last_updated: "2026-07-02T13:48:00.261Z"
+last_updated: "2026-07-02T13:56:30.888Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 06 execution started
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -151,6 +151,9 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase 06-02]: Rule 3: stubbed ScoreGroupBatchAsync/FitGroupAsync in BatchSchedulerWorkerTests.FakeBatchDetectorClient to keep test project compiling
 - [Phase ?]: [Phase 06-03]: Peer/joint discovery dispatch via string.Equals(group.Mode, peer_divergence, OrdinalIgnoreCase) — matches existing server-side dispatch convention
 - [Phase ?]: [Phase 06-03]: RetractGroupAsync takes IEnumerable<string?> removedMembers — single null entry retracts joint group pair, non-null entries retract specific peer members
+- [Phase ?]: [Phase 06-04]: BuildGroupMatrix shared between score and fit paths (isPeer flag branches joint-vs-peer staleness policy) - one place owns the exclusion logic
+- [Phase ?]: [Phase 06-04]: Default staleness_cap of 30 minutes applied when a group's Params omits the key or fails TimeSpan.TryParse - degrade-safely rather than throw at scoring time
+- [Phase ?]: [Phase 06-04]: MqttPublisherWorker ConfigChanged ordering locked: retract-removed-groups -> republish-entities -> republish-groups -> update _lastGroups snapshot
 
 ### Blockers
 
@@ -179,10 +182,11 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 06 P01 | 6min | 3 tasks | 4 files |
 | Phase 06 P02 | 12min | 3 tasks | 6 files |
 | Phase 06 P03 | 3min | 3 tasks | 7 files |
+| Phase 06 P04 | 14min | 3 tasks | 6 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T13:48:00.253Z
+**Last session:** 2026-07-02T13:56:01.982Z
 **Stopped at:** Completed 06-03-PLAN.md — MQTT group entity layer
 **Resume file:** None
 
@@ -197,5 +201,5 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 Phase: 06 (Batch Group Pipeline) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-02 — Phase 06 execution started
