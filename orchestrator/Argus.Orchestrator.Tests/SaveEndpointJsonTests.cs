@@ -24,12 +24,14 @@ public class SaveEndpointJsonTests
 
         public IReadOnlyList<HaSensorEntry> GetAll() => _entries;
         public IReadOnlyList<HaSensorEntry> GetFiltered(string q) => _entries;
-        public void UpdateSnapshot(IReadOnlyList<HaStateDto> states, HashSet<string> trackedEntityIds)
+        public void UpdateSnapshot(
+            IReadOnlyList<HaStateDto> states, HashSet<string> trackedEntityIds,
+            IReadOnlyDictionary<string, string?>? entityAreaNames = null)
             => throw new NotImplementedException();
     }
 
     private static HaSensorEntry MakeEntry(string entityId, string? friendlyName = null)
-        => new(entityId, 21.0, "°C", friendlyName, IsTracked: true);
+        => new(entityId, 21.0, "°C", friendlyName, IsTracked: true, AreaName: null, Domain: "sensor");
 
     // -----------------------------------------------------------------------
     // SaveRequest JSON (de)serialization — camelCase parity with orchestrator/ui/src/api/types.ts

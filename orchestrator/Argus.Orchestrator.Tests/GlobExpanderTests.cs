@@ -11,7 +11,7 @@ namespace Argus.Orchestrator.Tests;
 public class GlobExpanderTests
 {
     private static IReadOnlyList<HaSensorEntry> MakeSnapshot(params string[] entityIds) =>
-        entityIds.Select(id => new HaSensorEntry(id, 0, null, null, false)).ToList();
+        entityIds.Select(id => new HaSensorEntry(id, 0, null, null, false, null, "sensor")).ToList();
 
     [Fact]
     public void Resolve_IncludePattern_SelectsMatchingEntities()

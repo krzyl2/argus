@@ -134,8 +134,13 @@ public class NetDaemonHaEventSource : IHaEventSource
                     // get_states snapshot must happen BEFORE subscribe (no events interleave).
                     var states = await client.GetStatesAsync(ct).ConfigureAwait(false);
 
+                    // Area/entity registries change far less often than sensor values — fetched
+                    // once per connect (first + reconnect, registries can change while
+                    // disconnected), right after GetStatesAsync and before UpdateSnapshot (SRCH-02/03).
+                    var entityAreaNames = await BuildEntityAreaNamesAsync(client, ct).ConfigureAwait(false);
+
                     // Populate sensor registry on EVERY connect (first + reconnect) — ADR-4: no second WebSocket.
-                    _sensorRegistry.UpdateSnapshot(states, _configuredEntities);
+                    _sensorRegistry.UpdateSnapshot(states, _configuredEntities, entityAreaNames);
                     _logger.LogInformation(LogEvents.SensorRegistryUpdated,
                         "Sensor registry updated: {Count} numeric sensors cached", states.Count(
                             s => double.TryParse(s.State, System.Globalization.NumberStyles.Any,
@@ -200,6 +205,39 @@ public class NetDaemonHaEventSource : IHaEventSource
         finally
         {
             writer.Complete();
+        }
+    }
+
+    /// <summary>
+    /// Joins config/area_registry/list + config/entity_registry/list into an
+    /// entity_id -> area name map (SRCH-02/03). Entity-only area_id + domain fallback for v1
+    /// (RESEARCH.md Pitfall 3/Open Question 2) — device_registry-inherited area is NOT resolved
+    /// this phase. Degrades safely to an empty map on any WS/parsing failure so area enrichment
+    /// never blocks the connect loop.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, string?>> BuildEntityAreaNamesAsync(
+        HaWebSocketClient client, CancellationToken ct)
+    {
+        try
+        {
+            var areas = await client.GetAreaRegistryAsync(ct).ConfigureAwait(false);
+            var entities = await client.GetEntityRegistryAsync(ct).ConfigureAwait(false);
+
+            var areaNamesById = areas
+                .Where(a => !string.IsNullOrEmpty(a.AreaId))
+                .ToDictionary(a => a.AreaId, a => a.Name, StringComparer.OrdinalIgnoreCase);
+
+            return entities
+                .Where(e => !string.IsNullOrEmpty(e.EntityId) && !string.IsNullOrEmpty(e.AreaId))
+                .ToDictionary(
+                    e => e.EntityId,
+                    e => areaNamesById.TryGetValue(e.AreaId!, out var name) ? name : null,
+                    StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "HA area/entity registry enrichment failed — falling back to no area names");
+            return new Dictionary<string, string?>();
         }
     }
 

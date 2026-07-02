@@ -29,14 +29,16 @@ public class SensorsEndpointJsonTests
                 : _entries
                     .Where(e => e.EntityId.Contains(q, StringComparison.OrdinalIgnoreCase))
                     .ToList();
-        public void UpdateSnapshot(IReadOnlyList<HaStateDto> states, HashSet<string> trackedEntityIds)
+        public void UpdateSnapshot(
+            IReadOnlyList<HaStateDto> states, HashSet<string> trackedEntityIds,
+            IReadOnlyDictionary<string, string?>? entityAreaNames = null)
             => throw new NotImplementedException();
     }
 
     private static HaSensorEntry MakeEntry(
         string entityId, double value = 21.0, string? unit = "°C",
         string? friendlyName = null, bool isTracked = false)
-        => new(entityId, value, unit, friendlyName, isTracked);
+        => new(entityId, value, unit, friendlyName, isTracked, null, "sensor");
 
     /// <summary>
     /// Mirrors the exact projection performed inline in Program.cs's GET /api/sensors handler.

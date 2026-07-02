@@ -19,9 +19,16 @@ public interface IHaSensorRegistry
     /// <summary>
     /// Replaces the snapshot atomically from a get_states response.
     /// Filters to numeric-parseable states (invariant culture) and computes IsTracked
-    /// from <paramref name="trackedEntityIds"/>.
+    /// from <paramref name="trackedEntityIds"/>. <paramref name="entityAreaNames"/> maps
+    /// entity_id -> resolved HA area name (SRCH-02/03; entity-only area_id + domain fallback
+    /// for v1 — device_registry-inherited area resolution is out of scope this phase).
+    /// Defaults to an empty map so existing callers/tests that don't need area enrichment
+    /// are unaffected.
     /// </summary>
-    void UpdateSnapshot(IReadOnlyList<HaStateDto> states, HashSet<string> trackedEntityIds);
+    void UpdateSnapshot(
+        IReadOnlyList<HaStateDto> states,
+        HashSet<string> trackedEntityIds,
+        IReadOnlyDictionary<string, string?>? entityAreaNames = null);
 }
 
 /// <summary>
@@ -32,4 +39,6 @@ public record HaSensorEntry(
     double CurrentValue,
     string? UnitOfMeasurement,
     string? FriendlyName,
-    bool IsTracked);
+    bool IsTracked,
+    string? AreaName,
+    string Domain);

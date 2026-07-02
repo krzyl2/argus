@@ -292,7 +292,7 @@ internal class FakeHaSensorRegistry : Argus.Orchestrator.Ha.IHaSensorRegistry
     public FakeHaSensorRegistry(Dictionary<string, string?> unitsByEntityId)
     {
         _entries = unitsByEntityId
-            .Select(kvp => new Argus.Orchestrator.Ha.HaSensorEntry(kvp.Key, 0.0, kvp.Value, kvp.Key, true))
+            .Select(kvp => new Argus.Orchestrator.Ha.HaSensorEntry(kvp.Key, 0.0, kvp.Value, kvp.Key, true, null, "sensor"))
             .ToList();
     }
 
@@ -301,7 +301,9 @@ internal class FakeHaSensorRegistry : Argus.Orchestrator.Ha.IHaSensorRegistry
     public IReadOnlyList<Argus.Orchestrator.Ha.HaSensorEntry> GetFiltered(string q)
         => throw new NotImplementedException();
 
-    public void UpdateSnapshot(IReadOnlyList<Argus.Orchestrator.Ha.HaStateDto> states, HashSet<string> trackedEntityIds)
+    public void UpdateSnapshot(
+        IReadOnlyList<Argus.Orchestrator.Ha.HaStateDto> states, HashSet<string> trackedEntityIds,
+        IReadOnlyDictionary<string, string?>? entityAreaNames = null)
         => throw new NotImplementedException();
 }
 

@@ -30,19 +30,28 @@ public sealed class HaSensorRegistry : IHaSensorRegistry
     }
 
     /// <inheritdoc/>
-    public void UpdateSnapshot(IReadOnlyList<HaStateDto> states, HashSet<string> trackedEntityIds)
+    public void UpdateSnapshot(
+        IReadOnlyList<HaStateDto> states,
+        HashSet<string> trackedEntityIds,
+        IReadOnlyDictionary<string, string?>? entityAreaNames = null)
     {
         var entries = states
             .Where(s => double.TryParse(s.State, NumberStyles.Any, CultureInfo.InvariantCulture, out _))
             .Select(s =>
             {
                 double.TryParse(s.State, NumberStyles.Any, CultureInfo.InvariantCulture, out var value);
+                var areaName = entityAreaNames is not null &&
+                    entityAreaNames.TryGetValue(s.EntityId, out var area) ? area : null;
+                var dotIndex = s.EntityId.IndexOf('.');
+                var domain = dotIndex > 0 ? s.EntityId[..dotIndex] : s.EntityId;
                 return new HaSensorEntry(
                     EntityId: s.EntityId,
                     CurrentValue: value,
                     UnitOfMeasurement: s.UnitOfMeasurement,
                     FriendlyName: s.FriendlyName,
-                    IsTracked: trackedEntityIds.Contains(s.EntityId));
+                    IsTracked: trackedEntityIds.Contains(s.EntityId),
+                    AreaName: areaName,
+                    Domain: domain);
             })
             .OrderBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToList();

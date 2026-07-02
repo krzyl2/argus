@@ -201,6 +201,62 @@ public class HaSensorRegistryTests
     }
 
     // -----------------------------------------------------------------------
+    // Domain / AreaName enrichment (SRCH-02/03)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void UpdateSnapshot_Domain_IsSubstringBeforeFirstDot()
+    {
+        var registry = new HaSensorRegistry();
+
+        registry.UpdateSnapshot(
+            new[] { MakeDto("sensor.outdoor_temp", "21.5") },
+            TrackedEntities);
+
+        Assert.Equal("sensor", registry.GetAll()[0].Domain);
+    }
+
+    [Fact]
+    public void UpdateSnapshot_NoAreaMapProvided_AreaNameIsNull()
+    {
+        var registry = new HaSensorRegistry();
+
+        registry.UpdateSnapshot(
+            new[] { MakeDto("sensor.outdoor_temp", "21.5") },
+            TrackedEntities);
+
+        Assert.Null(registry.GetAll()[0].AreaName);
+    }
+
+    [Fact]
+    public void UpdateSnapshot_EntityInAreaMap_AreaNameIsResolved()
+    {
+        var registry = new HaSensorRegistry();
+        var areas = new Dictionary<string, string?> { ["sensor.outdoor_temp"] = "Garden" };
+
+        registry.UpdateSnapshot(
+            new[] { MakeDto("sensor.outdoor_temp", "21.5") },
+            TrackedEntities,
+            areas);
+
+        Assert.Equal("Garden", registry.GetAll()[0].AreaName);
+    }
+
+    [Fact]
+    public void UpdateSnapshot_EntityNotInAreaMap_AreaNameIsNull()
+    {
+        var registry = new HaSensorRegistry();
+        var areas = new Dictionary<string, string?> { ["sensor.other"] = "Kitchen" };
+
+        registry.UpdateSnapshot(
+            new[] { MakeDto("sensor.outdoor_temp", "21.5") },
+            TrackedEntities,
+            areas);
+
+        Assert.Null(registry.GetAll()[0].AreaName);
+    }
+
+    // -----------------------------------------------------------------------
     // Thread safety
     // -----------------------------------------------------------------------
 

@@ -35,7 +35,9 @@ public class NetDaemonHaEventSourceLiveFilterTests
     {
         public IReadOnlyList<HaSensorEntry> GetAll() => [];
         public IReadOnlyList<HaSensorEntry> GetFiltered(string q) => [];
-        public void UpdateSnapshot(IReadOnlyList<HaStateDto> states, HashSet<string> trackedEntityIds) { }
+        public void UpdateSnapshot(
+            IReadOnlyList<HaStateDto> states, HashSet<string> trackedEntityIds,
+            IReadOnlyDictionary<string, string?>? entityAreaNames = null) { }
     }
 
     private static NetDaemonHaEventSource MakeEventSource(ILiveEntitiesConfig liveConfig) =>

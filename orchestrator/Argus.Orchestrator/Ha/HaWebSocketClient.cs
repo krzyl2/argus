@@ -12,6 +12,17 @@ public sealed record HaStateDto(
     string EntityId, string? State, DateTime LastChangedUtc,
     string? UnitOfMeasurement, string? FriendlyName);
 
+/// <summary>One row from HA's config/area_registry/list response.</summary>
+public sealed record HaAreaDto(string AreaId, string? Name);
+
+/// <summary>
+/// One row from HA's config/entity_registry/list response. Only <c>EntityId</c> is guaranteed
+/// present — every other field is LOW-confidence/optional per RESEARCH.md A1 and is parsed
+/// defensively. AreaId is entity-level only (v1 scope; device_registry-inherited area
+/// resolution is explicitly out of scope this phase per RESEARCH.md Pitfall 3/Open Question 2).
+/// </summary>
+public sealed record HaEntityRegistryDto(string EntityId, string? AreaId);
+
 /// <summary>
 /// Minimal Home Assistant WebSocket client built on a raw <see cref="ClientWebSocket"/>.
 ///
@@ -81,6 +92,72 @@ internal sealed class HaWebSocketClient : IAsyncDisposable
                         if (attrs.TryGetProperty("friendly_name", out var fn)) friendlyName = fn.GetString();
                     }
                     list.Add(new HaStateDto(entityId, state, ParseUtc(st, "last_changed"), unit, friendlyName));
+                }
+            }
+            return list;
+        }
+    }
+
+    /// <summary>
+    /// Sends config/area_registry/list and returns the current areas. Field shapes are
+    /// LOW-confidence (RESEARCH.md A1) — every field beyond area_id is parsed defensively.
+    /// Call once per connect, after GetStatesAsync and before Subscribe.
+    /// </summary>
+    public async Task<IReadOnlyList<HaAreaDto>> GetAreaRegistryAsync(CancellationToken ct)
+    {
+        var id = Interlocked.Increment(ref _id);
+        await SendAsync(new { id, type = "config/area_registry/list" }, ct).ConfigureAwait(false);
+
+        while (true)
+        {
+            using var doc = await ReceiveMessageAsync(ct).ConfigureAwait(false);
+            var root = doc.RootElement;
+            if (!IsResultFor(root, id))
+                continue;
+
+            var list = new List<HaAreaDto>();
+            if (root.TryGetProperty("success", out var s) && s.GetBoolean()
+                && root.TryGetProperty("result", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var a in arr.EnumerateArray())
+                {
+                    if (!a.TryGetProperty("area_id", out var aid) || aid.GetString() is not { } areaId)
+                        continue;
+                    var name = a.TryGetProperty("name", out var n) ? n.GetString() : null;
+                    list.Add(new HaAreaDto(areaId, name));
+                }
+            }
+            return list;
+        }
+    }
+
+    /// <summary>
+    /// Sends config/entity_registry/list and returns the current entity registrations. Field
+    /// shapes are LOW-confidence (RESEARCH.md A1) — every field beyond entity_id is parsed
+    /// defensively. Call once per connect, after GetStatesAsync and before Subscribe.
+    /// </summary>
+    public async Task<IReadOnlyList<HaEntityRegistryDto>> GetEntityRegistryAsync(CancellationToken ct)
+    {
+        var id = Interlocked.Increment(ref _id);
+        await SendAsync(new { id, type = "config/entity_registry/list" }, ct).ConfigureAwait(false);
+
+        while (true)
+        {
+            using var doc = await ReceiveMessageAsync(ct).ConfigureAwait(false);
+            var root = doc.RootElement;
+            if (!IsResultFor(root, id))
+                continue;
+
+            var list = new List<HaEntityRegistryDto>();
+            if (root.TryGetProperty("success", out var s) && s.GetBoolean()
+                && root.TryGetProperty("result", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in arr.EnumerateArray())
+                {
+                    if (!e.TryGetProperty("entity_id", out var eid) || eid.GetString() is not { } entityId)
+                        continue;
+                    var areaId = e.TryGetProperty("area_id", out var aid) ? aid.GetString() : null;
+                    list.Add(new HaEntityRegistryDto(entityId, areaId));
                 }
             }
             return list;
