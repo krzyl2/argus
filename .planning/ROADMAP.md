@@ -158,6 +158,6 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 | 3. Config Read/Write + Detector Assignment + Reload | v3.0 | 3/3 | Complete | 2026-07-01 |
 | 4. Validation, CI Packaging + Documentation | v3.0 | 4/4 | Complete | 2026-07-01 |
 | 5. Group Detection Core (Proto + Python Detectors) | v4.0 | 4/4 | Complete    | 2026-07-02 |
-| 6. Batch Group Pipeline | v4.0 | 4/4 | Complete   | 2026-07-02 |
+| 6. Batch Group Pipeline | v4.0 | 4/4 | Complete    | 2026-07-02 |
 | 7. SPA Scaffolding | v4.0 | 0/TBD | Not started | - |
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 0/TBD | Not started | - |
