@@ -23,8 +23,8 @@ Requirements for this milestone. Each maps to exactly one roadmap phase.
 
 ### Algorithm Library & Chooser (ALGO)
 
-- [ ] **ALGO-01**: Operator selects detector sensitivity via a Low/Med/High preset for the new group detectors, mapping to underlying parameters without exposing raw values by default
-- [ ] **ALGO-02**: An Advanced toggle reveals and lets the operator override the raw underlying parameters behind a preset
+- [x] **ALGO-01**: Operator selects detector sensitivity via a Low/Med/High preset for the new group detectors, mapping to underlying parameters without exposing raw values by default
+- [x] **ALGO-02**: An Advanced toggle reveals and lets the operator override the raw underlying parameters behind a preset
 - [ ] **ALGO-03**: Each selectable algorithm shows a "best for…" description explaining its intended use case in the chooser
 - [ ] **ALGO-04**: A guided "what are you monitoring?" chooser pre-selects a sensible algorithm AND visibly shows/explains its pick, always allowing one-click override
 
@@ -83,8 +83,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | GRP-07 | Phase 5 | Complete |
 | GRP-08 | Phase 6 | Complete |
 | GRP-09 | Phase 8 | Pending |
-| ALGO-01 | Phase 8 | Pending |
-| ALGO-02 | Phase 8 | Pending |
+| ALGO-01 | Phase 8 | Complete |
+| ALGO-02 | Phase 8 | Complete |
 | ALGO-03 | Phase 8 | Pending |
 | ALGO-04 | Phase 8 | Pending |
 | SRCH-01 | Phase 8 | Pending |

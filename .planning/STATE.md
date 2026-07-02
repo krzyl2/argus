@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
-current_phase: 8
+current_phase: 08
 current_phase_name: Group Config UI + Algorithm Chooser
-status: verifying
+status: executing
 stopped_at: Completed 06-03-PLAN.md — MQTT group entity layer
-last_updated: "2026-07-02T16:43:38.940Z"
+last_updated: "2026-07-02T19:09:46.367Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 7 complete, transitioned to Phase 8
+last_activity_desc: Phase 08 execution started
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 14
-  completed_plans: 11
+  total_plans: 19
+  completed_plans: 12
   percent: 0
 ---
 
@@ -52,7 +52,7 @@ not formally signed off.
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
-**Current focus:** Phase 07 — SPA Scaffolding
+**Current focus:** Phase 08 — Group Config UI + Algorithm Chooser
 
 ## Phase Status (v4.0)
 
@@ -161,6 +161,8 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase ?]: [Phase 07-03]: COPY --from=ui-build sources from /src/Argus.Orchestrator/wwwroot/ (Vite's actual configured outDir per 07-01), not the plan-assumed /src/ui/dist/
 - [Phase ?]: [Phase 07-03]: ARG BUILD_FROM moved to a single global declaration before the first FROM - a stage-scoped ARG between FROM lines is not visible to the next FROM in Docker's build model
 - [Phase ?]: [Phase 07-03]: -SkipPublish kept as a documented no-op in build-push.ps1 for CLI back-compat rather than removed
+- [Phase 08]: peer_divergence threshold moved from module constant to instance field via from_params; multivariate contamination/n_estimators threaded through _DETECTOR_FACTORY; PCA standardization=False stays hardcoded as correctness constant, not a knob
+- [Phase 08]: registry._create_detector and fit_one gained optional params dict (default None), mirroring D-06-01 precedent; servicer.py ScoreGroupBatch/FitGroup forward dict(request.params) end-to-end
 
 ### Blockers
 
@@ -193,10 +195,11 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 07 P01 | 25min | 2 tasks | 34 files |
 | Phase 07 P02 | 35min | 2 tasks | 11 files |
 | Phase 07 P03 | 20min | 2 tasks | 3 files |
+| Phase 08 P01 | 6min | 2 tasks | 7 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T16:19:26.066Z
+**Last session:** 2026-07-02T19:09:03.128Z
 **Stopped at:** Completed 06-03-PLAN.md — MQTT group entity layer
 **Resume file:** None
 
@@ -209,7 +212,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Current Position
 
-Phase: 8 — Group Config UI + Algorithm Chooser
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-02 — Phase 7 complete, transitioned to Phase 8
+Phase: 08 (Group Config UI + Algorithm Chooser) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-07-02 — Phase 08 execution started
