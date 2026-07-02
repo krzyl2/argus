@@ -6,14 +6,14 @@ current_phase: 06
 current_phase_name: Batch Group Pipeline
 status: executing
 stopped_at: Completed 06-01-PLAN.md — Group config schema + validation
-last_updated: "2026-07-02T13:26:52.232Z"
+last_updated: "2026-07-02T13:40:16.459Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 06 execution started
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 10
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -146,6 +146,9 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase ?]: [Phase 06-01]: EntityConfig.Covariates/Groups placeholders removed entirely (not deprecated-in-place) — IgnoreUnmatchedProperties() makes this safe for any stray YAML on existing installs
 - [Phase ?]: [Phase 06-01]: IHaSensorRegistry threaded as an optional 3rd parameter (default null) on EntitiesConfigLoader.Load rather than a new overload, keeping all existing 2-arg call sites unchanged
 - [Phase ?]: [Phase 06-01]: Peer-divergence unit rejection only fires when 2+ distinct non-null units are observed; registry null or under-resolved units degrades to skip-check-and-keep (cold boot)
+- [Phase 06-02]: GroupInfluxReader is a new class reusing the existing IInfluxQueryApi seam, keeping InfluxDbReader untouched
+- [Phase 06-02]: Reader surfaces LastSeenUtc + null cells only; staleness_cap exclusion policy deferred to Plan 06-04
+- [Phase 06-02]: Rule 3: stubbed ScoreGroupBatchAsync/FitGroupAsync in BatchSchedulerWorkerTests.FakeBatchDetectorClient to keep test project compiling
 
 ### Blockers
 
@@ -172,10 +175,11 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 05 P03 | 12min | 3 tasks | 5 files |
 | Phase 05 PP04 | 8min | 3 tasks | 3 files |
 | Phase 06 P01 | 6min | 3 tasks | 4 files |
+| Phase 06 P02 | 12min | 3 tasks | 6 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T13:26:52.224Z
+**Last session:** 2026-07-02T13:35:02.108Z
 **Stopped at:** Completed 06-01-PLAN.md — Group config schema + validation
 **Resume file:** None
 
@@ -189,6 +193,6 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 ## Current Position
 
 Phase: 06 (Batch Group Pipeline) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-07-02 — Phase 06 execution started
