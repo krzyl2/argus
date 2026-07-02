@@ -535,3 +535,77 @@ class TestFitGroupPersistence:
         import grpc
         assert ctx.abort_code == grpc.StatusCode.INVALID_ARGUMENT
         assert result is None
+
+
+class TestScoreGroupBatchParams:
+    """ALGO-01/02: request.params must reach the constructed group detector."""
+
+    def test_peer_divergence_lower_threshold_flags_more_members(self, servicer):
+        """Same series, lower threshold param -> more flagged members."""
+        svc, _, _ = servicer
+
+        low_request = argus_pb2.GroupScoreRequest(
+            group_id="g5",
+            detector="peer_divergence",
+            series=_PEER_SERIES,
+            params={"threshold": "1.0"},
+        )
+        low_response = svc.ScoreGroupBatch(low_request, _FakeContext())
+
+        high_request = argus_pb2.GroupScoreRequest(
+            group_id="g5",
+            detector="peer_divergence",
+            series=_PEER_SERIES,
+            params={"threshold": "10.0"},
+        )
+        high_response = svc.ScoreGroupBatch(high_request, _FakeContext())
+
+        low_flagged = sum(1 for v in low_response.per_member if v.is_anomaly)
+        high_flagged = sum(1 for v in high_response.per_member if v.is_anomaly)
+        assert low_flagged > high_flagged
+
+    def test_peer_divergence_malformed_threshold_does_not_abort(self, servicer):
+        """A non-numeric threshold param must fall back to the default, not 500."""
+        svc, _, _ = servicer
+        request = argus_pb2.GroupScoreRequest(
+            group_id="g5",
+            detector="peer_divergence",
+            series=_PEER_SERIES,
+            params={"threshold": "not-a-number"},
+        )
+        ctx = _FakeContext()
+        response = svc.ScoreGroupBatch(request, ctx)
+        assert not ctx.aborted
+        assert response.ok is True
+
+    def test_joint_fit_group_params_reach_constructed_detector(self, servicer):
+        """FitGroup with contamination params -> the persisted bundle's model
+        reflects the requested contamination (proves params reached the
+        registry's _create_detector call, not just accepted and dropped)."""
+        svc, _, store = servicer
+        fit_request = argus_pb2.FitGroupRequest(
+            group_id="g6",
+            detector="ecod",
+            series=_JOINT_TRAIN_SERIES,
+            params={"contamination": "0.35"},
+        )
+        fit_ctx = _FakeContext()
+        fit_response = svc.FitGroup(fit_request, fit_ctx)
+        assert fit_response.ok is True
+
+        loaded = store.load_group_bundle("g6", "ecod")
+        assert loaded["detector"].contamination == pytest.approx(0.35)
+
+    def test_fit_group_malformed_params_does_not_abort(self, servicer):
+        """Malformed FitGroup params must not abort/500 the RPC."""
+        svc, _, _ = servicer
+        request = argus_pb2.FitGroupRequest(
+            group_id="g7",
+            detector="ecod",
+            series=_JOINT_TRAIN_SERIES,
+            params={"contamination": "garbage"},
+        )
+        ctx = _FakeContext()
+        response = svc.FitGroup(request, ctx)
+        assert not ctx.aborted
+        assert response.ok is True

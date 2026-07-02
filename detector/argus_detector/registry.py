@@ -121,7 +121,13 @@ class DetectorRegistry:
                 self._entity_locks[key] = threading.Lock()
             return self._entity_locks[key]
 
-    def fit_one(self, entity_id: str, detector: str, values: list[float]) -> None:
+    def fit_one(
+        self,
+        entity_id: str,
+        detector: str,
+        values: list[float],
+        params: dict[str, str] | None = None,
+    ) -> None:
         """Train a model on values using train-outside-lock pattern (MDL-04).
 
         Snapshots the current model under the entity lock, deep-copies it
@@ -134,6 +140,10 @@ class DetectorRegistry:
             entity_id: HA entity ID.
             detector: Detector name ("mad", "robust_zscore", "stl", "hst").
             values: Training values.
+            params: optional string param overrides, only applied when a fresh
+                detector is created (mirrors the D-06-01 optional-3rd-param
+                precedent) — default None keeps all existing per-entity call
+                sites unchanged.
         """
         # WR-01: StlDetector is stateless; it has no fit() method.
         # peer_divergence (GRP-03/04) is likewise stateless — no fit() method
@@ -144,7 +154,7 @@ class DetectorRegistry:
             lock = self._entity_lock(key)
             with lock:
                 if key not in self._detectors:
-                    self._detectors[key] = self._create_detector(detector)
+                    self._detectors[key] = self._create_detector(detector, params)
             return
 
         key = (entity_id, detector)
@@ -155,7 +165,7 @@ class DetectorRegistry:
             current = self._detectors.get(key)
 
         # Deep-copy before training — CPU-bound; runs OUTSIDE lock (MDL-04)
-        candidate = copy.deepcopy(current) if current else self._create_detector(detector)
+        candidate = copy.deepcopy(current) if current else self._create_detector(detector, params)
         candidate.fit(values)
 
         # Atomic swap
@@ -230,12 +240,17 @@ class DetectorRegistry:
         with self._lock:
             self._detectors[key] = model_obj
 
-    def _create_detector(self, detector: str) -> object:
+    def _create_detector(
+        self, detector: str, params: dict[str, str] | None = None
+    ) -> object:
         """Factory: map detector name to a fresh (unfitted) detector instance.
 
         Args:
             detector: "mad" | "robust_zscore" | "stl" | "hst" |
                       "peer_divergence" | "ecod" | "copod" | "pca" | "iforest"
+            params: optional string param overrides (ALGO-01/02) — threaded
+                into the two group-detector branches; ignored by per-entity
+                branches (default None keeps existing call sites unchanged).
 
         Returns:
             Fresh detector instance.
@@ -256,9 +271,9 @@ class DetectorRegistry:
         if detector == "peer_divergence":
             # GRP-03/04: stateless cross-member robust-statistic scorer.
             from argus_detector.group.peer_divergence import PeerDivergenceDetector  # lazy import
-            return PeerDivergenceDetector()
+            return PeerDivergenceDetector.from_params(params or {})
         if detector in ("ecod", "copod", "pca", "iforest"):
             # GRP-05/06: RobustScaler + PyOD joint-multivariate wrapper.
             from argus_detector.group.multivariate_detector import GroupMultivariateDetector  # lazy import
-            return GroupMultivariateDetector(detector)
+            return GroupMultivariateDetector(detector, params or {})
         raise ValueError(f"Unknown detector: {detector!r}")

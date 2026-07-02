@@ -246,8 +246,11 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
 
             if detector == "peer_divergence":
                 # Stateless — no registry state needed, construct fresh per call.
+                # request.params threads the threshold knob (ALGO-01/02);
+                # dict(request.params) casts the protobuf map to a plain dict —
+                # from_params()'s _cast_float handles any non-numeric string.
                 from argus_detector.group.peer_divergence import PeerDivergenceDetector
-                model = PeerDivergenceDetector()
+                model = PeerDivergenceDetector.from_params(dict(request.params))
                 scores, flags, error = model.score_batch(matrix)
                 if error:
                     # GRP-04: below-floor group -> no verdict, NOT a false not-anomalous result.
@@ -356,12 +359,12 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
             if detector == "peer_divergence":
                 # Stateless — register without training, no persistence (RESEARCH.md
                 # CONTEXT.md: peer_divergence Fit/Save is a no-op registration).
-                self._registry.fit_one(group_slug, detector, matrix)
+                self._registry.fit_one(group_slug, detector, matrix, params=dict(request.params))
                 return argus_pb2.FitGroupResponse(ok=True)
 
             # Joint-multivariate: fit via the registry, then persist the bundle.
             version = self._model_store.next_version(group_slug, detector)
-            self._registry.fit_one(group_slug, detector, matrix)
+            self._registry.fit_one(group_slug, detector, matrix, params=dict(request.params))
             model = self._registry.get_model(group_slug, detector)
             self._model_store.save_group_bundle(request.group_id, detector, version, model.bundle())
 
