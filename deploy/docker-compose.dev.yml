@@ -55,11 +55,13 @@ services:
       ARGUS_DETECTOR_ENDPOINT: http://detector:50051
       ARGUS_MQTT_HOST: mosquitto
       ARGUS_MQTT_PORT: "1883"
-      ARGUS_ENTITIES_PATH: /data/entities.yaml
+      ARGUS_ENTITIES_PATH: /app/entities.yaml
       ARGUS_TLS_CA: ""
       ARGUS_TLS_CERT: ""
       ARGUS_TLS_KEY: ""
     volumes:
+      # Seed entity config from the repo (add-on generates this via config-gen; dev provides it).
+      - ../entities.yaml:/app/entities.yaml:ro
       - orchestrator-data:/data
     ports:
       - "8099:8099"

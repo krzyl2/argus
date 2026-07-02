@@ -7,6 +7,11 @@ FROM python:3.12-slim-bookworm
 # Prevent Python from buffering stdout/stderr so logs stream immediately
 ENV PYTHONUNBUFFERED=1
 
+# Source is copied to /app/detector/, so the argus_detector package lives at
+# /app/detector/argus_detector. Put that on PYTHONPATH so `python -m argus_detector.server`
+# resolves (mirrors the add-on's PYTHONPATH=/opt/argus/detector in services.d/detector/run).
+ENV PYTHONPATH=/app/detector
+
 WORKDIR /app
 
 # Install Python dependencies before copying source so Docker can cache this layer
