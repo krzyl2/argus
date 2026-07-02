@@ -70,6 +70,11 @@ public static class GroupInputValidator
             errors.Add($"Duplicate group ID '{duplicateId}' — group IDs must be unique.");
         }
 
+        // WR-02: catalog Min/Max are UI-only decoration unless also enforced here — the
+        // authoritative boundary for param values (mirrors the member-floor/unit checks below).
+        var paramSchemaByDetector = DetectorCatalog.All()
+            .ToDictionary(e => e.Name, e => e.ParamSchema, StringComparer.OrdinalIgnoreCase);
+
         foreach (var group in groups)
         {
             if (string.IsNullOrWhiteSpace(group.GroupId))
@@ -134,6 +139,35 @@ public static class GroupInputValidator
                     errors.Add(
                         $"Group '{group.GroupId}' members must share the same unit for peer-divergence " +
                         $"mode — found: {string.Join(", ", resolvedUnits)}.");
+                }
+            }
+
+            if (paramSchemaByDetector.TryGetValue(group.Detector, out var paramSchema))
+            {
+                foreach (var field in paramSchema)
+                {
+                    if (!group.Params.TryGetValue(field.Key, out var rawValue) || string.IsNullOrWhiteSpace(rawValue))
+                        continue; // absent param falls back to the detector's own default
+
+                    if (!double.TryParse(rawValue, System.Globalization.CultureInfo.InvariantCulture, out var numericValue))
+                    {
+                        errors.Add(
+                            $"Group '{group.GroupId}' param '{field.Key}' value '{rawValue}' is not numeric.");
+                        continue;
+                    }
+
+                    if (field.Min.HasValue && numericValue < field.Min.Value)
+                    {
+                        errors.Add(
+                            $"Group '{group.GroupId}' param '{field.Key}' value {numericValue} is below the " +
+                            $"minimum of {field.Min.Value}.");
+                    }
+                    else if (field.Max.HasValue && numericValue > field.Max.Value)
+                    {
+                        errors.Add(
+                            $"Group '{group.GroupId}' param '{field.Key}' value {numericValue} is above the " +
+                            $"maximum of {field.Max.Value}.");
+                    }
                 }
             }
         }

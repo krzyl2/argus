@@ -297,6 +297,66 @@ public class GroupsEndpointsTests
     }
 
     // -----------------------------------------------------------------------
+    // WR-02: server-side param range validation using catalog bounds
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Validate_ContaminationAboveCatalogMax_ReturnsValidationError()
+    {
+        // Catalog bounds for ecod's "contamination": 0.01..0.5 (DetectorCatalog.cs).
+        var registry = new FakeRegistry(MakeEntry("sensor.a"), MakeEntry("sensor.b"), MakeEntry("sensor.c"));
+        var groups = new List<GroupSaveEntry>
+        {
+            new()
+            {
+                GroupId = "group.a", Members = ["sensor.a", "sensor.b", "sensor.c"], Mode = "joint", Detector = "ecod",
+                Params = new Dictionary<string, string> { ["contamination"] = "0.9" },
+            },
+        };
+
+        var errors = GroupInputValidator.Validate(groups, registry);
+
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void Validate_ContaminationWithinCatalogBounds_ReturnsNoErrors()
+    {
+        var registry = new FakeRegistry(MakeEntry("sensor.a"), MakeEntry("sensor.b"), MakeEntry("sensor.c"));
+        var groups = new List<GroupSaveEntry>
+        {
+            new()
+            {
+                GroupId = "group.a", Members = ["sensor.a", "sensor.b", "sensor.c"], Mode = "joint", Detector = "ecod",
+                Params = new Dictionary<string, string> { ["contamination"] = "0.2" },
+            },
+        };
+
+        var errors = GroupInputValidator.Validate(groups, registry);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validate_NEstimatorsBelowCatalogMin_ReturnsValidationError()
+    {
+        // Catalog bounds for iforest's "n_estimators": 10..500.
+        var registry = new FakeRegistry(MakeEntry("sensor.a"), MakeEntry("sensor.b"), MakeEntry("sensor.c"));
+        var groups = new List<GroupSaveEntry>
+        {
+            new()
+            {
+                GroupId = "group.a", Members = ["sensor.a", "sensor.b", "sensor.c"], Mode = "joint", Detector = "iforest",
+                Params = new Dictionary<string, string> { ["n_estimators"] = "1" },
+            },
+        };
+
+        var errors = GroupInputValidator.Validate(groups, registry);
+
+        Assert.NotEmpty(errors);
+    }
+
+    // -----------------------------------------------------------------------
     // GroupSaveRequest JSON (de)serialization — camelCase parity with types.ts
     // -----------------------------------------------------------------------
 
