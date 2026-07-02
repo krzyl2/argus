@@ -125,3 +125,50 @@ class TestPeerDivergenceEdgeCases:
             # Should not raise — guard prevents divide-by-zero
             det.score_batch([[10.0, 10.0, 10.0, 50.0]])
             det.score_batch([[5.0, 5.0, 5.0]])
+
+
+class TestPeerDivergenceFromParams:
+    """ALGO-01/02: from_params() makes the flag threshold a genuine, tunable knob."""
+
+    # Borderline member (index 3) has z ~= 4.34 on this fixture — flagged at a
+    # lower threshold (2.5), not flagged at a higher one (4.5): same data,
+    # different verdict (hand-verified via modified_zscore).
+    _BORDERLINE_MATRIX = [[10.0, 10.5, 9.8, 12.5]]
+
+    def test_lower_threshold_flags_more_members(self):
+        """Same fixture, lower threshold -> more members flagged."""
+        low = PeerDivergenceDetector.from_params({"threshold": "2.5"})
+        high = PeerDivergenceDetector.from_params({"threshold": "4.5"})
+
+        _, low_flags, error_low = low.score_batch(self._BORDERLINE_MATRIX)
+        _, high_flags, error_high = high.score_batch(self._BORDERLINE_MATRIX)
+
+        assert error_low is None
+        assert error_high is None
+        low_count = sum(1 for f in low_flags[0] if f)
+        high_count = sum(1 for f in high_flags[0] if f)
+        assert low_count > high_count
+
+    def test_from_params_empty_uses_default_threshold(self):
+        """from_params({}) must match the pre-change hardcoded-3.5 behavior
+        (regression guard) — identical flags to a bare PeerDivergenceDetector()."""
+        default_det = PeerDivergenceDetector()
+        from_params_det = PeerDivergenceDetector.from_params({})
+
+        matrix = [[10.0, 10.5, 9.8, 50.0]]
+        _, default_flags, _ = default_det.score_batch(matrix)
+        _, from_params_flags, _ = from_params_det.score_batch(matrix)
+
+        assert from_params_flags == default_flags
+
+    def test_from_params_non_numeric_threshold_falls_back_to_default(self):
+        """Malformed threshold value must not raise — falls back to 3.5."""
+        det = PeerDivergenceDetector.from_params({"threshold": "not-a-number"})
+        default_det = PeerDivergenceDetector()
+
+        matrix = [[10.0, 10.5, 9.8, 50.0]]
+        _, flags, error = det.score_batch(matrix)
+        _, default_flags, _ = default_det.score_batch(matrix)
+
+        assert error is None
+        assert flags == default_flags

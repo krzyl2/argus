@@ -25,6 +25,13 @@ CRITICAL (RESEARCH.md Pitfall 2): PyOD's PCA defaults to
 RobustScaler. The factory below constructs PCA with standardization=False so
 RobustScaler remains the single scaling owner (GRP-06).
 
+Param-aware construction (ALGO-01/02, RESEARCH honesty constraint): all four
+detectors honor `contamination` (float, default 0.1) — this only shifts the
+PyOD `threshold_` used by `is_anomaly()`, NOT the continuous `decision_function()`
+score. `iforest` additionally honors `n_estimators` (int, default 100), which
+DOES affect the score. Bad/absent values fall back to defaults via the same
+`_cast_float` try/except idiom as pyod_detector.py.
+
 Thread safety: mirrors PyODDetector — instances are swapped atomically by
 the registry; scoring runs outside the lock on a snapshot reference.
 """
@@ -34,15 +41,49 @@ from __future__ import annotations
 import numpy as np
 from sklearn.preprocessing import RobustScaler
 
+
+def _cast_float(params: dict[str, str], key: str, default: float) -> float:
+    """Cast a string param to float, returning default if key absent or invalid."""
+    raw = params.get(key)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        return default
+
+
+def _cast_int(params: dict[str, str], key: str, default: int) -> int:
+    """Cast a string param to int, returning default if key absent or invalid."""
+    raw = params.get(key)
+    if raw is None:
+        return default
+    try:
+        return int(float(raw))
+    except (ValueError, TypeError):
+        return default
+
+
 _DETECTOR_FACTORY = {
-    "ecod": lambda: __import__("pyod.models.ecod", fromlist=["ECOD"]).ECOD(),
-    "copod": lambda: __import__("pyod.models.copod", fromlist=["COPOD"]).COPOD(),
-    "pca": lambda: __import__("pyod.models.pca", fromlist=["PCA"]).PCA(standardization=False),
-    "iforest": lambda: __import__("pyod.models.iforest", fromlist=["IForest"]).IForest(),
+    "ecod": lambda params: __import__("pyod.models.ecod", fromlist=["ECOD"]).ECOD(
+        contamination=_cast_float(params, "contamination", 0.1)
+    ),
+    "copod": lambda params: __import__("pyod.models.copod", fromlist=["COPOD"]).COPOD(
+        contamination=_cast_float(params, "contamination", 0.1)
+    ),
+    "pca": lambda params: __import__("pyod.models.pca", fromlist=["PCA"]).PCA(
+        standardization=False,
+        contamination=_cast_float(params, "contamination", 0.1),
+    ),
+    "iforest": lambda params: __import__("pyod.models.iforest", fromlist=["IForest"]).IForest(
+        contamination=_cast_float(params, "contamination", 0.1),
+        n_estimators=_cast_int(params, "n_estimators", 100),
+    ),
 }
 # PCA standardization=False is REQUIRED — PyOD's PCA standardizes internally by
 # default (standardization=True), which would double-scale on top of RobustScaler
 # and defeat GRP-06's intent (scaler is our single source of truth for scaling).
+# It is a correctness constant, NOT a tunable knob.
 
 _ATTRIBUTABLE = {"ecod", "copod"}  # only these expose self.O for per-feature attribution
 
@@ -59,12 +100,12 @@ class GroupMultivariateDetector:
         # matrix of per-feature tail probabilities for ecod/copod.
     """
 
-    def __init__(self, detector_name: str) -> None:
+    def __init__(self, detector_name: str, params: dict[str, str] | None = None) -> None:
         if detector_name not in _DETECTOR_FACTORY:
             raise ValueError(f"Unknown group detector: {detector_name!r}")
         self._name = detector_name
         self._scaler = RobustScaler()
-        self._model = _DETECTOR_FACTORY[detector_name]()
+        self._model = _DETECTOR_FACTORY[detector_name](params or {})
         self._fitted = False
 
     def fit(self, matrix: list[list[float]]) -> None:

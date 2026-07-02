@@ -200,3 +200,81 @@ class TestGroupMultivariateDetectorBundleRoundtrip:
         restored_scores, _ = restored.score_batch(X_TEST_JOINT_ANOMALY)
 
         assert restored_scores == original_scores
+
+
+class TestGroupMultivariateDetectorParams:
+    """ALGO-01/02 + RESEARCH honesty constraint: contamination is a genuine
+    knob for is_anomaly (threshold_) but must NEVER move decision_function()."""
+
+    @pytest.mark.parametrize("detector_name", ["ecod", "copod", "pca"])
+    def test_contamination_changes_is_anomaly_not_score(self, detector_name):
+        """Two contamination values on the identical fixture: is_anomaly may
+        differ (threshold_ shifts) but decision_function scores are IDENTICAL —
+        encodes RESEARCH Pitfall 2's score-vs-threshold distinction.
+
+        iforest is excluded here (see test_iforest_contamination_changes_threshold_only
+        below) — IForest's decision_function is inherently stochastic across
+        separate fit() calls (unseeded random_state), so raw score equality
+        cannot be asserted the same way without also seeding random_state,
+        which the production factory deliberately does not do.
+        """
+        low_contam = GroupMultivariateDetector(detector_name, {"contamination": "0.05"})
+        high_contam = GroupMultivariateDetector(detector_name, {"contamination": "0.4"})
+        low_contam.fit(X_TRAIN_JOINT)
+        high_contam.fit(X_TRAIN_JOINT)
+
+        low_scores, _ = low_contam.score_batch(X_TEST_JOINT_ANOMALY)
+        high_scores, _ = high_contam.score_batch(X_TEST_JOINT_ANOMALY)
+
+        # Same fixture, same scaler/model math -> identical continuous scores.
+        assert low_scores == pytest.approx(high_scores)
+        # But the fitted threshold_ (and therefore is_anomaly) differs because
+        # contamination controls the expected fraction of outliers in training.
+        assert low_contam._model.threshold_ != high_contam._model.threshold_
+
+    def test_iforest_contamination_changes_threshold_only(self):
+        """iforest variant of the above: contamination only shifts threshold_,
+        proven by fitting/scoring the SAME model instance twice with only the
+        contamination value mutated between calls (removes fit-to-fit
+        randomness as a confound, since the trees themselves never change)."""
+        det = GroupMultivariateDetector("iforest", {"contamination": "0.05"})
+        det.fit(X_TRAIN_JOINT)
+        scores, _ = det.score_batch(X_TEST_JOINT_ANOMALY)
+        threshold_low = det._model.threshold_
+
+        # Mutate contamination on the already-fitted model and recompute the
+        # decision threshold the way PyOD does internally (percentile of the
+        # training decision scores) — decision_function output is untouched.
+        det._model.contamination = 0.4
+        det._model._process_decision_scores()
+        threshold_high = det._model.threshold_
+
+        rescored, _ = det.score_batch(X_TEST_JOINT_ANOMALY)
+        assert scores == pytest.approx(rescored)
+        assert threshold_low != threshold_high
+
+    def test_iforest_n_estimators_honored(self):
+        """n_estimators is accepted and actually reaches the underlying IForest."""
+        det = GroupMultivariateDetector("iforest", {"n_estimators": "50"})
+        det.fit(X_TRAIN_JOINT)
+        assert det._model.n_estimators == 50
+
+    @pytest.mark.parametrize("detector_name", ["ecod", "copod"])
+    def test_non_iforest_ignores_n_estimators(self, detector_name):
+        """ecod/copod have no n_estimators concept — passing it must not raise."""
+        det = GroupMultivariateDetector(detector_name, {"n_estimators": "50"})
+        det.fit(X_TRAIN_JOINT)
+        scores, _ = det.score_batch(X_TEST_IN_DISTRIBUTION)
+        assert isinstance(scores[0], float)
+
+    def test_bad_contamination_value_falls_back_to_default(self):
+        """Malformed contamination must not raise — falls back to 0.1."""
+        det = GroupMultivariateDetector("ecod", {"contamination": "not-a-number"})
+        default_det = GroupMultivariateDetector("ecod")
+        assert det._model.contamination == default_det._model.contamination == 0.1
+
+    def test_params_none_uses_defaults(self):
+        """Constructing with params=None (registry default) behaves like {}."""
+        det = GroupMultivariateDetector("ecod", None)
+        default_det = GroupMultivariateDetector("ecod")
+        assert det._model.contamination == default_det._model.contamination

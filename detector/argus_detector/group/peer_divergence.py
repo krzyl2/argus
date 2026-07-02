@@ -14,6 +14,8 @@ PeerDivergenceDetector: stateless cross-member scorer using median/MAD.
     from the below-floor no-verdict case (RESEARCH Pitfall 4).
   - No persistent model — no fit() / no serialization needed (stateless per
     CONTEXT.md; Fit/Save is a no-op, wired in Plan 05-04).
+  - from_params(): overrides the flag threshold from a string params map
+    (ALGO-01/02) — the ONLY score-moving knob for this detector.
 
 Thread safety: stateless; safe to call from multiple threads concurrently.
 """
@@ -30,6 +32,17 @@ _MAD_CONST = 0.6745  # Iglewicz-Hoaglin constant for MAD-based modified z-score
 # ASQC Basic References in Quality Control) — used only when MAD == 0, since
 # 0.6745 is calibrated for MAD specifically, not meanAD.
 _MEAN_AD_CONST = 0.7979
+
+
+def _cast_float(params: dict[str, str], key: str, default: float) -> float:
+    """Cast a string param to float, returning default if key absent or invalid."""
+    raw = params.get(key)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        return default
 
 
 def modified_zscore(row: np.ndarray) -> np.ndarray:
@@ -56,7 +69,7 @@ def modified_zscore(row: np.ndarray) -> np.ndarray:
     return _MAD_CONST * (row - median) / mad
 
 
-def score_group(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def score_group(matrix: np.ndarray, threshold: float = _THRESHOLD) -> tuple[np.ndarray, np.ndarray]:
     """Score a (n_timestamps, n_members) matrix with per-timestamp robust z-scores.
 
     WR-03: the minimum-member floor (GRP-04) is enforced exclusively by
@@ -67,11 +80,15 @@ def score_group(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     for enforcing the floor themselves; passing n_members < _MIN_MEMBERS
     is outside this function's contract.
 
+    Args:
+        matrix: (n_timestamps, n_members) array.
+        threshold: flag boundary — `abs(z) > threshold` (ALGO-01/02 knob).
+
     Returns:
         (scores, flags) both shape (n_timestamps, n_members).
     """
     scores = np.apply_along_axis(modified_zscore, axis=1, arr=matrix)
-    flags = np.abs(scores) > _THRESHOLD
+    flags = np.abs(scores) > threshold
     return scores, flags
 
 
@@ -89,6 +106,20 @@ class PeerDivergenceDetector:
             # scores/flags are list[list[float]]/list[list[bool]],
             # shape (n_timestamps, n_members)
     """
+
+    def __init__(self, threshold: float = _THRESHOLD) -> None:
+        self._threshold = threshold
+
+    @classmethod
+    def from_params(cls, params: dict[str, str]) -> "PeerDivergenceDetector":
+        """Create a PeerDivergenceDetector from a string params map (ALGO-01/02).
+
+        Supported key: "threshold" (float, default 3.5) — the flag boundary
+        `abs(z) > threshold`. Absent or invalid values fall back to the
+        module-level default via `_cast_float`.
+        """
+        threshold = _cast_float(params, "threshold", _THRESHOLD)
+        return cls(threshold=threshold)
 
     def score_batch(
         self, matrix: list[list[float]]
@@ -112,5 +143,5 @@ class PeerDivergenceDetector:
                 f"insufficient members: got {n_members}, need >= {_MIN_MEMBERS}",
             )
 
-        scores, flags = score_group(x)
+        scores, flags = score_group(x, self._threshold)
         return scores.tolist(), flags.tolist(), None
