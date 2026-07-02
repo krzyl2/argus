@@ -10,6 +10,8 @@ function makeEntry(overrides: Partial<SensorEntry> = {}): SensorEntry {
     currentValue: '21.5',
     unitOfMeasurement: '°C',
     isTracked: false,
+    areaName: null,
+    domain: 'sensor',
     ...overrides,
   };
 }
