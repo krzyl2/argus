@@ -29,7 +29,7 @@ export function SensorSearchInput({ value, onChange }: SensorSearchInputProps) {
         class="argus-search__input"
         type="search"
         defaultValue={value}
-        placeholder="Filter by entity ID…"
+        placeholder="Filter by name or entity ID…"
         aria-label="Filter entities"
         onInput={handleInput}
       />

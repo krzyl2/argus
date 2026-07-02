@@ -24,8 +24,11 @@ public sealed class HaSensorRegistry : IHaSensorRegistry
         if (string.IsNullOrEmpty(q))
             return current;
 
+        // SRCH-01: match entity_id OR friendly_name (case-insensitive substring) — a strict
+        // superset of the entity_id-only behavior, so existing entity_id searches are unaffected.
         return current
-            .Where(e => e.EntityId.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Where(e => e.EntityId.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                        (e.FriendlyName is not null && e.FriendlyName.Contains(q, StringComparison.OrdinalIgnoreCase)))
             .ToList();
     }
 

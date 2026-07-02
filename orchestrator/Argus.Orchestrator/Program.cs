@@ -265,6 +265,8 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
             currentValue = e.CurrentValue.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
             unitOfMeasurement = e.UnitOfMeasurement,
             isTracked = e.IsTracked,
+            areaName = e.AreaName,
+            domain = e.Domain,
         };
     });
 

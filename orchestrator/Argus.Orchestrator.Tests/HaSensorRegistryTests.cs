@@ -150,6 +150,22 @@ public class HaSensorRegistryTests
         Assert.Empty(result);
     }
 
+    [Fact]
+    public void GetFiltered_MatchesFriendlyNameWhenEntityIdDoesNotMatch_SRCH01()
+    {
+        var registry = new HaSensorRegistry();
+
+        registry.UpdateSnapshot(new[]
+        {
+            MakeDto("sensor.abc123", "21.5", friendlyName: "Living Room Temp"),
+            MakeDto("sensor.def456", "55.0", friendlyName: "Bedroom Humidity"),
+        }, new HashSet<string>());
+
+        var result = registry.GetFiltered("Living Room");
+        Assert.Single(result);
+        Assert.Equal("sensor.abc123", result[0].EntityId);
+    }
+
     // -----------------------------------------------------------------------
     // IsTracked
     // -----------------------------------------------------------------------
