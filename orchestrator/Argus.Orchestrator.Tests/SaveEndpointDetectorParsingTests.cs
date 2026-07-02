@@ -9,12 +9,15 @@ using YamlDotNet.Serialization.NamingConventions;
 namespace Argus.Orchestrator.Tests;
 
 /// <summary>
-/// Tests for the indexed detector form field parser and extended save handler logic.
-/// Validates CFG-03: indexed detector fields → EntityConfig.Detectors, multi-detector
+/// Tests for the JSON SaveRequest -> Dictionary&lt;int, List&lt;DetectorConfig&gt;&gt; mapping
+/// used by the POST /api/sensors/save handler (Phase 7 — replaces the removed
+/// DetectorFieldParser regex-based form parsing with a direct JSON body mapping).
+///
+/// Validates CFG-03: SaveRequest.Entities[].Detectors -> EntityConfig.Detectors, multi-detector
 /// round-trip, empty-list HST default, and entity-index correlation stability.
 ///
-/// Fully offline — no HTTP server required. The parser logic is extracted to
-/// DetectorFieldParser (internal static) for direct unit testing.
+/// Fully offline — no HTTP server required. Mirrors the exact mapping logic in Program.cs's
+/// save handler (entityId-keyed lookup, positional index = position in sorted resolvedIds).
 /// </summary>
 public class SaveEndpointDetectorParsingTests
 {
@@ -53,25 +56,46 @@ public class SaveEndpointDetectorParsingTests
         return serializer.Serialize(root);
     }
 
+    /// <summary>
+    /// Mirrors Program.cs's save-handler mapping: SaveRequest.Entities keyed by entityId,
+    /// then positionally re-keyed by index in the sorted resolvedIds list.
+    /// </summary>
+    private static Dictionary<int, List<DetectorConfig>> MapToParsedDetectors(
+        SaveRequest body, IEnumerable<string> sortedIds)
+    {
+        var detectorsByEntityId = body.Entities
+            .Where(e => !string.IsNullOrEmpty(e.EntityId))
+            .ToDictionary(
+                e => e.EntityId,
+                e => e.Detectors.Select(d => new DetectorConfig { Name = d.Name, Params = d.Params }).ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        return sortedIds
+            .Select((id, ei) => (ei, dets: detectorsByEntityId.TryGetValue(id, out var d) ? d : new List<DetectorConfig>()))
+            .ToDictionary(x => x.ei, x => x.dets);
+    }
+
     // -----------------------------------------------------------------------
-    // DetectorFieldParser.Parse — indexed form field parsing
+    // SaveRequest -> parsedDetectors mapping
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Parse_SingleDetectorSingleEntity_ReturnsSingleDetectorConfig()
+    public void Map_SingleDetectorSingleEntity_ReturnsSingleDetectorConfig()
     {
-        // Arrange: form keys for entity 0, detector 0 → HST with defaults
-        var formKeys = new Dictionary<string, string>
+        var body = new SaveRequest
         {
-            ["detectors[0][0][name]"] = "hst",
-            ["detectors[0][0][params][window]"] = "250",
-            ["detectors[0][0][params][n_trees]"] = "25",
+            Entities =
+            [
+                new SaveEntity
+                {
+                    EntityId = "sensor.a",
+                    Detectors = [new SaveDetector { Name = "hst", Params = new() { ["window"] = "250", ["n_trees"] = "25" } }]
+                }
+            ]
         };
 
-        // Act
-        var result = DetectorFieldParser.Parse(formKeys);
+        var result = MapToParsedDetectors(body, ["sensor.a"]);
 
-        // Assert: entity index 0 → one detector
         Assert.True(result.ContainsKey(0), "Expected detector entry for entity index 0");
         Assert.Single(result[0]);
         Assert.Equal("hst", result[0][0].Name);
@@ -80,21 +104,26 @@ public class SaveEndpointDetectorParsingTests
     }
 
     [Fact]
-    public void Parse_MultipleDetectorsSameEntity_ReturnsMultipleDetectorsInOrder()
+    public void Map_MultipleDetectorsSameEntity_ReturnsMultipleDetectorsInOrder()
     {
-        // Arrange: entity 0 with HST (det 0) + MAD (det 1)
-        var formKeys = new Dictionary<string, string>
+        var body = new SaveRequest
         {
-            ["detectors[0][0][name]"] = "hst",
-            ["detectors[0][0][params][window]"] = "250",
-            ["detectors[0][1][name]"] = "mad",
-            ["detectors[0][1][params][threshold]"] = "3.5",
+            Entities =
+            [
+                new SaveEntity
+                {
+                    EntityId = "sensor.a",
+                    Detectors =
+                    [
+                        new SaveDetector { Name = "hst", Params = new() { ["window"] = "250" } },
+                        new SaveDetector { Name = "mad", Params = new() { ["threshold"] = "3.5" } },
+                    ]
+                }
+            ]
         };
 
-        // Act
-        var result = DetectorFieldParser.Parse(formKeys);
+        var result = MapToParsedDetectors(body, ["sensor.a"]);
 
-        // Assert
         Assert.Equal(2, result[0].Count);
         Assert.Equal("hst", result[0][0].Name);
         Assert.Equal("mad", result[0][1].Name);
@@ -102,19 +131,18 @@ public class SaveEndpointDetectorParsingTests
     }
 
     [Fact]
-    public void Parse_TwoEntitiesWithDetectors_ReturnsTwoEntityEntries()
+    public void Map_TwoEntitiesWithDetectors_ReturnsTwoEntityEntries()
     {
-        // Arrange: entity 0 → HST, entity 1 → STL
-        var formKeys = new Dictionary<string, string>
+        var body = new SaveRequest
         {
-            ["detectors[0][0][name]"] = "hst",
-            ["detectors[0][0][params][window]"] = "300",
-            ["detectors[1][0][name]"] = "stl",
-            ["detectors[1][0][params][period]"] = "24",
+            Entities =
+            [
+                new SaveEntity { EntityId = "sensor.a", Detectors = [new SaveDetector { Name = "hst", Params = new() { ["window"] = "300" } }] },
+                new SaveEntity { EntityId = "sensor.b", Detectors = [new SaveDetector { Name = "stl", Params = new() { ["period"] = "24" } }] },
+            ]
         };
 
-        // Act
-        var result = DetectorFieldParser.Parse(formKeys);
+        var result = MapToParsedDetectors(body, ["sensor.a", "sensor.b"]);
 
         Assert.Equal(2, result.Count);
         Assert.Equal("hst", result[0][0].Name);
@@ -124,72 +152,28 @@ public class SaveEndpointDetectorParsingTests
     }
 
     [Fact]
-    public void Parse_EmptyFormKeys_ReturnsEmptyDictionary()
+    public void Map_EmptyEntities_ReturnsEmptyDictionary()
     {
-        // Arrange: no detector fields submitted
-        var formKeys = new Dictionary<string, string>();
+        var body = new SaveRequest { Entities = [] };
 
-        // Act
-        var result = DetectorFieldParser.Parse(formKeys);
+        var result = MapToParsedDetectors(body, []);
 
         Assert.Empty(result);
     }
 
     [Fact]
-    public void Parse_NonDetectorKeys_AreIgnored()
+    public void Map_EntityNotInSortedIds_IsIgnored()
     {
-        // Arrange: form has entity checkboxes but no detector fields
-        var formKeys = new Dictionary<string, string>
+        // Entity present in body but not in the resolved/sorted id set (e.g. filtered out
+        // by GlobExpander) must not appear in the result.
+        var body = new SaveRequest
         {
-            ["entities"] = "sensor.temp",
-            ["include_patterns"] = "sensor.*",
+            Entities = [new SaveEntity { EntityId = "sensor.excluded", Detectors = [new SaveDetector { Name = "hst" }] }]
         };
 
-        // Act
-        var result = DetectorFieldParser.Parse(formKeys);
+        var result = MapToParsedDetectors(body, []);
 
         Assert.Empty(result);
-    }
-
-    // -----------------------------------------------------------------------
-    // WR-03: int.TryParse — overflow / malformed index skip
-    // -----------------------------------------------------------------------
-
-    [Fact]
-    public void Parse_OverflowingEntityIndex_IsSkippedNotThrown()
-    {
-        // WR-03: crafted input with ei > int.MaxValue must be silently skipped,
-        // not throw OverflowException. Valid fields in the same POST must still parse.
-        var formKeys = new Dictionary<string, string>
-        {
-            ["detectors[2147483648][0][name]"] = "hst",   // ei overflows int — skip
-            ["detectors[0][0][name]"]          = "mad",   // valid — must survive
-        };
-
-        // Must not throw; overflow key silently ignored
-        var result = DetectorFieldParser.Parse(formKeys);
-
-        // The overflow key produces no entry; result should have exactly 1 entry (key=0)
-        Assert.Single(result);
-        Assert.True(result.ContainsKey(0), "Valid key must still parse");
-        Assert.Equal("mad", result[0][0].Name);
-    }
-
-    [Fact]
-    public void Parse_OverflowingDetectorIndex_IsSkippedNotThrown()
-    {
-        // WR-03: crafted input with di > int.MaxValue must be silently skipped.
-        var formKeys = new Dictionary<string, string>
-        {
-            ["detectors[0][2147483648][name]"] = "hst",  // di overflows int — skip
-            ["detectors[0][0][name]"]          = "stl",  // valid
-        };
-
-        var result = DetectorFieldParser.Parse(formKeys);
-
-        Assert.True(result.ContainsKey(0));
-        Assert.Single(result[0]);   // only the valid di=0 entry
-        Assert.Equal("stl", result[0][0].Name);
     }
 
     // -----------------------------------------------------------------------
@@ -199,20 +183,17 @@ public class SaveEndpointDetectorParsingTests
     [Fact]
     public void Correlate_TwoEntitiesAlphabetical_DetectorIdx0MapsToFirstEntityAlpha()
     {
-        // The canonical order is alphabetical by EntityId (same order as BuildFullPage renders).
-        // detectors[0][...] must map to the FIRST entity alphabetically.
-        // Arrange: two entity IDs submitted in reverse alpha order
+        // The canonical order is alphabetical by EntityId (same order the SPA renders).
+        // detectors[0] must map to the FIRST entity alphabetically.
         var submittedIds = new List<string> { "sensor.z_sensor", "sensor.a_sensor" };
         var sortedIds = submittedIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToList();
 
-        // Detector fields indexed in the correlation order (NOT submission order)
         var parsedDetectors = new Dictionary<int, List<DetectorConfig>>
         {
             [0] = [new DetectorConfig { Name = "hst", Params = [] }],
             [1] = [new DetectorConfig { Name = "mad", Params = [] }],
         };
 
-        // Act: correlate positionally with sorted entity IDs
         var entityConfigs = sortedIds
             .Select((id, i) => new EntityConfig
             {
@@ -224,7 +205,6 @@ public class SaveEndpointDetectorParsingTests
             })
             .ToList();
 
-        // Assert: first alphabetically (sensor.a_sensor) gets detectors[0] = hst
         var aEntity = entityConfigs.First(e => e.EntityId == "sensor.a_sensor");
         var zEntity = entityConfigs.First(e => e.EntityId == "sensor.z_sensor");
         Assert.Equal("hst", aEntity.Detectors[0].Name);
@@ -234,8 +214,7 @@ public class SaveEndpointDetectorParsingTests
     [Fact]
     public void Correlate_NonContiguousCheckedEntities_CorrelationIsStable()
     {
-        // Pitfall 5: entity_idx must be stable regardless of which entities are checked.
-        // If only entities B and D are checked (out of A, B, C, D), B maps to ei=0, D to ei=1.
+        // Pitfall 5: entity index must be stable regardless of which entities are checked.
         var submittedIds = new List<string> { "sensor.b_sensor", "sensor.d_sensor" };
         var sortedIds = submittedIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToList();
 
@@ -259,32 +238,29 @@ public class SaveEndpointDetectorParsingTests
         var bEntity = entityConfigs.First(e => e.EntityId == "sensor.b_sensor");
         var dEntity = entityConfigs.First(e => e.EntityId == "sensor.d_sensor");
 
-        // sensor.b_sensor (first alphabetically) → detectors[0] → hst with window=100
         Assert.Equal("hst", bEntity.Detectors[0].Name);
         Assert.Equal("100", bEntity.Detectors[0].Params["window"]);
-        // sensor.d_sensor → detectors[1] → stl
         Assert.Equal("stl", dEntity.Detectors[0].Name);
     }
 
     // -----------------------------------------------------------------------
-    // Empty detector list → default HST (Pitfall 7 / CFG-03)
+    // Empty detector list -> default HST (Pitfall 7 / CFG-03)
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void DefaultHst_EntityWithNoDetectorFields_GetsHstDefault()
+    public void DefaultHst_EntityWithNoDetectors_GetsHstDefault()
     {
-        // Arrange: entity is submitted (in selectedIds) but no detectors[0][...] keys present
-        var parsedDetectors = new Dictionary<int, List<DetectorConfig>>();
-        // Entity index 0 has no parsed detectors
-        var entityId = "sensor.temp";
+        var body = new SaveRequest
+        {
+            Entities = [new SaveEntity { EntityId = "sensor.temp", Detectors = [] }]
+        };
 
-        // Act: apply the empty-list default logic (entityId used conceptually — suppressed)
-        _ = entityId;
+        var parsedDetectors = MapToParsedDetectors(body, ["sensor.temp"]);
+
         var detectors = parsedDetectors.TryGetValue(0, out var dets) && dets.Count > 0
             ? dets
             : [new DetectorConfig { Name = "hst", Params = [] }];
 
-        // Assert
         Assert.Single(detectors);
         Assert.Equal("hst", detectors[0].Name);
     }
@@ -296,7 +272,6 @@ public class SaveEndpointDetectorParsingTests
     [Fact]
     public void RoundTrip_MultipleDetectorsPerEntity_LoadsBackCorrectly()
     {
-        // Arrange: build YAML with 2 detectors on one entity
         var entities = new List<EntityConfig>
         {
             new()
@@ -331,10 +306,8 @@ public class SaveEndpointDetectorParsingTests
         var path = WriteTempYaml(yaml);
         var logger = NullLogger<EntitiesConfigLoader>.Instance;
 
-        // Act
         var config = EntitiesConfigLoader.Load(path, logger);
 
-        // Assert
         Assert.Single(config.Entities);
         Assert.Equal(2, config.Entities[0].Detectors.Count);
 
@@ -352,7 +325,6 @@ public class SaveEndpointDetectorParsingTests
     [Fact]
     public void RoundTrip_HstWithAllSevenParams_LoadsBackCorrectly()
     {
-        // Arrange: all 7 HST params serialized
         var entities = new List<EntityConfig>
         {
             new()
@@ -383,10 +355,8 @@ public class SaveEndpointDetectorParsingTests
         var path = WriteTempYaml(yaml);
         var logger = NullLogger<EntitiesConfigLoader>.Instance;
 
-        // Act
         var config = EntitiesConfigLoader.Load(path, logger);
 
-        // Assert
         var hst = config.Entities[0].Detectors[0];
         Assert.Equal("500", hst.Params["window"]);
         Assert.Equal("0.002", hst.Params["frozen_variance_threshold"]);
@@ -399,11 +369,9 @@ public class SaveEndpointDetectorParsingTests
     [Fact]
     public void SwapCalledAfterWrite_LiveConfigReflectsNewEntities()
     {
-        // Simulates the save handler: write config → re-load → Swap → Get() returns new config
         var initial = new EntitiesConfig();
         var live = new LiveEntitiesConfig(initial);
 
-        // Simulate what the save handler does after WriteAsync succeeds:
         var newEntities = new EntitiesConfig
         {
             Entities =
@@ -417,10 +385,8 @@ public class SaveEndpointDetectorParsingTests
             ]
         };
 
-        // Act: call Swap with the reloaded config
         live.Swap(newEntities);
 
-        // Assert: Get() returns the new config
         Assert.Same(newEntities, live.Get());
         Assert.Single(live.Get().Entities);
         Assert.Equal("sensor.new", live.Get().Entities[0].EntityId);
@@ -429,12 +395,10 @@ public class SaveEndpointDetectorParsingTests
     [Fact]
     public void SwapCalledAfterWrite_ConfigChangedEventFired()
     {
-        // Verifies that Swap fires ConfigChanged (the reload trigger)
         var live = new LiveEntitiesConfig(new EntitiesConfig());
         var eventFired = false;
         live.ConfigChanged += (_, _) => eventFired = true;
 
-        // Act
         live.Swap(new EntitiesConfig());
 
         Assert.True(eventFired, "ConfigChanged must fire after Swap — this is the reload trigger");

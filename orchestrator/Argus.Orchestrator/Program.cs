@@ -202,17 +202,9 @@ app.Use(async (ctx, next) =>
 // auto-placement into a no-op per official minimal-API middleware ordering rules).
 app.UseRouting();
 
-// [3] Static files — serves wwwroot/ (htmx.min.js, argus.css) under correct PathBase.
+// [3] Static files — serves wwwroot/ (Vite SPA build output) under correct PathBase.
 // T-01-07: only committed wwwroot/ tree; no directory listing; no /data exposure.
 app.UseStaticFiles();
-
-// ── Phase-2 in-memory patterns holder ─────────────────────────────────────
-// Keeps the last-saved raw patterns in memory so GET /sensors can pre-fill
-// the textareas without re-reading entities.yaml on every page load.
-// Initialized empty; updated on each successful POST /api/sensors/save.
-// A fresh restart shows empty pattern boxes — acceptable (resolved entities preserved).
-var lastIncludePatterns = "";
-var lastExcludePatterns = "";
 
 // ── Interim auth helper (Phase 2 — full validate_session deferred to Phase 4) ──
 // Authorizes only connections from the Supervisor IP (172.30.32.2) or loopback.
@@ -264,7 +256,7 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
         {
             entityId = e.EntityId,
             friendlyName = showFriendlyName ? e.FriendlyName : null,
-            currentValue = e.CurrentValue.ToString("G"),
+            currentValue = e.CurrentValue.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
             unitOfMeasurement = e.UnitOfMeasurement,
             isTracked = e.IsTracked,
         };
@@ -275,39 +267,14 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
 
 // [4b] GET /api/detectors/defaults — JSON detector default params (replaces
 // /api/detectors/new-entry htmx fragment). Default values table is the authoritative
-// v3.0 spec (EntityPickerPage constants / 07-UI-SPEC "Detector default values") — do not
+// v3.0 spec (DetectorDefaults / 07-UI-SPEC "Detector default values") — do not
 // invent new defaults here.
 app.MapGet("/api/detectors/defaults", (HttpRequest req) =>
 {
     if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
 
     var name = (req.Query["name"].FirstOrDefault() ?? "").ToLowerInvariant();
-
-    Dictionary<string, string>? defaults = name switch
-    {
-        "hst" => new Dictionary<string, string>
-        {
-            ["window"] = "250",
-            ["n_trees"] = "25",
-            ["high_threshold"] = "0.7",
-            ["low_threshold"] = "0.3",
-            ["min_consecutive"] = "3",
-            ["frozen_window"] = "10",
-            ["frozen_variance_threshold"] = "0.001",
-        },
-        "mad" => new Dictionary<string, string>
-        {
-            ["threshold"] = "3.5",
-            ["window"] = "20",
-        },
-        "stl" => new Dictionary<string, string>
-        {
-            ["period"] = "24",
-            ["seasonal"] = "7",
-            ["threshold"] = "3.0",
-        },
-        _ => null,
-    };
+    var defaults = DetectorDefaults.Get(name);
 
     if (defaults is null) return Results.StatusCode(400);
 
@@ -463,10 +430,6 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         logger.LogInformation(LogEvents.UiSaveSuccess,
             "UI save succeeded: {EntityCount} entities written to {Path}", entities.Count, entitiesPath);
 
-        // Update in-memory patterns holder for next GET /sensors pre-fill
-        lastIncludePatterns = includeRaw;
-        lastExcludePatterns = excludeRaw;
-
         // SC5: pass real hasHst so the ~4-min warm-up note renders when HST detectors are present.
         var hasHst = entities.Any(e => e.Detectors.Any(
             d => d.Name.Equals("hst", StringComparison.OrdinalIgnoreCase)));
@@ -481,5 +444,10 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         return Results.Json(new { ok = false, kind = "error", reason });
     }
 });
+
+// [6] SPA fallback — serves index.html for any unmatched, extensionless path (root and any
+// client-side hash routes). Never intercepts /api/* (explicit routes win) or real static
+// files (UseStaticFiles already served above). Must be registered last.
+app.MapFallbackToFile("index.html");
 
 app.Run();
