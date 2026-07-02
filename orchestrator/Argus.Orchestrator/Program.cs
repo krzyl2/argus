@@ -143,6 +143,11 @@ if (!string.IsNullOrWhiteSpace(connectionSettings.InfluxUrl))
     // IInfluxDataSource resolves to the same singleton InfluxDbReader (for BatchSchedulerWorker injection)
     builder.Services.AddSingleton<IInfluxDataSource>(sp => sp.GetRequiredService<InfluxDbReader>());
 
+    // Register the group Influx source (Phase 6 / GRP-02) — reuses the already-registered
+    // singleton InfluxDBClient via GroupInfluxReader's production ctor; no second client.
+    builder.Services.AddSingleton<GroupInfluxReader>();
+    builder.Services.AddSingleton<IGroupInfluxDataSource>(sp => sp.GetRequiredService<GroupInfluxReader>());
+
     // Register batch detector client adapter (wraps DetectionGateway for IBatchDetectorClient)
     builder.Services.AddSingleton<IBatchDetectorClient, BatchDetectorClientAdapter>();
 
@@ -154,6 +159,7 @@ if (!string.IsNullOrWhiteSpace(connectionSettings.InfluxUrl))
         sp.GetRequiredService<IBatchDetectorClient>(),
         sp.GetRequiredService<IStatePublisher>(),
         sp.GetRequiredService<ILiveEntitiesConfig>(),
+        sp.GetRequiredService<IGroupInfluxDataSource>(),
         sp.GetRequiredService<DetectionGateway>(),
         sp.GetRequiredService<ILogger<BatchSchedulerWorker>>()));
 }
