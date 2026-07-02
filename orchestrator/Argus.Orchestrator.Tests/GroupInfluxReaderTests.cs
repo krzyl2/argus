@@ -157,6 +157,50 @@ public class GroupInfluxReaderTests
             new[] { "sensor.a\\evil" }, "5m", "mean", TimeSpan.FromMinutes(30), CancellationToken.None));
     }
 
+    // CR-02: newline/carriage-return in an interpolated value must be rejected — the prior
+    // regex ([^"\\]+) admitted \n/\r, allowing a member id or config field to inject an
+    // additional Flux pipeline line across the query's line breaks.
+    [Fact]
+    public async Task QueryGroupAsync_UnsafeMemberIdWithNewline_ThrowsArgumentException()
+    {
+        var reader = new GroupInfluxReader(new ThrowingQueryApi(), ValidSettings(),
+            NullLogger<GroupInfluxReader>.Instance);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => reader.QueryGroupAsync(
+            new[] { "sensor.a\n|> filter(fn: (r) => true)" }, "5m", "mean", TimeSpan.FromMinutes(30), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task QueryGroupAsync_UnsafeMemberIdWithCarriageReturn_ThrowsArgumentException()
+    {
+        var reader = new GroupInfluxReader(new ThrowingQueryApi(), ValidSettings(),
+            NullLogger<GroupInfluxReader>.Instance);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => reader.QueryGroupAsync(
+            new[] { "sensor.a\revil" }, "5m", "mean", TimeSpan.FromMinutes(30), CancellationToken.None));
+    }
+
+    // WR-04: every/aggFn now go through the same guard as members/bucket/measurement/field.
+    [Fact]
+    public async Task QueryGroupAsync_UnsafeEveryWithNewline_ThrowsArgumentException()
+    {
+        var reader = new GroupInfluxReader(new ThrowingQueryApi(), ValidSettings(),
+            NullLogger<GroupInfluxReader>.Instance);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => reader.QueryGroupAsync(
+            new[] { "sensor.a" }, "5m\n|> filter(fn: (r) => true)", "mean", TimeSpan.FromMinutes(30), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task QueryGroupAsync_UnsafeAggFnWithQuote_ThrowsArgumentException()
+    {
+        var reader = new GroupInfluxReader(new ThrowingQueryApi(), ValidSettings(),
+            NullLogger<GroupInfluxReader>.Instance);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => reader.QueryGroupAsync(
+            new[] { "sensor.a" }, "5m", "mean\"evil", TimeSpan.FromMinutes(30), CancellationToken.None));
+    }
+
     // ─── Pivot null-cell exclusion tests ─────────────────────────────────────
 
     [Fact]

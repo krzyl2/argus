@@ -16,11 +16,12 @@ namespace Argus.Orchestrator.Batch;
 /// </summary>
 public sealed class GroupInfluxReader : IGroupInfluxDataSource
 {
-    // T-06-03 (mirrors T-02-02-02): allowlist guard — reject values that contain double-quote
-    // or backslash which would allow Flux string-literal injection. Member ids and config field
+    // T-06-03 (mirrors T-02-02-02): guard — reject values that contain double-quote, backslash,
+    // or a line break (CR-02). All three would allow escaping the Flux string literal or
+    // injecting an additional Flux pipeline stage across a newline. Member ids and config field
     // names are operator-controlled (accepted risk), but must not contain these characters.
     private static readonly Regex _safeFluxString =
-        new(@"^[^""\\]+$", RegexOptions.Compiled);
+        new(@"^[^""\\\r\n]+$", RegexOptions.Compiled);
 
     private readonly IInfluxQueryApi _queryApi;
     private readonly ConnectionSettings _settings;
@@ -73,7 +74,9 @@ public sealed class GroupInfluxReader : IGroupInfluxDataSource
         }
 
         // T-06-03: validate every interpolated value to prevent Flux string-literal injection.
-        // Values containing " or \ would terminate the Flux string and inject operators.
+        // Values containing ", \, or a line break would terminate the Flux string/statement
+        // and inject operators (CR-02). WR-04: every/aggFn are the same risk class (operator-
+        // controlled Flux fragment) as the fields below, so they go through the same guard.
         foreach (var memberId in members)
         {
             if (!_safeFluxString.IsMatch(memberId))
@@ -85,6 +88,10 @@ public sealed class GroupInfluxReader : IGroupInfluxDataSource
             throw new ArgumentException($"Unsafe InfluxMeasurement for Flux query: {_settings.InfluxMeasurement}");
         if (!string.IsNullOrEmpty(_settings.InfluxValueField) && !_safeFluxString.IsMatch(_settings.InfluxValueField))
             throw new ArgumentException($"Unsafe InfluxValueField for Flux query: {_settings.InfluxValueField}");
+        if (!_safeFluxString.IsMatch(every))
+            throw new ArgumentException($"Unsafe 'every' value for Flux query: {every}", nameof(every));
+        if (!_safeFluxString.IsMatch(aggFn))
+            throw new ArgumentException($"Unsafe 'aggFn' value for Flux query: {aggFn}", nameof(aggFn));
 
         // T-06-04: use contains(value:..., set:[...]) array filter rather than an or-chain —
         // shorter and avoids parser edge cases with very long boolean expressions (RESEARCH Pitfall 4).
