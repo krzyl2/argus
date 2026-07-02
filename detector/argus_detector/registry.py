@@ -40,7 +40,14 @@ class DetectorRegistry:
       Direct injection (used by ModelStore.load_all_into).
 
     _create_detector(detector) -> object
-      Factory: "mad"/"robust_zscore" -> PyODDetector; "stl" -> StlDetector; "hst" -> EntityDetector.
+      Factory: "mad"/"robust_zscore" -> PyODDetector; "stl" -> StlDetector; "hst" -> EntityDetector;
+      "peer_divergence" -> PeerDivergenceDetector; "ecod"/"copod"/"pca"/"iforest" -> GroupMultivariateDetector.
+
+    Group entries (Plan 05-04, GRP-03..07) reuse this same registry/_detectors dict —
+    keyed as (group_slug, detector) where group_slug = f"group_{group_id}" (see
+    model_store.group_slug()). The "group_" prefix is the sole collision-avoidance
+    mechanism against per-entity keys (RESEARCH.md Pitfall 5); callers (servicer.py)
+    are responsible for passing an already-namespaced slug as the "entity_id" arg.
     """
 
     def __init__(self) -> None:
@@ -129,8 +136,10 @@ class DetectorRegistry:
             values: Training values.
         """
         # WR-01: StlDetector is stateless; it has no fit() method.
+        # peer_divergence (GRP-03/04) is likewise stateless — no fit() method
+        # (mirrors the stl no-fit branch, per 05-PATTERNS.md).
         # Register it as-is so score_batch can use it.
-        if detector == "stl":
+        if detector in ("stl", "peer_divergence"):
             key = (entity_id, detector)
             lock = self._entity_lock(key)
             with lock:
@@ -225,7 +234,8 @@ class DetectorRegistry:
         """Factory: map detector name to a fresh (unfitted) detector instance.
 
         Args:
-            detector: "mad" | "robust_zscore" | "stl" | "hst"
+            detector: "mad" | "robust_zscore" | "stl" | "hst" |
+                      "peer_divergence" | "ecod" | "copod" | "pca" | "iforest"
 
         Returns:
             Fresh detector instance.
@@ -243,4 +253,12 @@ class DetectorRegistry:
             return StlDetector()
         if detector == "hst":
             return EntityDetector()
+        if detector == "peer_divergence":
+            # GRP-03/04: stateless cross-member robust-statistic scorer.
+            from argus_detector.group.peer_divergence import PeerDivergenceDetector  # lazy import
+            return PeerDivergenceDetector()
+        if detector in ("ecod", "copod", "pca", "iforest"):
+            # GRP-05/06: RobustScaler + PyOD joint-multivariate wrapper.
+            from argus_detector.group.multivariate_detector import GroupMultivariateDetector  # lazy import
+            return GroupMultivariateDetector(detector)
         raise ValueError(f"Unknown detector: {detector!r}")
