@@ -244,60 +244,79 @@ bool IsAuthorizedRequest(HttpContext ctx)
     return false;
 }
 
-// [4] Root redirect — Phase 2 replaces placeholder page with entity picker
-app.MapGet("/", () => Results.Redirect("sensors"));
-
-// [5] GET /sensors — full entity picker page (UI-02 SC1)
-// CFG-04: resolve ILiveEntitiesConfig and pass .Get() so the page always
-// reflects the current entity set (not a ctor-captured stale reference).
-app.MapGet("/sensors", (HttpRequest req, IHaSensorRegistry registry,
-    ILiveEntitiesConfig liveCfg, ArgusHealthSignals health) =>
-{
-    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
-
-    var ip = req.Headers["X-Ingress-Path"].FirstOrDefault() ?? "";
-    var q  = req.Query["q"].FirstOrDefault() ?? "";
-    var html = EntityPickerPage.BuildFullPage(
-        ip, registry, liveCfg.Get(), health, q,
-        lastIncludePatterns, lastExcludePatterns);
-    return Results.Content(html, "text/html");
-});
-
-// [6] GET /api/sensors — htmx list fragment (search refresh target)
-// CFG-04: pass liveCfg.Get() so tracked entities keep their detector disclosure panels
-// on htmx search refresh (not a captured stale EntitiesConfig — WR-01 fix).
+// [4] GET /api/sensors — JSON sensor list (SPA fetch target, replaces htmx HTML fragment)
+// CFG-04: pass liveCfg.Get() so friendlyName/isTracked reflect the current config, not a
+// captured stale EntitiesConfig reference (WR-01 fix carried forward).
 app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEntitiesConfig liveCfg) =>
 {
     if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
 
     var q = req.Query["q"].FirstOrDefault() ?? "";
-    return Results.Content(
-        EntityPickerPage.BuildListFragment(registry, liveCfg.Get(), q),
-        "text/html");
+    var entries = registry.GetFiltered(q);
+
+    var payload = entries.Select(e =>
+    {
+        // Friendly name: only surfaced when present and differs from entity_id (exact v3.0 rule)
+        var showFriendlyName = !string.IsNullOrEmpty(e.FriendlyName) &&
+            !string.Equals(e.FriendlyName, e.EntityId, StringComparison.Ordinal);
+
+        return new
+        {
+            entityId = e.EntityId,
+            friendlyName = showFriendlyName ? e.FriendlyName : null,
+            currentValue = e.CurrentValue.ToString("G"),
+            unitOfMeasurement = e.UnitOfMeasurement,
+            isTracked = e.IsTracked,
+        };
+    });
+
+    return Results.Json(new { entries = payload });
 });
 
-// [6b] GET /api/detectors/new-entry — htmx fragment for "Add detector" button
-// Returns a new .argus-detector-entry block with HST defaults at the given indices.
-// T-03-12: same IsAuthorizedRequest guard as all endpoints (Phase 2 interim auth).
-// T-03-14: entity_idx/det_idx are int.Parse'd; used only as name= indices — no file/DB access.
-app.MapGet("/api/detectors/new-entry", (HttpRequest req) =>
+// [4b] GET /api/detectors/defaults — JSON detector default params (replaces
+// /api/detectors/new-entry htmx fragment). Default values table is the authoritative
+// v3.0 spec (EntityPickerPage constants / 07-UI-SPEC "Detector default values") — do not
+// invent new defaults here.
+app.MapGet("/api/detectors/defaults", (HttpRequest req) =>
 {
     if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
 
-    var entityIdxStr = req.Query["entity_idx"].FirstOrDefault() ?? "0";
-    var detIdxStr    = req.Query["det_idx"].FirstOrDefault() ?? "0";
+    var name = (req.Query["name"].FirstOrDefault() ?? "").ToLowerInvariant();
 
-    if (!int.TryParse(entityIdxStr, out var ei)) ei = 0;
-    if (!int.TryParse(detIdxStr, out var dj)) dj = 0;
+    Dictionary<string, string>? defaults = name switch
+    {
+        "hst" => new Dictionary<string, string>
+        {
+            ["window"] = "250",
+            ["n_trees"] = "25",
+            ["high_threshold"] = "0.7",
+            ["low_threshold"] = "0.3",
+            ["min_consecutive"] = "3",
+            ["frozen_window"] = "10",
+            ["frozen_variance_threshold"] = "0.001",
+        },
+        "mad" => new Dictionary<string, string>
+        {
+            ["threshold"] = "3.5",
+            ["window"] = "20",
+        },
+        "stl" => new Dictionary<string, string>
+        {
+            ["period"] = "24",
+            ["seasonal"] = "7",
+            ["threshold"] = "3.0",
+        },
+        _ => null,
+    };
 
-    var fragment = EntityPickerPage.BuildDetectorEntry(
-        ei, dj, new DetectorConfig { Name = "hst", Params = [] });
+    if (defaults is null) return Results.StatusCode(400);
 
-    return Results.Content(fragment, "text/html");
+    return Results.Json(new { name, @params = defaults });
 });
 
-// [7] POST /api/sensors/save — expand patterns, write entities.yaml, create lock file,
-//     parse detector fields, call ILiveEntitiesConfig.Swap (Phase 3 extension).
+// [5] POST /api/sensors/save — expand patterns, write entities.yaml, create lock file,
+//     call ILiveEntitiesConfig.Swap. JSON body (SaveRequest) replaces form-encoded body;
+//     ReadFromJsonAsync's natural nested DTO eliminates DetectorFieldParser entirely.
 app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry registry,
     Argus.Orchestrator.Config.ConfigWriter writer, ConnectionSettings settings,
     ILiveEntitiesConfig liveCfg, ILogger<Program> logger, CancellationToken ct) =>
@@ -306,16 +325,33 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
 
     try
     {
-        var form = await req.ReadFormAsync(ct);
+        SaveRequest? body;
+        try
+        {
+            body = await req.ReadFromJsonAsync<SaveRequest>(ct);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Malformed JSON body — 400 with a generic reason, never raw exception text.
+            return Results.Json(new { ok = false, kind = "error", reason = "invalid request body" },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
 
-        // Selected entity ids from checkboxes (may be empty — valid per Pitfall 5)
-        var selectedIds = form["entities"]
+        if (body is null)
+        {
+            return Results.Json(new { ok = false, kind = "error", reason = "invalid request body" },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        // Selected entity ids (may be empty — valid per Pitfall 5)
+        var selectedIds = body.Entities
+            .Select(e => e.EntityId)
             .Where(s => !string.IsNullOrEmpty(s))
             .ToList();
 
-        // Split include/exclude textarea content by newline
-        var includeRaw = form["include_patterns"].FirstOrDefault() ?? "";
-        var excludeRaw = form["exclude_patterns"].FirstOrDefault() ?? "";
+        // Split include/exclude textarea content by newline (same shape as v3.0 form fields)
+        var includeRaw = body.Include ?? "";
+        var excludeRaw = body.Exclude ?? "";
         var include = includeRaw.Split('\n',
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var exclude = excludeRaw.Split('\n',
@@ -324,15 +360,27 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         // Resolve: GlobExpander.Resolve with selectedIds as manuallyChecked, [] as manuallyUnchecked
         // (the UI model: checkboxes ARE the manual selection — patterns feed the base set)
         var resolvedIds = GlobExpander.Resolve(
-            registry.GetAll(), include, exclude,
-            selectedIds.Where(s => s is not null).Select(s => s!), []);
+            registry.GetAll(), include, exclude, selectedIds, []);
 
-        // Parse indexed detector form fields (Phase 3 — CFG-03)
-        // detectors[{ei}][{di}][name] and detectors[{ei}][{di}][params][{key}]
-        // {ei} correlates positionally to the sorted (alphabetical EntityId) resolved entity list.
-        var formPairs = form.Keys
-            .Select(k => new KeyValuePair<string, string>(k, form[k].FirstOrDefault() ?? string.Empty));
-        var parsedDetectors = DetectorFieldParser.Parse(formPairs);
+        // Build parsedDetectors keyed by entity index — index = position in the sorted
+        // (alphabetical EntityId) resolvedIds list, exactly like the v3.0 form-parsing path.
+        // Source is now the JSON body's per-entity detectors array, keyed by entityId.
+        var detectorsByEntityId = body.Entities
+            .Where(e => !string.IsNullOrEmpty(e.EntityId))
+            .ToDictionary(
+                e => e.EntityId,
+                e => e.Detectors
+                    .Select(d => new DetectorConfig { Name = d.Name, Params = d.Params })
+                    .ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var sortedIds = resolvedIds
+            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var parsedDetectors = sortedIds
+            .Select((id, ei) => (ei, dets: detectorsByEntityId.TryGetValue(id, out var d) ? d : new List<DetectorConfig>()))
+            .ToDictionary(x => x.ei, x => x.dets);
 
         // Phase 4 input validation gate (UI-04 / T-04-01–T-04-05):
         // Validate raw parsedDetectors BEFORE defaulting and BEFORE any write.
@@ -342,18 +390,12 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         {
             logger.LogWarning(LogEvents.UiValidationBlocked,
                 "UI save blocked: {ErrorCount} validation error(s)", validationErrors.Count);
-            return Results.Content(
-                EntityPickerPage.BuildValidationBanner(validationErrors.Count),
-                "text/html");
+            return Results.Json(new { ok = false, kind = "validation", errorCount = validationErrors.Count });
         }
 
         // Build EntityConfig list: sorted alphabetically by EntityId so ei=0 → first alpha
         var snapshotById = registry.GetAll()
             .ToDictionary(e => e.EntityId, StringComparer.OrdinalIgnoreCase);
-
-        var sortedIds = resolvedIds
-            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
-            .ToList();
 
         var entities = sortedIds
             .Select((id, ei) =>
@@ -428,7 +470,7 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         // SC5: pass real hasHst so the ~4-min warm-up note renders when HST detectors are present.
         var hasHst = entities.Any(e => e.Detectors.Any(
             d => d.Name.Equals("hst", StringComparison.OrdinalIgnoreCase)));
-        return Results.Content(EntityPickerPage.BuildSuccessBanner(entities.Count, hasHst), "text/html");
+        return Results.Json(new { ok = true, count = entities.Count, hasHst });
     }
     catch (Exception ex)
     {
@@ -436,7 +478,7 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
 
         // Generic reason exposed to browser — no internal exception detail (T-02-11)
         var reason = ex is IOException ? "disk error" : "unexpected error";
-        return Results.Content(EntityPickerPage.BuildErrorBanner(reason), "text/html");
+        return Results.Json(new { ok = false, kind = "error", reason });
     }
 });
 
