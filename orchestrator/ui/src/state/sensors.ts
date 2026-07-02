@@ -6,6 +6,10 @@ import { validateDetectorParams, hasAnyError } from '../validation/detectorParam
 // Detector default values — must match EntityPickerPage.cs constants exactly
 // (07-UI-SPEC.md "Detector default values"). AddDetectorButton constructs new
 // entries from this table client-side — no server round-trip needed.
+//
+// WR-02: intentionally mirrored in orchestrator/Argus.Orchestrator/Web/DetectorDefaults.cs
+// (backing GET /api/detectors/defaults, which this client does not call). If either table
+// changes, update BOTH and confirm they still match exactly.
 export const DETECTOR_DEFAULTS: Record<'hst' | 'mad' | 'stl', Record<string, string>> = {
   hst: {
     window: '250',

@@ -6,6 +6,11 @@ namespace Argus.Orchestrator.Web;
 /// from the removed EntityPickerPage HST/MAD/STL default constants (07-UI-SPEC "Detector
 /// default values"). Extracted as a standalone static class so it is directly unit-testable
 /// without spinning up the Kestrel pipeline.
+///
+/// WR-02: intentionally mirrored in orchestrator/ui/src/state/sensors.ts (DETECTOR_DEFAULTS).
+/// The client does not call GET /api/detectors/defaults — it constructs new detector entries
+/// client-side to avoid a server round-trip. If either table changes, update BOTH and confirm
+/// they still match exactly.
 /// </summary>
 public static class DetectorDefaults
 {
