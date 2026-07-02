@@ -59,7 +59,7 @@ export function GroupEditorForm({ groupId, sensors }: GroupEditorFormProps) {
 
   const saving = saveState.value === 'saving';
   const result = typeof saveState.value === 'object' ? saveState.value.result : null;
-  const hasErrors = !!memberFloorError || !!unitMismatchError || !!nameError;
+  const hasErrors = !!memberFloorError || !!unitMismatchError || !!nameError || !!noAlgorithmError;
 
   function toggleMember(entityId: string, checked: boolean) {
     draftMembers.value = checked

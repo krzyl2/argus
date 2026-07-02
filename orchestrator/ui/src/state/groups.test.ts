@@ -1,5 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { loadGroups, groups, loading } from './groups';
+import {
+  loadGroups,
+  groups,
+  loading,
+  saveGroup,
+  saveState,
+  draftGroupId,
+  draftFriendlyName,
+  draftMembers,
+  draftMode,
+  draftDetector,
+  draftParams,
+} from './groups';
 import * as client from '../api/client';
 import type { GroupConfig } from '../api/types';
 
@@ -54,6 +66,45 @@ describe('loadGroups', () => {
     await firstCall;
 
     expect(groups.value).toEqual(freshGroups);
+  });
+});
+
+describe('saveGroup', () => {
+  beforeEach(() => {
+    groups.value = [];
+    saveState.value = 'idle';
+    draftGroupId.value = 'grp.new';
+    draftFriendlyName.value = 'New Group';
+    draftMembers.value = ['sensor.a', 'sensor.b', 'sensor.c'];
+    draftMode.value = 'joint';
+    draftDetector.value = null;
+    draftParams.value = {};
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('CR-02: refuses to save and does not POST when no algorithm was chosen', async () => {
+    const apiPostSpy = vi.spyOn(client, 'apiPost');
+
+    await saveGroup();
+
+    expect(apiPostSpy).not.toHaveBeenCalled();
+    expect(saveState.value).toEqual({
+      result: { ok: false, kind: 'error', reason: 'Choose an algorithm to continue.' },
+    });
+  });
+
+  it('CR-02: saves with the explicitly chosen detector (no silent peer_divergence default)', async () => {
+    draftDetector.value = 'ecod';
+    const apiPostSpy = vi.spyOn(client, 'apiPost').mockResolvedValue({ ok: true, count: 1 });
+    vi.spyOn(client, 'apiGet').mockResolvedValue({ groups: [] });
+
+    await saveGroup();
+
+    const postedBody = apiPostSpy.mock.calls[0][1] as { groups: GroupConfig[] };
+    expect(postedBody.groups[0].detector).toBe('ecod');
   });
 });
 

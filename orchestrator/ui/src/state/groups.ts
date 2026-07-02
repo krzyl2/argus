@@ -105,13 +105,24 @@ export function validateDraftMembers(memberEntries: SensorEntry[]): {
  * from the current `groups` signal with the draft group upserted by groupId.
  */
 export async function saveGroup(): Promise<void> {
+  // CR-02: guided-flow suggestions are approve-only — nothing auto-applies
+  // without an explicit pick. Refuse to save if the operator never chose an
+  // algorithm, rather than silently defaulting to 'peer_divergence'. The UI
+  // also disables Save via hasErrors/noAlgorithmError; this is defense in
+  // depth for any other caller of saveGroup().
+  if (draftDetector.value === null) {
+    saveState.value = {
+      result: { ok: false, kind: 'error', reason: 'Choose an algorithm to continue.' },
+    };
+    return;
+  }
   saveState.value = 'saving';
   const draft: GroupConfig = {
     groupId: draftGroupId.value,
     friendlyName: draftFriendlyName.value,
     members: draftMembers.value,
     mode: draftMode.value,
-    detector: draftDetector.value ?? 'peer_divergence',
+    detector: draftDetector.value,
     params: draftParams.value,
   };
   const existingIdx = groups.value.findIndex((g) => g.groupId === draft.groupId);
