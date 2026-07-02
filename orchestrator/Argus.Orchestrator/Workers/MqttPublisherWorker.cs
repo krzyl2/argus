@@ -29,10 +29,17 @@ public sealed class MqttPublisherWorker : BackgroundService
     private CancellationToken _stoppingToken;
 
     // Snapshot of the last-published group set, used to diff removed members on ConfigChanged
-    // (GRP-08 — retract removed members BEFORE republishing the new set). Updated only at the
-    // end of each publish pass; the worker is single-threaded enough (ExecuteAsync +
-    // sequential fire-and-forget handler body) for this to be a safe diff basis.
+    // (GRP-08 — retract removed members BEFORE republishing the new set). Read-modify-write of
+    // this field plus the retract/publish pass is serialized by _configChangeGate (CR-01) so
+    // that two rapid ConfigChanged events cannot race on a stale snapshot.
     private IReadOnlyList<GroupConfig> _lastGroups = System.Array.Empty<GroupConfig>();
+
+    // Serializes OnConfigChanged task bodies (CR-01): without this, two fire-and-forget
+    // Task.Run calls triggered by rapid successive config saves could both read the same
+    // stale _lastGroups, compute the diff against it, and race on the final write — causing
+    // a missed or incorrect group member retraction (orphaned HA entity). Mirrors the
+    // _connectGate idiom in MqttConnection.
+    private readonly SemaphoreSlim _configChangeGate = new(1, 1);
 
     public MqttPublisherWorker(
         MqttConnection mqtt,
@@ -67,55 +74,66 @@ public sealed class MqttPublisherWorker : BackgroundService
             // Uses stored _stoppingToken (host lifetime) for broker call cancellation.
             // Ordering (GRP-08): retract removed group members FIRST, then republish entities
             // (existing), then republish the current group set, then update the snapshot.
+            // The whole body is serialized by _configChangeGate (CR-01) so that two rapid
+            // config changes cannot both read the same stale _lastGroups and race on the
+            // diff-then-write, which could miss or duplicate a group member retraction.
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    // Retract removed group members before anything else is republished.
-                    var newGroups = _liveConfig.Get().Groups;
-                    var newGroupsById = newGroups.ToDictionary(g => g.GroupId, StringComparer.OrdinalIgnoreCase);
-
-                    foreach (var oldGroup in _lastGroups)
+                    await _configChangeGate.WaitAsync(_stoppingToken);
+                    try
                     {
-                        if (newGroupsById.TryGetValue(oldGroup.GroupId, out var newGroup))
-                        {
-                            var isPeer = string.Equals(oldGroup.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase);
-                            if (!isPeer) continue; // joint groups have no per-member diff
+                        // Retract removed group members before anything else is republished.
+                        var newGroups = _liveConfig.Get().Groups;
+                        var newGroupsById = newGroups.ToDictionary(g => g.GroupId, StringComparer.OrdinalIgnoreCase);
 
-                            var removed = oldGroup.Members
-                                .Except(newGroup.Members, StringComparer.OrdinalIgnoreCase)
-                                .ToList();
-                            if (removed.Count > 0)
-                                await DiscoveryPublisher.RetractGroupAsync(_mqtt, oldGroup, removed, _stoppingToken);
-                        }
-                        else
+                        foreach (var oldGroup in _lastGroups)
                         {
-                            // Whole group_id removed — retract all of it.
-                            var isPeer = string.Equals(oldGroup.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase);
-                            IEnumerable<string?> removedAll = isPeer
-                                ? oldGroup.Members.Cast<string?>()
-                                : [null];
-                            await DiscoveryPublisher.RetractGroupAsync(_mqtt, oldGroup, removedAll, _stoppingToken);
+                            if (newGroupsById.TryGetValue(oldGroup.GroupId, out var newGroup))
+                            {
+                                var isPeer = string.Equals(oldGroup.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase);
+                                if (!isPeer) continue; // joint groups have no per-member diff
+
+                                var removed = oldGroup.Members
+                                    .Except(newGroup.Members, StringComparer.OrdinalIgnoreCase)
+                                    .ToList();
+                                if (removed.Count > 0)
+                                    await DiscoveryPublisher.RetractGroupAsync(_mqtt, oldGroup, removed, _stoppingToken);
+                            }
+                            else
+                            {
+                                // Whole group_id removed — retract all of it.
+                                var isPeer = string.Equals(oldGroup.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase);
+                                IEnumerable<string?> removedAll = isPeer
+                                    ? oldGroup.Members.Cast<string?>()
+                                    : [null];
+                                await DiscoveryPublisher.RetractGroupAsync(_mqtt, oldGroup, removedAll, _stoppingToken);
+                            }
                         }
+
+                        var entities = _liveConfig.Get().Entities;
+                        await DiscoveryPublisher.PublishAllAsync(_mqtt, entities, _stoppingToken);
+
+                        foreach (var entity in entities)
+                        {
+                            await _statePublisher.PublishAvailabilityAsync(
+                                entity.EntityId, online: true, _stoppingToken);
+                        }
+
+                        foreach (var group in newGroups)
+                            await DiscoveryPublisher.PublishGroupAsync(_mqtt, group, _stoppingToken);
+
+                        _lastGroups = newGroups;
+
+                        _logger.LogInformation(LogEvents.MqttDiscoveryPublished,
+                            "ConfigChanged: republished discovery + availability for {Count} entities, {GroupCount} groups",
+                            entities.Count, newGroups.Count);
                     }
-
-                    var entities = _liveConfig.Get().Entities;
-                    await DiscoveryPublisher.PublishAllAsync(_mqtt, entities, _stoppingToken);
-
-                    foreach (var entity in entities)
+                    finally
                     {
-                        await _statePublisher.PublishAvailabilityAsync(
-                            entity.EntityId, online: true, _stoppingToken);
+                        _configChangeGate.Release();
                     }
-
-                    foreach (var group in newGroups)
-                        await DiscoveryPublisher.PublishGroupAsync(_mqtt, group, _stoppingToken);
-
-                    _lastGroups = newGroups;
-
-                    _logger.LogInformation(LogEvents.MqttDiscoveryPublished,
-                        "ConfigChanged: republished discovery + availability for {Count} entities, {GroupCount} groups",
-                        entities.Count, newGroups.Count);
                 }
                 catch (OperationCanceledException)
                 {
