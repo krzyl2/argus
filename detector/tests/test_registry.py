@@ -87,6 +87,31 @@ class TestRegistryFitOne:
         registry.fit_one("sensor.test", "robust_zscore", [1.0] * 10)
         assert registry.has_model("sensor.test", "robust_zscore")
 
+    def test_fit_one_joint_detector_reapplies_changed_params_on_refit(self):
+        """CR-01: a changed param (e.g. sensitivity preset) must take effect on
+        every re-fit of a joint-multivariate detector (ecod/copod/pca/iforest),
+        not just the first. Previously fit_one() deep-copied the stale,
+        already-constructed model instead of reconstructing it from `params`,
+        silently discarding param changes on every subsequent nightly re-fit.
+        """
+        registry = DetectorRegistry()
+        matrix = [[float(i), float(i) * 2.0] for i in range(20)]
+
+        # First fit with default contamination.
+        registry.fit_one("group_g1", "iforest", matrix, params={"contamination": "0.1"})
+        model_after_first_fit = registry._detectors[("group_g1", "iforest")]
+        assert model_after_first_fit._model.contamination == 0.1
+
+        # Second fit ("nightly re-fit") with a changed contamination param.
+        registry.fit_one("group_g1", "iforest", matrix, params={"contamination": "0.3"})
+        model_after_second_fit = registry._detectors[("group_g1", "iforest")]
+
+        assert model_after_second_fit._model.contamination == 0.3, (
+            "changed contamination param was not applied on re-fit — "
+            "sensitivity preset change was silently dropped"
+        )
+        assert model_after_second_fit is not model_after_first_fit
+
     def test_fit_one_concurrent_no_exception(self):
         """Concurrent fit_one and score_batch for same entity must not raise or deadlock.
 

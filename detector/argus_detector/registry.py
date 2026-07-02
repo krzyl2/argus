@@ -164,8 +164,18 @@ class DetectorRegistry:
         with lock:
             current = self._detectors.get(key)
 
-        # Deep-copy before training — CPU-bound; runs OUTSIDE lock (MDL-04)
-        candidate = copy.deepcopy(current) if current else self._create_detector(detector, params)
+        # Deep-copy before training — CPU-bound; runs OUTSIDE lock (MDL-04).
+        # CR-01: joint-multivariate detectors (ecod/copod/pca/iforest) are
+        # always refit from scratch nightly anyway — there is no warm-start
+        # state worth preserving across a param change. Deep-copying `current`
+        # here would silently discard a changed `params` (e.g. an operator's
+        # sensitivity preset change), since the stale instance already baked
+        # its old params into its constructor. Always reconstruct via the
+        # factory for these so `params` actually takes effect on re-fit.
+        if current is not None and detector in ("ecod", "copod", "pca", "iforest"):
+            candidate = self._create_detector(detector, params)
+        else:
+            candidate = copy.deepcopy(current) if current else self._create_detector(detector, params)
         candidate.fit(values)
 
         # Atomic swap
