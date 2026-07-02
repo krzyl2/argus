@@ -10,10 +10,12 @@ namespace Argus.Orchestrator.Config;
 /// Uses <see cref="FileSystemName.MatchesSimpleExpression"/> (BCL, net8.0) for glob matching —
 /// supports <c>*</c> and <c>?</c> wildcards, case-insensitive. Zero new NuGet dependencies.
 ///
-/// Combine model (authoritative — matches CONTEXT.md):
+/// Combine model:
 ///   resolved = (entities matching include-globs − entities matching exclude-globs)
 ///              ∪ manually-checked − manually-unchecked
-///   - No include patterns → ALL snapshot entities are the base candidate set.
+///   - No include patterns → EMPTY base set. Selection is then checkbox-driven: only
+///     manually-checked entities are tracked. (Changed from "empty = ALL", which silently
+///     tracked every discovered sensor and flooded HA with entities.)
 ///   - Excludes remove from the pattern-selected set.
 ///   - manually-checked are ADDED after excludes (manual check overrides an exclusion).
 ///   - manually-unchecked are REMOVED last (manual uncheck overrides an inclusion). Manual wins.
@@ -24,7 +26,7 @@ public static class GlobExpander
     /// Resolves the entity selection from glob patterns and manual overrides.
     /// </summary>
     /// <param name="snapshot">Current live sensor snapshot (source of valid entity_ids).</param>
-    /// <param name="includePatterns">Glob patterns for entities to include. Empty = include all.</param>
+    /// <param name="includePatterns">Glob patterns for entities to include. Empty = empty base set (checkbox-driven).</param>
     /// <param name="excludePatterns">Glob patterns for entities to exclude from the include set.</param>
     /// <param name="manuallyChecked">Entity ids explicitly checked by the user; added after excludes.</param>
     /// <param name="manuallyUnchecked">Entity ids explicitly unchecked by the user; removed last.</param>
@@ -52,12 +54,14 @@ public static class GlobExpander
             .ToList();
 
         // Step 3: build pattern-selected set
-        //   No include patterns → all entities are the base candidate set.
+        //   No include patterns → EMPTY base set (checkbox-driven selection; Step 5 adds
+        //     the manually-checked entities). Previously this meant "all", which silently
+        //     tracked every discovered sensor.
         //   Otherwise → only entities matching at least one include pattern.
         HashSet<string> patternSelected;
         if (includes.Count == 0)
         {
-            patternSelected = new HashSet<string>(allIds, StringComparer.OrdinalIgnoreCase);
+            patternSelected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
         else
         {

@@ -38,7 +38,8 @@ public class GlobExpanderTests
     [Fact]
     public void Resolve_ExcludePattern_RemovesMatchingEntities()
     {
-        // All sensors minus those matching *test*
+        // Include "*" makes the base set all sensors; exclude *test* then removes matches.
+        // (An explicit include is required now that empty include = empty base set.)
         var snapshot = MakeSnapshot(
             "sensor.living_room_temp",
             "sensor.test_device",
@@ -46,7 +47,7 @@ public class GlobExpanderTests
 
         var result = GlobExpander.Resolve(
             snapshot,
-            includePatterns: [],
+            includePatterns: ["*"],
             excludePatterns: ["*test*"],
             manuallyChecked: [],
             manuallyUnchecked: []);
@@ -58,9 +59,10 @@ public class GlobExpanderTests
     }
 
     [Fact]
-    public void Resolve_NoIncludePatterns_AllEntitiesAreBase()
+    public void Resolve_NoIncludePatterns_NoCheckboxes_SelectsNothing()
     {
-        // When no include patterns: all snapshot entities form the base candidate set
+        // WHY: empty include patterns must NOT track every discovered sensor — that flooded HA
+        // with hundreds of auto-created entities. With no patterns and no checkboxes, track nothing.
         var snapshot = MakeSnapshot(
             "sensor.outdoor_temp",
             "sensor.indoor_humidity",
@@ -73,23 +75,42 @@ public class GlobExpanderTests
             manuallyChecked: [],
             manuallyUnchecked: []);
 
-        Assert.Equal(3, result.Count);
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void Resolve_NoIncludePatterns_WithCheckboxes_SelectsOnlyChecked()
+    {
+        // WHY: checkbox-driven selection — with no include patterns, ONLY the manually-checked
+        // entities are tracked (not the whole snapshot). This is the primary UI workflow.
+        var snapshot = MakeSnapshot(
+            "sensor.outdoor_temp",
+            "sensor.indoor_humidity",
+            "binary_sensor.motion");
+
+        var result = GlobExpander.Resolve(
+            snapshot,
+            includePatterns: [],
+            excludePatterns: [],
+            manuallyChecked: ["sensor.outdoor_temp"],
+            manuallyUnchecked: []);
+
+        Assert.Single(result);
         Assert.Contains("sensor.outdoor_temp", result);
-        Assert.Contains("sensor.indoor_humidity", result);
-        Assert.Contains("binary_sensor.motion", result);
     }
 
     [Fact]
     public void Resolve_ManualCheckOverridesExclude()
     {
-        // An exclude pattern removes sensor.test_device, but manually checking it adds it back
+        // Include "*" selects both; exclude *test* removes sensor.test_device; manually
+        // checking it adds it back (manual check overrides an exclusion).
         var snapshot = MakeSnapshot(
             "sensor.living_room_temp",
             "sensor.test_device");
 
         var result = GlobExpander.Resolve(
             snapshot,
-            includePatterns: [],
+            includePatterns: ["*"],
             excludePatterns: ["*test*"],
             manuallyChecked: ["sensor.test_device"],
             manuallyUnchecked: []);
@@ -139,21 +160,22 @@ public class GlobExpanderTests
     [Fact]
     public void Resolve_EmptyWhitespacePatterns_AreIgnored()
     {
-        // Empty and whitespace-only patterns must NOT be treated as match-all wildcards
+        // WHY: whitespace-only patterns must NOT be treated as literal patterns NOR as match-all.
+        // They are ignored → empty base set, so only the manually-checked entity survives. If
+        // whitespace were mistakenly a wildcard, indoor_humidity would leak in too.
         var snapshot = MakeSnapshot(
             "sensor.outdoor_temp",
             "sensor.indoor_humidity");
 
-        // With only whitespace include patterns — treated as NO include patterns → all entities base
         var result = GlobExpander.Resolve(
             snapshot,
             includePatterns: ["", "   "],
             excludePatterns: ["", "  "],
-            manuallyChecked: [],
+            manuallyChecked: ["sensor.outdoor_temp"],
             manuallyUnchecked: []);
 
-        // Whitespace includes are ignored, so all entities are the base set
-        Assert.Equal(2, result.Count);
+        Assert.Single(result);
+        Assert.Contains("sensor.outdoor_temp", result);
     }
 
     [Fact]
@@ -180,13 +202,16 @@ public class GlobExpanderTests
         // must NOT be injected into entities.yaml
         var snapshot = MakeSnapshot("sensor.outdoor_temp", "sensor.indoor_humidity");
 
+        // Check one real id alongside the fake so the assertion isn't vacuously true on an
+        // empty result: the real id must survive, the fake must be dropped.
         var result = GlobExpander.Resolve(
             snapshot,
             includePatterns: [],
             excludePatterns: [],
-            manuallyChecked: ["sensor.injected_fake_entity"],
+            manuallyChecked: ["sensor.outdoor_temp", "sensor.injected_fake_entity"],
             manuallyUnchecked: []);
 
         Assert.DoesNotContain("sensor.injected_fake_entity", result);
+        Assert.Contains("sensor.outdoor_temp", result);
     }
 }
