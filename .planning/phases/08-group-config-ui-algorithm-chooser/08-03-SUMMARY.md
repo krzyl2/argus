@@ -159,3 +159,7 @@ None - no external service configuration required.
 ---
 *Phase: 08-group-config-ui-algorithm-chooser*
 *Completed: 2026-07-02*
+
+## Self-Check: PASSED
+
+All 10 created/referenced files verified present on disk; all 4 commit hashes (9a7ec49, 90bc627, d77368d, 9c53409) verified in git log.
