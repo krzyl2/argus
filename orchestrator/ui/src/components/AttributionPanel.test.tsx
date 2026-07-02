@@ -98,4 +98,13 @@ describe('AttributionPanel', () => {
     // No further calls after unmount.
     expect(apiGetSpy).toHaveBeenCalledTimes(2);
   });
+
+  it('WR-03: URL-encodes groupId in the status poll path', async () => {
+    const apiGetSpy = vi.spyOn(client, 'apiGet').mockResolvedValue({ status: null });
+
+    render(<AttributionPanel groupId="grp/weird?id" />);
+
+    await waitFor(() => expect(apiGetSpy).toHaveBeenCalledTimes(1));
+    expect(apiGetSpy).toHaveBeenCalledWith('api/groups/grp%2Fweird%3Fid/status');
+  });
 });

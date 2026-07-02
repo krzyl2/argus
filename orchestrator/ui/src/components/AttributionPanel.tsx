@@ -26,7 +26,7 @@ export function AttributionPanel({ groupId }: AttributionPanelProps) {
 
     async function poll() {
       try {
-        const res = await apiGet<GroupStatusResponse>(`api/groups/${groupId}/status`);
+        const res = await apiGet<GroupStatusResponse>(`api/groups/${encodeURIComponent(groupId)}/status`);
         if (!cancelled) {
           setStatus(res.status);
           setLoaded(true);
