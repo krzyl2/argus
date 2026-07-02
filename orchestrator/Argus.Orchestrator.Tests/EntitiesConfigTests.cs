@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Argus.Orchestrator.Config;
@@ -51,9 +52,11 @@ entities:
     }
 
     [Fact]
-    public void Load_EntityWithCovariates_ParsesSuccessfullyAndLogsWarning()
+    public void Load_EntityWithStrayCovariatesKey_ParsesSuccessfullyAndIgnoresIt()
     {
-        // Arrange
+        // Arrange — retired per-entity covariates/groups placeholders no longer exist as C#
+        // properties; IgnoreUnmatchedProperties() must still let stray YAML keys through
+        // without throwing (existing operator YAML with these keys must not break on upgrade).
         var yaml = @"
 entities:
   - entity_id: sensor.salon_temperatura
@@ -65,16 +68,14 @@ entities:
         params: {}
 ";
         var path = WriteTempYaml(yaml);
-        var (logger, messages) = CreateCapturingLogger();
+        var (logger, _) = CreateCapturingLogger();
 
-        // Act
+        // Act — must not throw
         var config = EntitiesConfigLoader.Load(path, logger);
 
-        // Assert: parse succeeded
+        // Assert: parse succeeded, stray key silently ignored
         Assert.Single(config.Entities);
-        // Assert: warning logged mentioning covariates/groups ignored
-        Assert.Contains(messages, m =>
-            m.Contains("covariates") || m.Contains("groups") || m.Contains("ignored"));
+        Assert.Equal("sensor.salon_temperatura", config.Entities[0].EntityId);
     }
 
     [Fact]
@@ -142,12 +143,166 @@ entities:
         Assert.Contains(messages, m => m.Contains("no entities") || m.Contains("empty pipeline"));
     }
 
+    [Fact]
+    public void Load_ValidJointGroup_Survives()
+    {
+        var yaml = @"
+entities: []
+groups:
+  - group_id: living_room_climate
+    friendly_name: Salon klimat
+    members: [sensor.a, sensor.b, sensor.c]
+    mode: joint
+    detector: pca
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, _) = CreateCapturingLogger();
+
+        var config = EntitiesConfigLoader.Load(path, logger);
+
+        Assert.Single(config.Groups);
+        Assert.Equal("living_room_climate", config.Groups[0].GroupId);
+    }
+
+    [Fact]
+    public void Load_GroupBelowFloor_IsPrunedAndWarns_DoesNotThrow()
+    {
+        var yaml = @"
+entities: []
+groups:
+  - group_id: too_small
+    friendly_name: Too small
+    members: [sensor.a, sensor.b]
+    mode: joint
+    detector: pca
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, messages) = CreateCapturingLogger();
+
+        // Act — must not throw
+        var config = EntitiesConfigLoader.Load(path, logger);
+
+        Assert.Empty(config.Groups);
+        Assert.Contains(messages, m => m.Contains("too_small") || m.Contains("minimum"));
+    }
+
+    [Fact]
+    public void Load_PeerDivergenceGroupWithMixedUnits_IsPrunedAndWarns()
+    {
+        var yaml = @"
+entities: []
+groups:
+  - group_id: mixed_units
+    friendly_name: Mixed units
+    members: [sensor.a, sensor.b, sensor.c]
+    mode: peer_divergence
+    detector: peer_divergence
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, messages) = CreateCapturingLogger();
+        var registry = new FakeHaSensorRegistry(new Dictionary<string, string?>
+        {
+            ["sensor.a"] = "°C",
+            ["sensor.b"] = "°C",
+            ["sensor.c"] = "%",
+        });
+
+        var config = EntitiesConfigLoader.Load(path, logger, registry);
+
+        Assert.Empty(config.Groups);
+        Assert.Contains(messages, m => m.Contains("mixed_units"));
+    }
+
+    [Fact]
+    public void Load_PeerDivergenceGroupWithNullRegistry_IsKept_ColdBootDegrade()
+    {
+        var yaml = @"
+entities: []
+groups:
+  - group_id: cold_boot
+    friendly_name: Cold boot
+    members: [sensor.a, sensor.b, sensor.c]
+    mode: peer_divergence
+    detector: peer_divergence
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, _) = CreateCapturingLogger();
+
+        // Act — no registry passed (defaults to null), must not throw and must KEEP the group
+        var config = EntitiesConfigLoader.Load(path, logger);
+
+        Assert.Single(config.Groups);
+        Assert.Equal("cold_boot", config.Groups[0].GroupId);
+    }
+
+    [Fact]
+    public void Load_MixedValidAndInvalidGroups_KeepsOnlyValid()
+    {
+        var yaml = @"
+entities: []
+groups:
+  - group_id: valid_group
+    friendly_name: Valid
+    members: [sensor.a, sensor.b, sensor.c]
+    mode: joint
+    detector: pca
+  - group_id: invalid_group
+    friendly_name: Invalid
+    members: [sensor.x, sensor.y]
+    mode: joint
+    detector: pca
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, _) = CreateCapturingLogger();
+
+        var config = EntitiesConfigLoader.Load(path, logger);
+
+        Assert.Single(config.Groups);
+        Assert.Equal("valid_group", config.Groups[0].GroupId);
+    }
+
+    [Fact]
+    public void Load_NoGroupsKey_YieldsEmptyGroupsList()
+    {
+        var yaml = @"
+entities: []
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, _) = CreateCapturingLogger();
+
+        var config = EntitiesConfigLoader.Load(path, logger);
+
+        Assert.NotNull(config.Groups);
+        Assert.Empty(config.Groups);
+    }
+
     private static string WriteTempYaml(string content)
     {
         var path = System.IO.Path.GetTempFileName() + ".yaml";
         System.IO.File.WriteAllText(path, content);
         return path;
     }
+}
+
+/// <summary>Minimal hand-written fake IHaSensorRegistry for peer-mode unit-check tests.</summary>
+internal class FakeHaSensorRegistry : Argus.Orchestrator.Ha.IHaSensorRegistry
+{
+    private readonly IReadOnlyList<Argus.Orchestrator.Ha.HaSensorEntry> _entries;
+
+    public FakeHaSensorRegistry(Dictionary<string, string?> unitsByEntityId)
+    {
+        _entries = unitsByEntityId
+            .Select(kvp => new Argus.Orchestrator.Ha.HaSensorEntry(kvp.Key, 0.0, kvp.Value, kvp.Key, true))
+            .ToList();
+    }
+
+    public IReadOnlyList<Argus.Orchestrator.Ha.HaSensorEntry> GetAll() => _entries;
+
+    public IReadOnlyList<Argus.Orchestrator.Ha.HaSensorEntry> GetFiltered(string q)
+        => throw new NotImplementedException();
+
+    public void UpdateSnapshot(IReadOnlyList<Argus.Orchestrator.Ha.HaStateDto> states, HashSet<string> trackedEntityIds)
+        => throw new NotImplementedException();
 }
 
 /// <summary>Captures log messages into a list for assertion.</summary>
