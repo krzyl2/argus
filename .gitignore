@@ -22,3 +22,7 @@ detector/argus_detector/proto/argus_pb2*.py
 deploy/certs/*.key
 deploy/certs/*.crt
 deploy/certs/*.srl
+
+# Local dev secrets (never commit — use deploy/.env.example as the template)
+deploy/.env
+.env

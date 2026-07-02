@@ -1,5 +1,7 @@
 # Argus Orchestrator — multi-stage build
-# Base image: mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled (INFRA-03, D-17)
+# Base image: mcr.microsoft.com/dotnet/aspnet:8.0-jammy-chiseled — the orchestrator is a
+# Web SDK app (v3 Ingress UI) and needs Microsoft.AspNetCore.App; the plain runtime image
+# lacks it and fails at launch with "No frameworks were found".
 # Build stage: mcr.microsoft.com/dotnet/sdk:8.0 (Grpc.Tools generates C# stubs from argus.proto)
 
 # ---- BUILD STAGE ----
@@ -20,7 +22,7 @@ RUN dotnet publish orchestrator/Argus.Orchestrator/Argus.Orchestrator.csproj \
     --no-restore
 
 # ---- FINAL STAGE ----
-FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled AS final
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-jammy-chiseled AS final
 WORKDIR /app
 
 # Copy published output from build stage

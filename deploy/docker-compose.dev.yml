@@ -1,0 +1,69 @@
+# Argus — self-contained LOCAL DEV stack.
+#
+# Runs detector + orchestrator + an anonymous MQTT broker together with insecure
+# gRPC (no mTLS, no Supervisor). The only external dependency is the Home Assistant
+# WebSocket you point ARGUS_HA_URL/ARGUS_HA_TOKEN at in deploy/.env.
+#
+# This is the fast "does the whole thing boot?" smoke test — it catches container
+# runtime/DI/startup bugs without building the multi-arch add-on image or touching HA.
+#
+# Usage:
+#   cp deploy/.env.example deploy/.env      # fill in ARGUS_HA_URL + ARGUS_HA_TOKEN
+#   docker compose -f deploy/docker-compose.dev.yml up --build
+#   → Ingress UI at http://localhost:8099/sensors
+#
+# For prod/edge (two-host, mTLS, remote detector) use docker-compose.edge.yml instead.
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "1883:1883"
+
+  detector:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.detector
+    image: argus-detector:dev
+    restart: unless-stopped
+    # No ARGUS_TLS_* → detector binds an insecure port on 50051 (dev/unit-test path).
+    environment:
+      ARGUS_LOG_LEVEL: INFO
+      ARGUS_MODEL_ROOT: /var/argus/models
+    volumes:
+      - detector-models:/var/argus/models
+    expose:
+      - "50051"
+
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.orchestrator
+    image: argus-orchestrator:dev
+    restart: unless-stopped
+    depends_on:
+      - detector
+      - mosquitto
+    env_file:
+      - .env
+    # Dev overrides (win over .env): in-network insecure detector + local anonymous broker,
+    # cleared mTLS so DetectorChannelFactory picks the insecure h2c path (matches detector).
+    environment:
+      ARGUS_DETECTOR_ENDPOINT: http://detector:50051
+      ARGUS_MQTT_HOST: mosquitto
+      ARGUS_MQTT_PORT: "1883"
+      ARGUS_ENTITIES_PATH: /data/entities.yaml
+      ARGUS_TLS_CA: ""
+      ARGUS_TLS_CERT: ""
+      ARGUS_TLS_KEY: ""
+    volumes:
+      - orchestrator-data:/data
+    ports:
+      - "8099:8099"
+
+volumes:
+  detector-models:
+  orchestrator-data:

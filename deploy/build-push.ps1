@@ -5,6 +5,7 @@
 # Usage:
 #   ./deploy/build-push.ps1 -Version 2.0.6
 #   ./deploy/build-push.ps1 -Version 2.0.6 -SkipPublish   # reuse existing publish output
+#   ./deploy/build-push.ps1 -Version 2.0.9 -Dev           # amd64-only, faster (skips arm64/QEMU)
 #
 # Prereqs (one-time):
 #   docker login ghcr.io -u krzyl2                          # PAT with write:packages
@@ -19,8 +20,17 @@ param(
     [string]$Image = 'ghcr.io/krzyl2/argus',
     [string]$Platforms = 'linux/amd64,linux/arm64',
     [switch]$SkipConfigSync,
-    [switch]$SkipPublish
+    [switch]$SkipPublish,
+    # -Dev: amd64-only build. Skips the slow arm64/QEMU leg for fast HA iteration on
+    # an amd64 host. Do NOT use for real releases (arm64 users would get a stale :latest).
+    [switch]$Dev
 )
+
+# -Dev forces single-arch amd64 unless the caller passed an explicit -Platforms override.
+if ($Dev -and -not $PSBoundParameters.ContainsKey('Platforms')) {
+    $Platforms = 'linux/amd64'
+    Write-Host "-Dev: building amd64-only ($Platforms)"
+}
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
