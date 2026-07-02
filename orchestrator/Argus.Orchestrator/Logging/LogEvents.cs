@@ -76,4 +76,7 @@ public static class LogEvents
     public static readonly EventId GroupSkippedStale        = new(5013, nameof(GroupSkippedStale));
     public static readonly EventId GroupSchedulerError      = new(5014, nameof(GroupSchedulerError));
     public static readonly EventId GroupNoData              = new(5015, nameof(GroupNoData));
+
+    // Phase 8 UI — Group config UI + algorithm chooser (7009)
+    public static readonly EventId GroupUiValidationBlocked = new(7009, nameof(GroupUiValidationBlocked));
 }

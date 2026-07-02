@@ -451,7 +451,162 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
     }
 });
 
-// [6] SPA fallback — serves index.html for any unmatched, extensionless path (root and any
+// [7] GET /api/groups — JSON group list (08-02 SPA #/groups). CFG-04: liveCfg.Get() read
+// fresh per-request, never a captured stale reference.
+app.MapGet("/api/groups", (HttpRequest req, ILiveEntitiesConfig liveCfg) =>
+{
+    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
+
+    var groups = liveCfg.Get().Groups.Select(g => new
+    {
+        groupId = g.GroupId,
+        friendlyName = g.FriendlyName,
+        members = g.Members,
+        mode = g.Mode,
+        detector = g.Detector,
+        @params = g.Params,
+    });
+
+    return Results.Json(new { groups });
+});
+
+// [8] POST /api/groups/save — validate (floor 3, peer unit consistency, member cap), then
+// full-list-replace the top-level groups: key via ConfigWriter + LiveEntitiesConfig.Swap,
+// WITHOUT disturbing entities:/_patterns: (byte-for-byte the /api/sensors/save pipeline).
+app.MapPost("/api/groups/save", async (HttpRequest req, IHaSensorRegistry registry,
+    Argus.Orchestrator.Config.ConfigWriter writer, ConnectionSettings settings,
+    ILiveEntitiesConfig liveCfg, ILogger<Program> logger, CancellationToken ct) =>
+{
+    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
+
+    try
+    {
+        GroupSaveRequest? body;
+        try
+        {
+            body = await req.ReadFromJsonAsync<GroupSaveRequest>(ct);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return Results.Json(new { ok = false, kind = "error", reason = "invalid request body" },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (body is null)
+        {
+            return Results.Json(new { ok = false, kind = "error", reason = "invalid request body" },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var validationErrors = GroupInputValidator.Validate(body.Groups, registry);
+        if (validationErrors.Count > 0)
+        {
+            logger.LogWarning(LogEvents.GroupUiValidationBlocked,
+                "Group UI save blocked: {ErrorCount} validation error(s)", validationErrors.Count);
+            return Results.Json(new { ok = false, kind = "validation", errorCount = validationErrors.Count });
+        }
+
+        var groups = body.Groups.Select(g => new GroupConfig
+        {
+            GroupId = g.GroupId,
+            FriendlyName = g.FriendlyName,
+            Members = g.Members,
+            Mode = g.Mode,
+            Detector = g.Detector,
+            Params = g.Params,
+        }).ToList();
+
+        // Read the CURRENT entities.yaml so entities:/_patterns: are preserved untouched;
+        // replace ONLY the top-level groups: key (same single-root-dict discipline as
+        // /api/sensors/save — never string-format YAML, T-02-08). EntitiesConfig does not
+        // model _patterns (it's write-only UI state dropped by IgnoreUnmatchedProperties on
+        // load), so it is re-derived here from the raw on-disk YAML rather than lost on a
+        // groups-only save.
+        var entitiesPath = settings.EntitiesPath ?? "/data/entities.yaml";
+        var currentConfig = liveCfg.Get();
+
+        var serializer = new SerializerBuilder()
+            .WithNamingConvention(UnderscoredNamingConvention.Instance)
+            .Build();
+
+        object existingPatterns = new Dictionary<string, object>
+        {
+            ["include"] = new List<string>(),
+            ["exclude"] = new List<string>(),
+        };
+        if (File.Exists(entitiesPath))
+        {
+            var existingYaml = await File.ReadAllTextAsync(entitiesPath, ct);
+            var rawDeserializer = new DeserializerBuilder()
+                .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                .IgnoreUnmatchedProperties()
+                .Build();
+            var rawRoot = rawDeserializer.Deserialize<Dictionary<object, object>>(existingYaml);
+            if (rawRoot is not null && rawRoot.TryGetValue("_patterns", out var patternsObj))
+                existingPatterns = patternsObj;
+        }
+
+        var root = new Dictionary<string, object>
+        {
+            ["_patterns"] = existingPatterns,
+            ["entities"] = currentConfig.Entities,
+            ["groups"] = groups,
+        };
+
+        var fullYaml = serializer.Serialize(root);
+
+        await writer.WriteAsync(entitiesPath, fullYaml, ct);
+
+        var newConfig = EntitiesConfigLoader.Load(entitiesPath, logger, registry);
+        liveCfg.Swap(newConfig); // fires ConfigChanged → hot-reload, no restart
+
+        logger.LogInformation(LogEvents.UiSaveSuccess,
+            "Group UI save succeeded: {GroupCount} groups written to {Path}", groups.Count, entitiesPath);
+
+        return Results.Json(new { ok = true, count = groups.Count });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Group UI save failed"); // Full exception to add-on log only (T-02-11)
+
+        var reason = ex is IOException ? "disk error" : "unexpected error";
+        return Results.Json(new { ok = false, kind = "error", reason });
+    }
+});
+
+// [9] GET /api/detectors/catalog — static group-detector catalog (ALGO-01..04). Purely
+// descriptive C#, never calls gRPC/Python — must render even when the detector is down.
+app.MapGet("/api/detectors/catalog", (HttpRequest req) =>
+{
+    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
+
+    return Results.Json(new { detectors = DetectorCatalog.All(), guided = DetectorCatalog.Guided() });
+});
+
+// [10] GET /api/groups/{id}/status — last cached joint-mode verdict (GRP-09). Returns
+// 200-with-null for an unknown/never-scored id (T-08-05: no existence oracle via 404).
+app.MapGet("/api/groups/{id}/status", (HttpRequest req, string id, IGroupStatusCache statusCache) =>
+{
+    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
+
+    var entry = statusCache.Get(id);
+    if (entry is null) return Results.Json(new { status = (object?)null });
+
+    return Results.Json(new
+    {
+        status = new
+        {
+            groupId = entry.GroupId,
+            score = entry.Score,
+            isAnomaly = entry.IsAnomaly,
+            detector = entry.Detector,
+            scoredAtUtc = entry.ScoredAtUtc,
+            contributions = entry.Contributions.Select(c => new { memberId = c.MemberId, contribution = c.Contribution }),
+        },
+    });
+});
+
+// [11] SPA fallback — serves index.html for any unmatched, extensionless path (root and any
 // client-side hash routes). Never intercepts /api/* (explicit routes win) or real static
 // files (UseStaticFiles already served above). Must be registered last.
 app.MapFallbackToFile("index.html");
