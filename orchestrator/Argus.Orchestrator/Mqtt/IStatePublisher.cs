@@ -9,4 +9,6 @@ public interface IStatePublisher
     Task PublishFlagAsync(string entityId, bool on, CancellationToken ct);
     Task PublishScoreAsync(string entityId, double score, CancellationToken ct);
     Task PublishAvailabilityAsync(string entityId, bool online, CancellationToken ct);
+    Task PublishGroupFlagAsync(string groupId, string? memberId, bool on, CancellationToken ct);
+    Task PublishGroupScoreAsync(string groupId, string? memberId, double score, CancellationToken ct);
 }

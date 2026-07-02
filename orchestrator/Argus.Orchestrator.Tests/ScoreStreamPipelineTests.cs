@@ -256,6 +256,12 @@ internal sealed class FakeStatePublisher : IStatePublisher
         LastAvailabilityOnline = online;
         return Task.CompletedTask;
     }
+
+    public Task PublishGroupFlagAsync(string groupId, string? memberId, bool on, CancellationToken ct)
+        => Task.CompletedTask;
+
+    public Task PublishGroupScoreAsync(string groupId, string? memberId, double score, CancellationToken ct)
+        => Task.CompletedTask;
 }
 
 /// <summary>

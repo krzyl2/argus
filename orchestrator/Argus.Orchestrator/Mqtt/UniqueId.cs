@@ -16,4 +16,22 @@ public static class UniqueId
     /// <summary>argus_{slug}_{detector}_score — score sensor unique_id.</summary>
     public static string ScoreId(string entityId, string detector)
         => $"argus_{Slug(entityId)}_{detector}_score";
+
+    /// <summary>
+    /// Group binary_sensor unique_id (GRP-08).
+    /// argus_group_{groupSlug}_flag (joint, memberId null) or argus_group_{groupSlug}_{memberSlug}_flag (peer).
+    /// </summary>
+    public static string GroupFlagId(string groupId, string? memberId = null)
+        => memberId is null
+            ? $"argus_group_{Slug(groupId)}_flag"
+            : $"argus_group_{Slug(groupId)}_{Slug(memberId)}_flag";
+
+    /// <summary>
+    /// Group score sensor unique_id (GRP-08).
+    /// argus_group_{groupSlug}_score (joint, memberId null) or argus_group_{groupSlug}_{memberSlug}_score (peer).
+    /// </summary>
+    public static string GroupScoreId(string groupId, string? memberId = null)
+        => memberId is null
+            ? $"argus_group_{Slug(groupId)}_score"
+            : $"argus_group_{Slug(groupId)}_{Slug(memberId)}_score";
 }

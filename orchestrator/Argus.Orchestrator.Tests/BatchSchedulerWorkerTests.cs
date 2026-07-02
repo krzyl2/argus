@@ -93,6 +93,12 @@ public class BatchSchedulerWorkerTests
 
         public Task PublishAvailabilityAsync(string entityId, bool online, CancellationToken ct)
             => Task.CompletedTask;
+
+        public Task PublishGroupFlagAsync(string groupId, string? memberId, bool on, CancellationToken ct)
+            => Task.CompletedTask;
+
+        public Task PublishGroupScoreAsync(string groupId, string? memberId, double score, CancellationToken ct)
+            => Task.CompletedTask;
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

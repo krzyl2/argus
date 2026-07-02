@@ -35,6 +35,21 @@ public sealed class StatePublisher : IStatePublisher
     /// <summary>Per-entity availability (not used for LWT — bridge-level handles that).</summary>
     public string EntityAvailabilityTopic(string entityId) => $"argus/{UniqueId.Slug(entityId)}/availability";
 
+    /// <summary>
+    /// argus/group/{slug}/flag/state (joint, memberId null) or argus/group/{slug}/{memberSlug}/flag/state (peer).
+    /// Distinct namespace from argus/{slug}/... to avoid colliding with per-entity topics (T-06-06).
+    /// </summary>
+    public string GroupFlagTopic(string groupId, string? memberId = null)
+        => memberId is null
+            ? $"argus/group/{UniqueId.Slug(groupId)}/flag/state"
+            : $"argus/group/{UniqueId.Slug(groupId)}/{UniqueId.Slug(memberId)}/flag/state";
+
+    /// <summary>argus/group/{slug}/score/state (joint) or argus/group/{slug}/{memberSlug}/score/state (peer).</summary>
+    public string GroupScoreTopic(string groupId, string? memberId = null)
+        => memberId is null
+            ? $"argus/group/{UniqueId.Slug(groupId)}/score/state"
+            : $"argus/group/{UniqueId.Slug(groupId)}/{UniqueId.Slug(memberId)}/score/state";
+
     /// <summary>Bridge-level availability topic constant (shared across all entities).</summary>
     string BridgeAvailabilityTopicProperty => BridgeAvailabilityTopic;
 
@@ -53,6 +68,23 @@ public sealed class StatePublisher : IStatePublisher
         EnsureConnected();
         var payload = score.ToString("G", CultureInfo.InvariantCulture);
         await _mqtt!.PublishAsync(ScoreTopic(entityId), payload, retain: false, ct);
+    }
+
+    /// <summary>Publishes group binary_sensor flag state (ON/OFF) (GRP-08).</summary>
+    public async Task PublishGroupFlagAsync(string groupId, string? memberId, bool on, CancellationToken ct)
+    {
+        EnsureConnected();
+        var payload = on ? "ON" : "OFF";
+        _logger.LogInformation(LogEvents.MqttDiscoveryPublished, "Group flag {GroupId}/{MemberId} → {Payload}", groupId, memberId, payload);
+        await _mqtt!.PublishAsync(GroupFlagTopic(groupId, memberId), payload, retain: false, ct);
+    }
+
+    /// <summary>Publishes group anomaly score as invariant-culture float string (GRP-08).</summary>
+    public async Task PublishGroupScoreAsync(string groupId, string? memberId, double score, CancellationToken ct)
+    {
+        EnsureConnected();
+        var payload = score.ToString("G", CultureInfo.InvariantCulture);
+        await _mqtt!.PublishAsync(GroupScoreTopic(groupId, memberId), payload, retain: false, ct);
     }
 
     /// <summary>Publishes per-entity availability (online/offline).</summary>
