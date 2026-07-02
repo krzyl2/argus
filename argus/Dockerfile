@@ -1,4 +1,30 @@
+# BUILD_FROM must be declared as a global ARG before the first FROM — a stage-scoped
+# ARG declared between FROM lines is NOT visible to the next FROM (Docker constraint).
 ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:bookworm
+
+# ── Stage 1: build the SPA (Node, discarded) ──────────────────────────────────
+FROM node:20-alpine AS ui-build
+WORKDIR /src/ui
+COPY orchestrator/ui/package.json orchestrator/ui/package-lock.json ./
+RUN npm ci
+COPY orchestrator/ui/ ./
+RUN npm run build
+# vite.config.ts sets outDir to ../Argus.Orchestrator/wwwroot (relative to /src/ui),
+# i.e. Vite writes directly to /src/Argus.Orchestrator/wwwroot — NOT /src/ui/dist/.
+# Output: /src/Argus.Orchestrator/wwwroot/ (index.html, assets/*.js, css/argus.css)
+
+# ── Stage 2: publish the .NET orchestrator (SDK, discarded) ──────────────────
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet-build
+WORKDIR /src
+COPY orchestrator/ ./orchestrator/
+COPY proto/ ./proto/
+# Vite build output must land in wwwroot/ BEFORE dotnet publish runs, since the Web
+# SDK's static-web-assets pipeline snapshots wwwroot/ contents at publish time.
+COPY --from=ui-build /src/Argus.Orchestrator/wwwroot/ ./orchestrator/Argus.Orchestrator/wwwroot/
+RUN dotnet publish orchestrator/Argus.Orchestrator/Argus.Orchestrator.csproj \
+    -c Release --self-contained false -o /app/publish
+
+# ── Stage 3: runtime ────────────────────────────────────────────────────────
 FROM ${BUILD_FROM}
 
 # s6-overlay: exit container when any service crashes rather than looping silently.
@@ -8,7 +34,8 @@ ENV S6_BEHAVIOUR_IF_STAGE2_FAILS=2
 # ── .NET 8 Runtime (official dotnet-install.sh, NOT the apt feed) ──────────────
 # ASP.NET Core runtime (not SDK) — orchestrator is a Web SDK app (v3 Ingress UI)
 # and needs Microsoft.AspNetCore.App; --runtime aspnetcore also carries the base
-# Microsoft.NETCore.App runtime. Orchestrator is published by CI before docker build.
+# Microsoft.NETCore.App runtime. Orchestrator is published inside this image by
+# the dotnet-build stage above (see Stage 2).
 # The packages.microsoft.com Debian 12 feed only ships dotnet-runtime-8.0 for
 # amd64; the arm64 component has 10.0 only, so apt install fails on aarch64.
 # dotnet-install.sh pulls the arch-correct 8.0 runtime from the global CDN and
@@ -47,10 +74,8 @@ RUN pip3 install --no-cache-dir --prefer-binary --break-system-packages -r /tmp/
 # detector itself does not use YAML — this explicit install keeps the dependency auditable.
 RUN pip3 install --no-cache-dir --break-system-packages pyyaml
 
-# ── Orchestrator publish output (built by CI before docker build) ──────────────
-# Phase 1: create a stub directory so the COPY succeeds even without a real publish.
-# Phase 4 CI provides real dotnet publish output here.
-COPY orchestrator/publish/ /opt/argus/orchestrator/
+# ── Orchestrator publish output (built in the dotnet-build stage above) ────────
+COPY --from=dotnet-build /app/publish/ /opt/argus/orchestrator/
 
 # ── Detector source + pre-generated proto stubs ───────────────────────────────
 COPY detector/ /opt/argus/detector/
