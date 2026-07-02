@@ -4,16 +4,16 @@ milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
 current_phase: 07
 current_phase_name: SPA Scaffolding
-status: executing
+status: verifying
 stopped_at: Completed 06-03-PLAN.md — MQTT group entity layer
-last_updated: "2026-07-02T16:11:12.061Z"
+last_updated: "2026-07-02T16:19:56.868Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 07 execution started
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 14
-  completed_plans: 10
+  completed_plans: 11
   percent: 0
 ---
 
@@ -158,6 +158,9 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase 07-01]: SaveRequest uses natural nested entities:[{entityId, detectors:[{name, params}]}] shape (RESEARCH Open Q2) - must match 07-02's C# DTO exactly
 - [Phase 07-02]: SaveRequest.Include/Exclude are raw strings (not arrays) — matches types.ts exactly, SPA sends raw textarea content
 - [Phase 07-02]: DetectorDefaults extracted as standalone testable static class rather than inlined in Program.cs endpoint
+- [Phase ?]: [Phase 07-03]: COPY --from=ui-build sources from /src/Argus.Orchestrator/wwwroot/ (Vite's actual configured outDir per 07-01), not the plan-assumed /src/ui/dist/
+- [Phase ?]: [Phase 07-03]: ARG BUILD_FROM moved to a single global declaration before the first FROM - a stage-scoped ARG between FROM lines is not visible to the next FROM in Docker's build model
+- [Phase ?]: [Phase 07-03]: -SkipPublish kept as a documented no-op in build-push.ps1 for CLI back-compat rather than removed
 
 ### Blockers
 
@@ -189,10 +192,11 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 06 P04 | 14min | 3 tasks | 6 files |
 | Phase 07 P01 | 25min | 2 tasks | 34 files |
 | Phase 07 P02 | 35min | 2 tasks | 11 files |
+| Phase 07 P03 | 20min | 2 tasks | 3 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T16:08:00.109Z
+**Last session:** 2026-07-02T16:19:26.066Z
 **Stopped at:** Completed 06-03-PLAN.md — MQTT group entity layer
 **Resume file:** None
 
@@ -207,5 +211,5 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 Phase: 07 (SPA Scaffolding) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-02 — Phase 07 execution started
