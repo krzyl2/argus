@@ -4,7 +4,6 @@
 #
 # Usage:
 #   ./deploy/build-push.ps1 -Version 2.0.6
-#   ./deploy/build-push.ps1 -Version 2.0.6 -SkipPublish   # reuse existing publish output
 #   ./deploy/build-push.ps1 -Version 2.0.9 -Dev           # amd64-only, faster (skips arm64/QEMU)
 #
 # Prereqs (one-time):
@@ -20,6 +19,9 @@ param(
     [string]$Image = 'ghcr.io/krzyl2/argus',
     [string]$Platforms = 'linux/amd64,linux/arm64',
     [switch]$SkipConfigSync,
+    # -SkipPublish is a no-op kept for CLI back-compat. The orchestrator is published
+    # inside argus/Dockerfile's dotnet-build stage now (Phase 7 SPA migration) — there
+    # is no host-side publish step left to skip.
     [switch]$SkipPublish,
     # -Dev: amd64-only build. Skips the slow arm64/QEMU leg for fast HA iteration on
     # an amd64 host. Do NOT use for real releases (arm64 users would get a stale :latest).
@@ -37,8 +39,6 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
 $configPath = Join-Path $repoRoot 'argus/config.yaml'
-$csproj     = 'orchestrator/Argus.Orchestrator/Argus.Orchestrator.csproj'
-$publishDir = 'orchestrator/publish'
 
 # 1. Keep config.yaml version == image tag (HA reads this from the default branch).
 if (-not $SkipConfigSync) {
@@ -48,19 +48,10 @@ if (-not $SkipConfigSync) {
     Write-Host "config.yaml -> version `"$Version`""
 }
 
-# 2. Publish orchestrator BEFORE docker build (Dockerfile COPYs orchestrator/publish/).
-#    Web SDK bundles wwwroot/ automatically; assert it landed.
-if (-not $SkipPublish) {
-    if (Test-Path $publishDir) { Remove-Item -Recurse -Force $publishDir }
-    dotnet publish $csproj -c Release --self-contained false -o $publishDir
-    if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
-    foreach ($f in @("$publishDir/wwwroot/js/htmx.min.js", "$publishDir/wwwroot/css/argus.css")) {
-        if (-not (Test-Path $f)) { throw "missing publish asset: $f (wwwroot not in publish output)" }
-    }
-    Write-Host "publish OK (wwwroot assets present)"
-}
-
-# 3. Multi-arch buildx build + push to GHCR.
+# 2. Multi-arch buildx build + push to GHCR.
+#    argus/Dockerfile publishes the orchestrator itself (dotnet-build stage), after
+#    building the SPA (ui-build stage) and copying it into wwwroot first — no host-side
+#    dotnet publish or npm build needed here.
 $buildDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 $buildRef  = (git rev-parse HEAD).Trim()
 

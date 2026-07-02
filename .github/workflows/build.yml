@@ -26,26 +26,32 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Publish orchestrator
-        run: >-
-          dotnet publish orchestrator/Argus.Orchestrator/Argus.Orchestrator.csproj
-          -c Release --self-contained false -o orchestrator/publish/
-
-      - name: Assert wwwroot assets present in publish output
-        shell: bash
-        run: |
-          test -f orchestrator/publish/wwwroot/js/htmx.min.js || {
-            echo "FAIL: htmx.min.js not in publish output"
-            exit 1
-          }
-          test -f orchestrator/publish/wwwroot/css/argus.css || {
-            echo "FAIL: argus.css not in publish output"
-            exit 1
-          }
-          echo "OK: wwwroot assets present in publish output"
-
       - name: Run unit tests
         run: dotnet test orchestrator/ -c Release --logger "console;verbosity=normal"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build SPA (CI-side verification only — Dockerfile builds it again at image build time)
+        working-directory: orchestrator/ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Assert SPA assets present in wwwroot
+        shell: bash
+        run: |
+          test -f orchestrator/Argus.Orchestrator/wwwroot/index.html || {
+            echo "FAIL: index.html not in wwwroot"
+            exit 1
+          }
+          ls orchestrator/Argus.Orchestrator/wwwroot/assets/*.js >/dev/null 2>&1 || {
+            echo "FAIL: no assets/*.js in wwwroot"
+            exit 1
+          }
+          echo "OK: SPA assets present in wwwroot"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
