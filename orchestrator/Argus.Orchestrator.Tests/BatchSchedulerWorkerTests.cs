@@ -4,6 +4,7 @@ using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Mqtt;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
@@ -65,10 +66,13 @@ public class BatchSchedulerWorkerTests
             return Task.FromResult(new FitResponse { Ok = true });
         }
 
-        // Phase 6 (GRP-02/GRP-04): not exercised by this test class's scenarios yet
-        // (group loop wiring lands in Plan 06-04) — minimal stub to satisfy the interface.
+        public int ScoreGroupBatchCallCount { get; private set; }
+
         public Task<GroupScoreResponse> ScoreGroupBatchAsync(GroupScoreRequest request, CancellationToken ct)
-            => Task.FromResult(new GroupScoreResponse { Ok = true });
+        {
+            ScoreGroupBatchCallCount++;
+            return Task.FromResult(new GroupScoreResponse { Ok = true });
+        }
 
         public Task<FitGroupResponse> FitGroupAsync(FitGroupRequest request, CancellationToken ct)
             => Task.FromResult(new FitGroupResponse { Ok = true });
@@ -121,6 +125,21 @@ public class BatchSchedulerWorkerTests
             => Task.FromResult(new GroupAlignedData(
                 Array.Empty<GroupRow>(),
                 new Dictionary<string, DateTime>()));
+    }
+
+    /// <summary>Fake group Influx source that returns one fresh, fully-populated row per member.</summary>
+    private sealed class FakeGroupInfluxDataSourceWithData : IGroupInfluxDataSource
+    {
+        public Task<GroupAlignedData> QueryGroupAsync(
+            IReadOnlyList<string> members, string every, string aggFn, TimeSpan stalenessCap, CancellationToken ct)
+        {
+            var now = DateTime.UtcNow;
+            var values = members.ToDictionary(m => m, m => (double?)21.0);
+            var lastSeen = members.ToDictionary(m => m, m => now);
+            return Task.FromResult(new GroupAlignedData(
+                new List<GroupRow> { new(now, values) },
+                lastSeen));
+        }
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -335,5 +354,72 @@ public class BatchSchedulerWorkerTests
         // Assert: only sensor.swapped was scored, not sensor.original
         Assert.Equal(1, detector.ScoreBatchCallCount);
         Assert.Equal("sensor.swapped", detector.ScoreBatchEntityIds[0]);
+    }
+
+    // -----------------------------------------------------------------------
+    // CR-03: scheduler-side guard against a mode/detector mismatch that
+    // reached disk (defense in depth — GroupInputValidator is the
+    // authoritative gate at save time; this covers a hand-edited entities.yaml).
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task RunBatchAsync_GroupModeDetectorMismatch_SkipsScoringAndPublishesNothing()
+    {
+        var mismatchedGroup = new GroupConfig
+        {
+            GroupId = "group.mismatched",
+            FriendlyName = "Mismatched",
+            Members = ["sensor.a", "sensor.b", "sensor.c"],
+            Mode = "joint",
+            Detector = "peer_divergence", // CR-03: incompatible with mode="joint"
+            Params = new Dictionary<string, string>(),
+        };
+        var config = new EntitiesConfig { Groups = [mismatchedGroup] };
+        var detector = new FakeBatchDetectorClient();
+        var publisher = new FakeStatePublisher();
+        var worker = new BatchSchedulerWorker(
+            DefaultSettings(),
+            new FakeInfluxDbReader(EmptyPoints()),
+            detector,
+            publisher,
+            MakeLive(config),
+            new FakeGroupInfluxDataSourceWithData(),
+            NullLogger<BatchSchedulerWorker>.Instance);
+
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        // Must skip before ever calling ScoreGroupBatchAsync — no fabricated verdict published.
+        Assert.Equal(0, detector.ScoreGroupBatchCallCount);
+        Assert.Empty(publisher.GroupScoreCalls);
+        Assert.Empty(publisher.GroupFlagCalls);
+    }
+
+    [Fact]
+    public async Task RunBatchAsync_GroupModeDetectorConsistent_ScoresNormally()
+    {
+        var validGroup = new GroupConfig
+        {
+            GroupId = "group.valid",
+            FriendlyName = "Valid",
+            Members = ["sensor.a", "sensor.b", "sensor.c"],
+            Mode = "joint",
+            Detector = "ecod",
+            Params = new Dictionary<string, string>(),
+        };
+        var config = new EntitiesConfig { Groups = [validGroup] };
+        var detector = new FakeBatchDetectorClient();
+        var publisher = new FakeStatePublisher();
+        var worker = new BatchSchedulerWorker(
+            DefaultSettings(),
+            new FakeInfluxDbReader(EmptyPoints()),
+            detector,
+            publisher,
+            MakeLive(config),
+            new FakeGroupInfluxDataSourceWithData(),
+            NullLogger<BatchSchedulerWorker>.Instance);
+
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        Assert.Equal(1, detector.ScoreGroupBatchCallCount);
     }
 }

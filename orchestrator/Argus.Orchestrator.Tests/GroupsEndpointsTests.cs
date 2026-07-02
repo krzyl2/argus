@@ -195,6 +195,71 @@ public class GroupsEndpointsTests
     }
 
     // -----------------------------------------------------------------------
+    // CR-03: mode/detector consistency
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Validate_JointModeWithPeerDivergenceDetector_ReturnsValidationError()
+    {
+        // The exact CR-03 scenario: mode="joint" + detector="peer_divergence" (e.g. from a
+        // client that silently defaulted the detector). Must be rejected, not saved — a
+        // fabricated verdict would otherwise be published at batch time.
+        var registry = new FakeRegistry(MakeEntry("sensor.a"), MakeEntry("sensor.b"), MakeEntry("sensor.c"));
+        var groups = new List<GroupSaveEntry>
+        {
+            new() { GroupId = "group.a", Members = ["sensor.a", "sensor.b", "sensor.c"], Mode = "joint", Detector = "peer_divergence" },
+        };
+
+        var errors = GroupInputValidator.Validate(groups, registry);
+
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void Validate_PeerDivergenceModeWithJointDetector_ReturnsValidationError()
+    {
+        // Reverse mismatch (WR-04): mode="peer_divergence" + detector="ecod" degrades to a
+        // permanent no-op (never fitted, every score attempt aborts) rather than corrupting
+        // data — still must be rejected at save time.
+        var registry = new FakeRegistry(MakeEntry("sensor.a"), MakeEntry("sensor.b"), MakeEntry("sensor.c"));
+        var groups = new List<GroupSaveEntry>
+        {
+            new() { GroupId = "group.a", Members = ["sensor.a", "sensor.b", "sensor.c"], Mode = "peer_divergence", Detector = "ecod" },
+        };
+
+        var errors = GroupInputValidator.Validate(groups, registry);
+
+        Assert.NotEmpty(errors);
+    }
+
+    [Theory]
+    [InlineData("ecod")]
+    [InlineData("copod")]
+    [InlineData("pca")]
+    [InlineData("iforest")]
+    public void Validate_JointModeWithEachJointDetector_ReturnsNoErrors(string detector)
+    {
+        var registry = new FakeRegistry(MakeEntry("sensor.a"), MakeEntry("sensor.b"), MakeEntry("sensor.c"));
+        var groups = new List<GroupSaveEntry>
+        {
+            new() { GroupId = "group.a", Members = ["sensor.a", "sensor.b", "sensor.c"], Mode = "joint", Detector = detector },
+        };
+
+        var errors = GroupInputValidator.Validate(groups, registry);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void IsModeDetectorConsistent_KnownPairings_ReturnExpectedResult()
+    {
+        Assert.True(GroupInputValidator.IsModeDetectorConsistent("peer_divergence", "peer_divergence"));
+        Assert.True(GroupInputValidator.IsModeDetectorConsistent("joint", "ecod"));
+        Assert.False(GroupInputValidator.IsModeDetectorConsistent("joint", "peer_divergence"));
+        Assert.False(GroupInputValidator.IsModeDetectorConsistent("peer_divergence", "ecod"));
+    }
+
+    // -----------------------------------------------------------------------
     // GroupSaveRequest JSON (de)serialization — camelCase parity with types.ts
     // -----------------------------------------------------------------------
 

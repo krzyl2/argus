@@ -177,6 +177,20 @@ public sealed class BatchSchedulerWorker : BackgroundService
 
     private async Task RunGroupBatchAsync(GroupConfig group, CancellationToken ct)
     {
+        // CR-03 (defense in depth): GroupInputValidator is the authoritative
+        // mode/detector consistency gate at save time, but a hand-edited
+        // entities.yaml could still reach this point with a mismatch (e.g.
+        // mode="joint" + detector="peer_divergence"). Scoring such a group would
+        // dispatch on Mode alone and publish a fabricated verdict (proto default
+        // Score=0.0/IsAnomaly=false) instead of erroring — skip the cycle instead.
+        if (!Web.GroupInputValidator.IsModeDetectorConsistent(group.Mode, group.Detector))
+        {
+            _logger.LogError(LogEvents.GroupModeDetectorMismatch,
+                "Group {GroupId} skipped — mode '{Mode}' is incompatible with detector '{Detector}'",
+                group.GroupId, group.Mode, group.Detector);
+            return;
+        }
+
         var every = group.Params.TryGetValue("every", out var everyVal) && !string.IsNullOrWhiteSpace(everyVal)
             ? everyVal
             : DefaultEvery;
