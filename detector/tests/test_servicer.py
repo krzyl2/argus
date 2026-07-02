@@ -322,3 +322,189 @@ class TestLoadModel:
         response = svc.LoadModel(request, ctx)
         assert response.ok is False
         assert response.error != ""
+
+
+# ---------------------------------------------------------------------------
+# Group RPC tests (ScoreGroupBatch, FitGroup — GRP-03..07, Plan 05-04)
+# ---------------------------------------------------------------------------
+
+def _make_series(member_id: str, values: list[float]) -> "argus_pb2.Series":
+    return argus_pb2.Series(member_id=member_id, values=values)
+
+
+# Peer-divergence fixture: 4 members, non-identical baseline (avoids the MAD=0
+# meanAD-fallback path) with member "c" clearly divergent at the last timestamp.
+_PEER_SERIES = [
+    _make_series("a", [10.0, 10.0]),
+    _make_series("b", [10.1, 10.1]),
+    _make_series("c", [9.9, 50.0]),
+    _make_series("d", [10.2, 10.2]),
+]
+
+# Joint-anomaly fixture copied verbatim from test_group_multivariate.py /
+# 05-RESEARCH.md Code Examples — jointly-abnormal-but-marginally-normal vector
+# a univariate loop over each column would NOT catch.
+_JOINT_TRAIN_PRESSURE = [1000.0, 1002.0, 998.0, 1001.0, 999.0, 1000.5, 1001.5, 999.5, 1000.2, 999.8]
+_JOINT_TRAIN_HUMIDITY = [20.0, 22.0, 18.0, 21.0, 19.0, 20.5, 21.5, 19.5, 20.2, 19.8]
+_JOINT_TRAIN_SERIES = [
+    _make_series("pressure", _JOINT_TRAIN_PRESSURE),
+    _make_series("humidity", _JOINT_TRAIN_HUMIDITY),
+]
+# High pressure + low humidity breaks the learned correlation (joint anomaly).
+_JOINT_SCORE_SERIES = [
+    _make_series("pressure", [1002.0]),
+    _make_series("humidity", [18.0]),
+]
+
+
+class TestScoreGroupBatchPeerDivergence:
+    """peer_divergence mode: per-member Verdicts, is_anomaly from locked |z|>3.5."""
+
+    def test_returns_one_verdict_per_member(self, servicer):
+        svc, _, _ = servicer
+        request = argus_pb2.GroupScoreRequest(
+            group_id="g1", detector="peer_divergence", series=_PEER_SERIES
+        )
+        ctx = _FakeContext()
+        response = svc.ScoreGroupBatch(request, ctx)
+        assert not ctx.aborted
+        assert response.ok is True
+        assert len(response.per_member) == len(_PEER_SERIES)
+
+    def test_flags_the_divergent_member(self, servicer):
+        svc, _, _ = servicer
+        request = argus_pb2.GroupScoreRequest(
+            group_id="g1", detector="peer_divergence", series=_PEER_SERIES
+        )
+        ctx = _FakeContext()
+        response = svc.ScoreGroupBatch(request, ctx)
+        by_member = {v.entity_id: v for v in response.per_member}
+        assert by_member["c"].is_anomaly is True
+        assert by_member["a"].is_anomaly is False
+        assert by_member["b"].is_anomaly is False
+        assert by_member["d"].is_anomaly is False
+
+
+class TestScoreGroupBatchFloor:
+    """GRP-04: below-floor (<3 members) peer group returns no verdict, never a
+    false not-anomalous result."""
+
+    def test_below_floor_returns_no_verdict(self, servicer):
+        svc, _, _ = servicer
+        request = argus_pb2.GroupScoreRequest(
+            group_id="g1", detector="peer_divergence", series=_PEER_SERIES[:2]
+        )
+        ctx = _FakeContext()
+        response = svc.ScoreGroupBatch(request, ctx)
+        assert not ctx.aborted
+        assert response.ok is True
+        assert len(response.per_member) == 0
+        assert response.error != ""
+
+
+class TestScoreGroupBatchJoint:
+    """ecod joint-multivariate mode: group_verdict + ranked contributions."""
+
+    def test_joint_score_after_fit_returns_group_verdict_and_contributions(self, servicer):
+        svc, _, _ = servicer
+        fit_request = argus_pb2.FitGroupRequest(
+            group_id="g2", detector="ecod", series=_JOINT_TRAIN_SERIES
+        )
+        fit_ctx = _FakeContext()
+        fit_response = svc.FitGroup(fit_request, fit_ctx)
+        assert fit_response.ok is True
+
+        score_request = argus_pb2.GroupScoreRequest(
+            group_id="g2", detector="ecod", series=_JOINT_SCORE_SERIES
+        )
+        score_ctx = _FakeContext()
+        response = svc.ScoreGroupBatch(score_request, score_ctx)
+        assert not score_ctx.aborted
+        assert response.ok is True
+        assert response.HasField("group_verdict")
+        assert response.group_verdict.detector == "ecod"
+        assert len(response.contributions) > 0
+
+
+class TestScoreGroupBatchGuards:
+    """Input validation guards (RESEARCH V5 / T-05-09/10/11)."""
+
+    def test_ragged_series_aborts_invalid_argument(self, servicer):
+        svc, _, _ = servicer
+        ragged_series = [
+            _make_series("a", [1.0, 2.0]),
+            _make_series("b", [1.0]),
+        ]
+        request = argus_pb2.GroupScoreRequest(
+            group_id="g1", detector="peer_divergence", series=ragged_series
+        )
+        ctx = _FakeContext()
+        result = svc.ScoreGroupBatch(request, ctx)
+        assert ctx.aborted
+        import grpc
+        assert ctx.abort_code == grpc.StatusCode.INVALID_ARGUMENT
+        assert result is None
+
+    def test_empty_group_id_aborts_invalid_argument(self, servicer):
+        svc, _, _ = servicer
+        request = argus_pb2.GroupScoreRequest(
+            group_id="", detector="peer_divergence", series=_PEER_SERIES
+        )
+        ctx = _FakeContext()
+        result = svc.ScoreGroupBatch(request, ctx)
+        assert ctx.aborted
+        import grpc
+        assert ctx.abort_code == grpc.StatusCode.INVALID_ARGUMENT
+        assert result is None
+
+    def test_unknown_detector_aborts_invalid_argument(self, servicer):
+        svc, _, _ = servicer
+        request = argus_pb2.GroupScoreRequest(
+            group_id="g1", detector="bogus", series=_PEER_SERIES
+        )
+        ctx = _FakeContext()
+        result = svc.ScoreGroupBatch(request, ctx)
+        assert ctx.aborted
+        import grpc
+        assert ctx.abort_code == grpc.StatusCode.INVALID_ARGUMENT
+        assert result is None
+
+
+class TestFitGroupPersistence:
+    """FitGroup persistence semantics: joint persists a loadable bundle,
+    peer_divergence persists nothing (stateless, GRP-07)."""
+
+    def test_fit_group_joint_persists_loadable_bundle(self, servicer):
+        svc, _, store = servicer
+        request = argus_pb2.FitGroupRequest(
+            group_id="g3", detector="ecod", series=_JOINT_TRAIN_SERIES
+        )
+        ctx = _FakeContext()
+        response = svc.FitGroup(request, ctx)
+        assert response.ok is True
+
+        loaded = store.load_group_bundle("g3", "ecod")
+        assert set(loaded.keys()) == {"scaler", "detector", "name"}
+        assert loaded["name"] == "ecod"
+
+    def test_fit_group_peer_divergence_persists_nothing(self, servicer):
+        svc, _, store = servicer
+        request = argus_pb2.FitGroupRequest(
+            group_id="g4", detector="peer_divergence", series=_PEER_SERIES
+        )
+        ctx = _FakeContext()
+        response = svc.FitGroup(request, ctx)
+        assert response.ok is True
+
+        from argus_detector.model_store import group_slug
+        assert not (store._root / group_slug("g4")).exists()
+
+    def test_fit_group_empty_group_id_aborts(self, servicer):
+        svc, _, _ = servicer
+        request = argus_pb2.FitGroupRequest(
+            group_id="", detector="peer_divergence", series=_PEER_SERIES
+        )
+        ctx = _FakeContext()
+        result = svc.FitGroup(request, ctx)
+        assert ctx.aborted
+        assert result is None
