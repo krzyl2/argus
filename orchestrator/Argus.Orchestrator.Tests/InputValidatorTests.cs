@@ -333,11 +333,12 @@ public class InputValidatorTests
     }
 
     [Fact]
-    public void Validate_StlSeasonalNonNumeric_ReturnsNoError()
+    public void Validate_StlSeasonalNonNumeric_ReturnsError()
     {
-        // Non-numeric seasonal: TryGetInt returns false → absent-key semantics, silently skipped
+        // Non-numeric seasonal must be a hard error (client parity — detectorParams.ts
+        // MSG_REQUIRED via isBlankOrNonNumeric), not a silent skip.
         var errors = InputValidator.Validate([], OneStlDetector(new() { ["seasonal"] = "abc" }));
-        Assert.Empty(errors);
+        Assert.NotEmpty(errors);
     }
 
     // -------------------------------------------------------------------------
@@ -439,6 +440,118 @@ public class InputValidatorTests
     public void Validate_EmptyIdsAndNoDetectors_ReturnsNoErrors()
     {
         var errors = InputValidator.Validate([], []);
+        Assert.Empty(errors);
+    }
+
+    // -------------------------------------------------------------------------
+    // CR-01 regression: missing/blank/non-numeric detector params must be a hard
+    // error (client parity — detectorParams.ts isBlankOrNonNumeric -> MSG_REQUIRED),
+    // never a silent skip that lets malformed values reach ConfigWriter.
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("window")]
+    [InlineData("n_trees")]
+    [InlineData("high_threshold")]
+    [InlineData("low_threshold")]
+    [InlineData("min_consecutive")]
+    [InlineData("frozen_window")]
+    [InlineData("frozen_variance_threshold")]
+    public void Validate_HstParamEmptyString_ReturnsError(string paramKey)
+    {
+        var errors = InputValidator.Validate([], OneHstDetector(new() { [paramKey] = "" }));
+        Assert.NotEmpty(errors);
+    }
+
+    [Theory]
+    [InlineData("window")]
+    [InlineData("n_trees")]
+    [InlineData("high_threshold")]
+    [InlineData("low_threshold")]
+    [InlineData("min_consecutive")]
+    [InlineData("frozen_window")]
+    [InlineData("frozen_variance_threshold")]
+    public void Validate_HstParamNonNumeric_ReturnsError(string paramKey)
+    {
+        var errors = InputValidator.Validate([], OneHstDetector(new() { [paramKey] = "abc" }));
+        Assert.NotEmpty(errors);
+    }
+
+    [Theory]
+    [InlineData("window")]
+    [InlineData("n_trees")]
+    [InlineData("high_threshold")]
+    [InlineData("low_threshold")]
+    [InlineData("min_consecutive")]
+    [InlineData("frozen_window")]
+    [InlineData("frozen_variance_threshold")]
+    public void Validate_HstParamMissingKey_ReturnsError(string paramKey)
+    {
+        var p = new Dictionary<string, string>
+        {
+            ["window"]                    = "250",
+            ["n_trees"]                   = "25",
+            ["high_threshold"]            = "0.7",
+            ["low_threshold"]             = "0.3",
+            ["min_consecutive"]           = "3",
+            ["frozen_window"]             = "10",
+            ["frozen_variance_threshold"] = "0.001",
+        };
+        p.Remove(paramKey);
+        var detectors = new Dictionary<int, List<DetectorConfig>>
+        {
+            [0] = [new DetectorConfig { Name = "hst", Params = p }],
+        };
+
+        var errors = InputValidator.Validate([], detectors);
+        Assert.NotEmpty(errors);
+    }
+
+    [Theory]
+    [InlineData("threshold")]
+    [InlineData("window")]
+    public void Validate_MadParamEmptyOrNonNumeric_ReturnsError(string paramKey)
+    {
+        var emptyErrors = InputValidator.Validate([], OneMadDetector(new() { [paramKey] = "" }));
+        Assert.NotEmpty(emptyErrors);
+
+        var nonNumericErrors = InputValidator.Validate([], OneMadDetector(new() { [paramKey] = "xyz" }));
+        Assert.NotEmpty(nonNumericErrors);
+    }
+
+    [Theory]
+    [InlineData("period")]
+    [InlineData("seasonal")]
+    [InlineData("threshold")]
+    public void Validate_StlParamEmptyOrNonNumeric_ReturnsError(string paramKey)
+    {
+        var emptyErrors = InputValidator.Validate([], OneStlDetector(new() { [paramKey] = "" }));
+        Assert.NotEmpty(emptyErrors);
+
+        var nonNumericErrors = InputValidator.Validate([], OneStlDetector(new() { [paramKey] = "xyz" }));
+        Assert.NotEmpty(nonNumericErrors);
+    }
+
+    [Fact]
+    public void Validate_HstAllParamsValid_ReturnsNoErrors()
+    {
+        // Valid, in-range params must still pass (regression guard: fix must not
+        // over-reject legitimate values).
+        var errors = InputValidator.Validate([], OneHstDetector());
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validate_MadAllParamsValid_ReturnsNoErrors()
+    {
+        var errors = InputValidator.Validate([], OneMadDetector());
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validate_StlAllParamsValid_ReturnsNoErrors()
+    {
+        var errors = InputValidator.Validate([], OneStlDetector());
         Assert.Empty(errors);
     }
 }

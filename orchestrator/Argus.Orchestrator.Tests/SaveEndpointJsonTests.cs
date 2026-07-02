@@ -84,7 +84,20 @@ public class SaveEndpointJsonTests
                 new SaveEntity
                 {
                     EntityId = "sensor.living_room_temp",
-                    Detectors = [new SaveDetector { Name = "hst", Params = new() { ["window"] = "250" } }]
+                    Detectors = [new SaveDetector
+                    {
+                        Name = "hst",
+                        Params = new()
+                        {
+                            ["window"] = "250",
+                            ["n_trees"] = "25",
+                            ["high_threshold"] = "0.7",
+                            ["low_threshold"] = "0.3",
+                            ["min_consecutive"] = "3",
+                            ["frozen_window"] = "10",
+                            ["frozen_variance_threshold"] = "0.001",
+                        }
+                    }]
                 }
             ],
             Include = "",
@@ -186,7 +199,24 @@ public class SaveEndpointJsonTests
         var registry = new FakeRegistry(MakeEntry("sensor.a"));
         var body = new SaveRequest
         {
-            Entities = [new SaveEntity { EntityId = "sensor.a", Detectors = [new SaveDetector { Name = "hst" }] }]
+            Entities = [new SaveEntity
+            {
+                EntityId = "sensor.a",
+                Detectors = [new SaveDetector
+                {
+                    Name = "hst",
+                    Params = new()
+                    {
+                        ["window"] = "250",
+                        ["n_trees"] = "25",
+                        ["high_threshold"] = "0.7",
+                        ["low_threshold"] = "0.3",
+                        ["min_consecutive"] = "3",
+                        ["frozen_window"] = "10",
+                        ["frozen_variance_threshold"] = "0.001",
+                    }
+                }]
+            }]
         };
 
         var live = new LiveEntitiesConfig(new EntitiesConfig());

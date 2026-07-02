@@ -103,55 +103,37 @@ public static class InputValidator
         // high_threshold: number in (0, 1] — but cross-field check requires > low_threshold
         // The cross-field check (below) also covers the "greater than low_threshold" rule.
         // Independent range check: must be in (0, 1] — i.e. > 0 AND ≤ 1
-        if (TryGetDouble(p, "high_threshold", out var high))
-        {
-            if (high <= 0.0 || high > 1.0)
-                errors.Add("Must be between 0 and 1, and greater than low threshold.");
-        }
+        // Missing/blank/non-numeric is a hard error (client parity — detectorParams.ts MSG_REQUIRED).
+        var hasHigh = TryGetDouble(p, "high_threshold", out var high);
+        if (!hasHigh || high <= 0.0 || high > 1.0)
+            errors.Add("Must be between 0 and 1, and greater than low threshold.");
 
         // low_threshold: number in [0, 1) — i.e. ≥ 0 AND < 1
-        if (TryGetDouble(p, "low_threshold", out var low))
-        {
-            if (low < 0.0 || low >= 1.0)
-                errors.Add("Must be between 0 and 1, and less than high threshold.");
-        }
+        var hasLow = TryGetDouble(p, "low_threshold", out var low);
+        if (!hasLow || low < 0.0 || low >= 1.0)
+            errors.Add("Must be between 0 and 1, and less than high threshold.");
 
-        // Cross-field: high must be strictly > low (Pitfall 5 — skip if either key absent)
-        if (p.TryGetValue("high_threshold", out _) && p.TryGetValue("low_threshold", out _))
+        // Cross-field: high must be strictly > low. Only evaluated when both values
+        // individually parsed and passed their own range check (mirrors detectorParams.ts:
+        // "only applies when both individually pass their own range check").
+        if (hasHigh && hasLow &&
+            high > 0.0 && high <= 1.0 && low >= 0.0 && low < 1.0 &&
+            high <= low)
         {
-            if (TryGetDouble(p, "high_threshold", out var h) &&
-                TryGetDouble(p, "low_threshold",  out var l))
-            {
-                // Only add cross-field errors if range errors not already added
-                // (to avoid double-reporting on the same field)
-                if (h > 0.0 && h <= 1.0 && l >= 0.0 && l < 1.0)
-                {
-                    // Both are in their individual valid ranges — check cross-field constraint
-                    if (h <= l)
-                    {
-                        errors.Add("Must be between 0 and 1, and greater than low threshold.");
-                        errors.Add("Must be between 0 and 1, and less than high threshold.");
-                    }
-                }
-            }
+            errors.Add("Must be between 0 and 1, and greater than low threshold.");
+            errors.Add("Must be between 0 and 1, and less than high threshold.");
         }
 
         // frozen_variance_threshold: number ≥ 0
-        if (TryGetDouble(p, "frozen_variance_threshold", out var fvt))
-        {
-            if (fvt < 0.0)
-                errors.Add("Must be 0 or greater.");
-        }
+        if (!TryGetDouble(p, "frozen_variance_threshold", out var fvt) || fvt < 0.0)
+            errors.Add("Must be 0 or greater.");
     }
 
     private static void ValidateMad(Dictionary<string, string> p, List<string> errors)
     {
         // threshold: number > 0
-        if (TryGetDouble(p, "threshold", out var threshold))
-        {
-            if (threshold <= 0.0)
-                errors.Add("Must be greater than 0.");
-        }
+        if (!TryGetDouble(p, "threshold", out var threshold) || threshold <= 0.0)
+            errors.Add("Must be greater than 0.");
 
         // window: integer ≥ 1
         ValidateIntAtLeast(p, "window", 1, "Must be a whole number ≥ 1.", errors);
@@ -166,11 +148,8 @@ public static class InputValidator
         ValidateIntAtLeast(p, "seasonal", 1, "Must be a whole number ≥ 1.", errors);
 
         // threshold: number > 0
-        if (TryGetDouble(p, "threshold", out var threshold))
-        {
-            if (threshold <= 0.0)
-                errors.Add("Must be greater than 0.");
-        }
+        if (!TryGetDouble(p, "threshold", out var threshold) || threshold <= 0.0)
+            errors.Add("Must be greater than 0.");
     }
 
     // -------------------------------------------------------------------------
@@ -198,7 +177,9 @@ public static class InputValidator
     }
 
     /// <summary>
-    /// Validates that an integer param is present and ≥ minValue; appends errorMsg on failure.
+    /// Validates that an integer param is present, numeric, and ≥ minValue; appends errorMsg
+    /// on failure. Missing/blank/non-numeric values are a hard error (client parity —
+    /// detectorParams.ts MSG_REQUIRED), not a silent skip.
     /// </summary>
     private static void ValidateIntAtLeast(
         Dictionary<string, string> p,
@@ -207,10 +188,7 @@ public static class InputValidator
         string errorMsg,
         List<string> errors)
     {
-        if (TryGetInt(p, key, out var val))
-        {
-            if (val < minValue)
-                errors.Add(errorMsg);
-        }
+        if (!TryGetInt(p, key, out var val) || val < minValue)
+            errors.Add(errorMsg);
     }
 }
