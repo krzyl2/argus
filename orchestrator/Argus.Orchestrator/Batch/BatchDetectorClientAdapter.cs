@@ -28,4 +28,16 @@ public sealed class BatchDetectorClientAdapter : IBatchDetectorClient
         var call = _gateway.DetectorClient.FitAsync(request, cancellationToken: ct);
         return await call.ResponseAsync;
     }
+
+    public async Task<GroupScoreResponse> ScoreGroupBatchAsync(GroupScoreRequest request, CancellationToken ct)
+    {
+        var call = _gateway.DetectorClient.ScoreGroupBatchAsync(request, cancellationToken: ct);
+        return await call.ResponseAsync;
+    }
+
+    public async Task<FitGroupResponse> FitGroupAsync(FitGroupRequest request, CancellationToken ct)
+    {
+        var call = _gateway.DetectorClient.FitGroupAsync(request, cancellationToken: ct);
+        return await call.ResponseAsync;
+    }
 }

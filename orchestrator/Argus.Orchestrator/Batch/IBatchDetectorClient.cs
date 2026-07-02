@@ -11,4 +11,8 @@ public interface IBatchDetectorClient
 {
     Task<ScoreBatchResponse> ScoreBatchAsync(ScoreBatchRequest request, CancellationToken ct);
     Task<FitResponse> FitAsync(FitRequest request, CancellationToken ct);
+
+    // Phase 6 (GRP-02/GRP-04): group scoring/fit RPCs
+    Task<GroupScoreResponse> ScoreGroupBatchAsync(GroupScoreRequest request, CancellationToken ct);
+    Task<FitGroupResponse> FitGroupAsync(FitGroupRequest request, CancellationToken ct);
 }

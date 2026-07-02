@@ -64,6 +64,14 @@ public class BatchSchedulerWorkerTests
             FitCallCount++;
             return Task.FromResult(new FitResponse { Ok = true });
         }
+
+        // Phase 6 (GRP-02/GRP-04): not exercised by this test class's scenarios yet
+        // (group loop wiring lands in Plan 06-04) — minimal stub to satisfy the interface.
+        public Task<GroupScoreResponse> ScoreGroupBatchAsync(GroupScoreRequest request, CancellationToken ct)
+            => Task.FromResult(new GroupScoreResponse { Ok = true });
+
+        public Task<FitGroupResponse> FitGroupAsync(FitGroupRequest request, CancellationToken ct)
+            => Task.FromResult(new FitGroupResponse { Ok = true });
     }
 
     private sealed class FakeStatePublisher : IStatePublisher
