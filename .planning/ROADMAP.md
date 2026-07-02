@@ -126,7 +126,12 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
   3. Every `/api/*` endpoint the SPA calls enforces the same Ingress auth guarantees the v3.0 server-rendered UI had
   4. All v3.0 capabilities — sensor discovery/selection, per-entity detector assignment, hot-reload without restart — work identically through the new SPA
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+  - [ ] 07-01-PLAN.md — SPA scaffold: Vite/Preact project, hash router, relative-fetch client, 13 parity components + validation + Vitest (Wave 1)
+  - [ ] 07-02-PLAN.md — .NET JSON API conversion + SaveRequest DTO + UseStaticFiles/MapFallbackToFile + server-render removal (Wave 1)
+  - [ ] 07-03-PLAN.md — Multi-stage Dockerfile (Node build + in-image dotnet publish) + CI/build-push update + htmx removal (Wave 2)
+
 **UI hint**: yes
 
 ### Phase 8: Group Config UI + Algorithm Chooser
@@ -159,5 +164,5 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 | 4. Validation, CI Packaging + Documentation | v3.0 | 4/4 | Complete | 2026-07-01 |
 | 5. Group Detection Core (Proto + Python Detectors) | v4.0 | 4/4 | Complete    | 2026-07-02 |
 | 6. Batch Group Pipeline | v4.0 | 4/4 | Complete    | 2026-07-02 |
-| 7. SPA Scaffolding | v4.0 | 0/TBD | Not started | - |
+| 7. SPA Scaffolding | v4.0 | 0/3 | Not started | - |
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 0/TBD | Not started | - |
