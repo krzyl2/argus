@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
-current_phase: 6
+current_phase: 06
 current_phase_name: Batch Group Pipeline
-status: verifying
-stopped_at: Completed 05-04-PLAN.md — Phase 05 all plans done
-last_updated: "2026-07-02T12:49:25.162Z"
+status: executing
+stopped_at: Completed 06-01-PLAN.md — Group config schema + validation
+last_updated: "2026-07-02T13:26:52.232Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 5 complete, transitioned to Phase 6
+last_activity_desc: Phase 06 execution started
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 5
-  completed_plans: 4
+  total_plans: 10
+  completed_plans: 5
   percent: 0
 ---
 
@@ -52,7 +52,7 @@ not formally signed off.
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
-**Current focus:** Phase 05 — Group Detection Core (Proto + Python Detectors)
+**Current focus:** Phase 06 — Batch Group Pipeline
 
 ## Phase Status (v4.0)
 
@@ -143,6 +143,9 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase ?]: [Phase 05-03]: Extended joint-anomaly test fixture from RESEARCH.md's 5 rows to 10 (same correlated pattern) - PCA/COPOD produced divide-by-zero/near-tie on the tiny original fixture; production code unchanged, copied verbatim from RESEARCH.md
 - [Phase ?]: [Phase 05-04]: is_anomaly for joint-multivariate group detectors derived from score > model._model.threshold_ (not predict()) — avoids a second decision_function() call that would corrupt ECOD/COPOD's mutable self.O attribution matrix
 - [Phase ?]: [Phase 05-04]: PeerDivergenceDetector constructed fresh per ScoreGroupBatch call rather than read from registry — stateless, no fit() needed; registry entry exists only for FitGroup no-op symmetry with the stl pattern
+- [Phase ?]: [Phase 06-01]: EntityConfig.Covariates/Groups placeholders removed entirely (not deprecated-in-place) — IgnoreUnmatchedProperties() makes this safe for any stray YAML on existing installs
+- [Phase ?]: [Phase 06-01]: IHaSensorRegistry threaded as an optional 3rd parameter (default null) on EntitiesConfigLoader.Load rather than a new overload, keeping all existing 2-arg call sites unchanged
+- [Phase ?]: [Phase 06-01]: Peer-divergence unit rejection only fires when 2+ distinct non-null units are observed; registry null or under-resolved units degrades to skip-check-and-keep (cold boot)
 
 ### Blockers
 
@@ -168,11 +171,12 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 05 P02 | 6m | 2 tasks | 3 files |
 | Phase 05 P03 | 12min | 3 tasks | 5 files |
 | Phase 05 PP04 | 8min | 3 tasks | 3 files |
+| Phase 06 P01 | 6min | 3 tasks | 4 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T12:32:02.461Z
-**Stopped at:** Completed 05-04-PLAN.md — Phase 05 all plans done
+**Last session:** 2026-07-02T13:26:52.224Z
+**Stopped at:** Completed 06-01-PLAN.md — Group config schema + validation
 **Resume file:** None
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
@@ -184,7 +188,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Current Position
 
-Phase: 6 — Batch Group Pipeline
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-02 — Phase 5 complete, transitioned to Phase 6
+Phase: 06 (Batch Group Pipeline) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-07-02 — Phase 06 execution started

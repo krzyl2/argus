@@ -107,7 +107,12 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
   3. Group anomaly entities (per-member for peer-divergence, group-level for joint-multivariate) are published via MQTT discovery on group creation and correctly retracted on membership change, without orphaning stale HA entities
   4. A group with incompatible units across members, or with membership below the minimum-N floor, is rejected or degrades safely at config-load time rather than producing a silently-wrong score
 
-**Plans**: TBD
+**Plans**: 1/4 plans executed
+
+- [x] 06-01-PLAN.md
+- [ ] 06-02-PLAN.md
+- [ ] 06-03-PLAN.md
+- [ ] 06-04-PLAN.md
 
 ### Phase 7: SPA Scaffolding
 
@@ -153,6 +158,6 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 | 3. Config Read/Write + Detector Assignment + Reload | v3.0 | 3/3 | Complete | 2026-07-01 |
 | 4. Validation, CI Packaging + Documentation | v3.0 | 4/4 | Complete | 2026-07-01 |
 | 5. Group Detection Core (Proto + Python Detectors) | v4.0 | 4/4 | Complete    | 2026-07-02 |
-| 6. Batch Group Pipeline | v4.0 | 0/TBD | Not started | - |
+| 6. Batch Group Pipeline | v4.0 | 1/4 | In Progress|  |
 | 7. SPA Scaffolding | v4.0 | 0/TBD | Not started | - |
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 0/TBD | Not started | - |

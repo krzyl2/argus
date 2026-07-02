@@ -11,7 +11,7 @@ Requirements for this milestone. Each maps to exactly one roadmap phase.
 
 ### Group Detection (GRP)
 
-- [ ] **GRP-01**: Operator can define a named group of sensor members explicitly in config (no auto-discovery), keyed by a stable operator-assigned group_id
+- [x] **GRP-01**: Operator can define a named group of sensor members explicitly in config (no auto-discovery), keyed by a stable operator-assigned group_id
 - [ ] **GRP-02**: Group members' history is time-aligned onto a common grid before scoring (InfluxDB `aggregateWindow`+`pivot`, server-side in .NET), with a staleness cap on forward-filled gaps
 - [x] **GRP-03**: Peer-divergence detection flags WHICH member diverges from the group consensus, emitting a per-member binary_sensor + score (mirrors the v1–v3 per-entity output contract), using a robust (median/MAD) statistic
 - [x] **GRP-04**: Peer-divergence enforces a minimum-member-count floor and degrades safely (does not emit meaningless verdicts) for groups below it
@@ -74,7 +74,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GRP-01 | Phase 6 | Pending |
+| GRP-01 | Phase 6 | Complete |
 | GRP-02 | Phase 6 | Pending |
 | GRP-03 | Phase 5 | Complete |
 | GRP-04 | Phase 5 | Complete |
