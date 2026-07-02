@@ -1,281 +1,138 @@
-# Stack Research — Argus v3: Ingress Configuration UI
+# Stack Research — Argus v4.0: Group & Multivariate Detection + Light-SPA UI
 
-**Domain:** ASP.NET Core Minimal API web UI co-hosted inside an existing Generic Host worker, behind Home Assistant Supervisor Ingress
-**Researched:** 2026-06-30
-**Confidence:** HIGH — core .NET facts verified against official MS docs; HA Ingress headers verified against HA developer docs + supervisor source; htmx version confirmed on npm/CDN
+**Domain:** New multivariate/group anomaly-detection additions to an existing .NET 8 + Python gRPC detector; UI rebuild from server-rendered htmx to a built SPA.
+**Researched:** 2026-07-02
+**Confidence:** MEDIUM overall — PyOD/InfluxDB facts cross-checked against official docs and the repo's own pinned dependencies (HIGH); frontend bundle-size figures are LOW-confidence web-search snapshots (directional, re-verify at implementation time).
 
----
+**Supersedes:** `.planning/research/STACK.md` (v3.0, 2026-06-30) for UI concerns only. v3.0's "Decision B — server-rendered HTMX vs SPA" recommended htmx specifically **because** the config UI was simple. PROJECT.md's v4.0 milestone explicitly overrides that decision: the algorithm chooser + friendly-name search UX needs client-side interactivity htmx can't cleanly provide, so v4.0 intentionally reintroduces a Node build step and drops the air-gapped/no-build guarantee. Everything else in the v3.0 file (ASP.NET Core hosting model, HA Ingress header handling, Kestrel co-hosting) is unchanged infrastructure and still applies — this file only covers what's NEW.
 
-## Context: What Already Exists (Do Not Change)
-
-The orchestrator is a `Microsoft.NET.Sdk.Worker` project (`Host.CreateApplicationBuilder`), with six `BackgroundService` / `IHostedService` instances registered via `AddHostedService`. The Dockerfile base is `ghcr.io/home-assistant/base-debian:bookworm` with .NET 8 runtime installed via `dotnet-install.sh` and Python 3.11 via apt. The existing services must keep running without change.
-
----
-
-## Decision A — Hosting model: co-host vs separate process
-
-**Recommendation: Co-host ASP.NET Core inside the existing Generic Host process.**
-
-Switch the project SDK from `Microsoft.NET.Sdk.Worker` to `Microsoft.NET.Sdk.Web` and replace `Host.CreateApplicationBuilder` with `WebApplication.CreateBuilder`. `WebApplication` is a superset of `IHost` — all existing `AddHostedService` / `AddSingleton` / `AddSingleton<IHostedService>` registrations work identically. `WebApplication` implements `IHost`, runs the Kestrel HTTP server as one of its own internal hosted services, and calls every `BackgroundService.ExecuteAsync` alongside it. No second process, no IPC, no additional s6 service, no image-size cost.
-
-**Why not a separate process:**
-- A separate .NET process adds ~50–80 MB to the published output and requires a new s6 service, inter-process communication (HTTP loopback or named pipe) to share in-memory state (`EntitiesConfig`, `ArgusHealthSignals`), and synchronised config-reload signalling. The shared-state coupling means the API reads the same singleton `EntitiesConfig` that the pipeline workers use — impossible across processes without serialisation.
-- A second Python/Node process is even heavier and introduces a foreign runtime.
-
-**Migration from Worker SDK to Web SDK is a one-line change in the .csproj:**
-
-```xml
-<!-- Before -->
-<Project Sdk="Microsoft.NET.Sdk.Worker">
-<!-- After -->
-<Project Sdk="Microsoft.NET.Sdk.Web">
-```
-
-`Program.cs` changes:
-
-```csharp
-// Before
-var builder = Host.CreateApplicationBuilder(args);
-// ... service registrations ...
-var host = builder.Build();
-host.Run();
-
-// After
-var builder = WebApplication.CreateBuilder(args);
-// ... same service registrations, unchanged ...
-var app = builder.Build();
-// Add static files + API routes (see Decision B)
-app.UseStaticFiles();
-app.MapGet("/api/config", ...);
-app.Run();
-```
-
-The `Microsoft.Extensions.Hosting` explicit package reference becomes implicit (pulled in by the Web SDK); remove it to avoid version conflicts, or keep it pinned to 8.0.x.
-
----
-
-## Decision B — UI rendering: server-rendered HTMX vs SPA
-
-**Recommendation: Server-rendered minimal HTML + HTMX 2.x. No SPA, no build step, no Node toolchain in CI.**
-
-### Why server-rendered beats a SPA here
-
-| Concern | Server-rendered + HTMX | SPA (React/Vue/Svelte) |
-|---------|----------------------|----------------------|
-| Image size impact | Zero — htmx.min.js is 14 KB, copied into `wwwroot/` as a static file | +100–500 MB for Node.js in CI image or a multi-stage build that copies dist/ output |
-| Build pipeline | No build step — HTML templates returned from C# endpoint methods | Requires Vite/Webpack, npm install in CI, separate build stage |
-| Base-path handling | Server renders `<base href="{ingressPath}/">` from `X-Ingress-Path` header; all relative hrefs work automatically | SPA must be configured with `PUBLIC_URL` / `base` at build time; dynamic ingress path requires runtime injection hacks |
-| Complexity | CRUD config form = ~5 HTMX-annotated HTML partials returned by Minimal API endpoints | Full SPA lifecycle: state management, routing, bundler, hot reload |
-| Runtime dependency | None (htmx served from wwwroot/, no CDN) | None if bundled, but adds MB |
-| License | htmx: BSD 0-Clause (permissive, passes project constraint) | React: MIT, Vue: MIT — both permissive; not the deciding factor |
-
-HTMX 2.0.x (currently 2.0.10 as of June 2026) replaced `hx-sse` / `hx-ws` with separate extension files. For this UI — a config form, entity list, detector-assignment table — no SSE or WebSocket extension is needed. Plain `hx-get` / `hx-post` / `hx-swap` attributes are sufficient. The library is 14 KB minified.
-
-### Base-path handling under HA Ingress
-
-HA Supervisor strips the ingress prefix from the URL before forwarding to the add-on container, so the container always sees requests arriving at `/{path}` (e.g., `/` or `/api/config`). The Supervisor injects one header:
-
-- `X-Ingress-Path` — the full ingress prefix that HA uses externally (e.g., `/api/hassio_ingress/<token>`). The add-on uses this to construct absolute `<base href>` or redirect URLs if needed.
-
-**Because the Supervisor strips the prefix**, the add-on's Kestrel server does **not** need `UsePathBase()`. The URL the server sees is already stripped. The only use of `X-Ingress-Path` is to emit a `<base href=".../">` tag in the HTML `<head>` so that static-file and HTMX form-action URLs resolve correctly in the browser, which uses the external (unstripped) path.
-
-Implementation:
-
-```csharp
-app.MapGet("/", (HttpRequest req) =>
-{
-    var ingressPath = req.Headers["X-Ingress-Path"].FirstOrDefault() ?? "";
-    // Emit base tag for browser-relative URL resolution
-    return Results.Content($$"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <base href="{{ingressPath}}/">
-          <script src="htmx.min.js"></script>
-        </head>
-        <body>
-          <!-- config UI -->
-        </body>
-        </html>
-        """, "text/html");
-});
-```
-
-All `hx-get="/api/config"` links in rendered HTML resolve against `<base href>` and are rewritten by the browser to `/api/hassio_ingress/<token>/api/config`, which the Supervisor forwards correctly.
-
-### Static file serving (htmx.min.js + CSS)
-
-Use `app.UseStaticFiles()` with a physical `wwwroot/` directory inside the published output. The SDK automatically includes files from `wwwroot/` in publish output when `Microsoft.NET.Sdk.Web` is the project SDK. No `ManifestEmbeddedFileProvider` is needed — embedded resources add build-manifest complexity with no benefit at this scale.
-
-Copy `htmx.min.js` into `orchestrator/Argus.Orchestrator/wwwroot/` and add to the csproj:
-
-```xml
-<ItemGroup>
-  <Content Include="wwwroot\**" CopyToPublishDirectory="Always" />
-</ItemGroup>
-```
-
-The Web SDK does this automatically; the explicit item group is only needed if the Worker SDK path is retained (not recommended).
-
----
+This file covers only new v4.0 additions. River, Darts, joblib, NetDaemon.Client, MQTTnet, Grpc.Net.Client/Tools remain unchanged and out of scope.
 
 ## Recommended Stack
 
-### Core Technologies
+### Core Technologies (new for v4.0)
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| `Microsoft.NET.Sdk.Web` (project SDK) | n/a (.NET 8) | Replaces `Microsoft.NET.Sdk.Worker`; enables `WebApplication.CreateBuilder`, Kestrel, static files, minimal API routing | Zero additional packages; `WebApplication` is a superset of `IHost` and runs all existing `BackgroundService` instances unchanged |
-| ASP.NET Core Minimal API | .NET 8 (framework-included) | `MapGet`/`MapPost` handlers for config read/write endpoints | No controller overhead; 3–5 route handlers is the entire API surface; same DI container as workers |
-| ASP.NET Core Static Files middleware | .NET 8 (framework-included) | Serves `wwwroot/` — htmx.min.js + any CSS | Single `app.UseStaticFiles()` call; no NuGet package |
-| Kestrel HTTP server | .NET 8 (framework-included) | HTTP listener on `ingress_port` (8099) | Included in Web SDK; no nginx sidecar needed |
+| PyOD (existing dependency, new usage) | 3.6.0 — already pinned in `detector/requirements.txt`, verified in repo | Joint-multivariate group detection: ECOD, COPOD, PCA, IForest | Same library already shipped for univariate MAD detection. All four multivariate detectors share PyOD's unified `fit(X)` / `decision_function(X)` / `predict(X)` API where `X` is a 2D array `(n_samples, n_features)` — no new dependency, no new API surface to learn; feed a matrix (one column per group member) instead of a vector. All four are CPU-only. License BSD-2-Clause (already an approved dependency). No `pyod` version bump needed — 3.6.0 already includes these classes. |
+| Preact | 10.x (current 10.29.3, MIT) | Light SPA UI runtime | Recommended framework — see rationale below. |
+| Vite | 8.x (current 8.1.2, MIT) | SPA build tool | Standard bundler for Preact; compiles to a static `dist/` of plain JS/CSS/HTML with zero runtime dependency on Node or a CDN. Node is build-time only — never present in the shipped container. |
 
 ### Supporting Libraries
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| htmx | 2.0.10 | Browser-side progressive enhancement — partial HTML swaps on form submit and entity-list fetch | Copy `htmx.min.js` into `wwwroot/`; no npm required. Handles all UI interaction without a SPA framework. |
-| `YamlDotNet` | 16.3.0 (already pinned) | Read/write `/data/entities.yaml` from the config API endpoints | Already a dependency; no version change needed |
+| numpy / scipy / scikit-learn / numba | transitive via `pyod==3.6.0` (already resolved by pip today) | Backing math for ECOD/COPOD/PCA/IForest | No explicit pin needed beyond what `pyod==3.6.0` already resolves in the existing `requirements.txt`. All BSD-licensed (numpy BSD-3, scipy BSD-3, scikit-learn BSD-3, numba BSD-2). No GPU extras (`torch`, `xgboost`) pulled in — those only apply to PyOD's deep-learning detectors, which v4.0 does not use. |
+| (no new library — custom function) | — | Peer-divergence detection (which group member diverges) | Per-timestamp: compute group consensus (mean/median across members), then per-member deviation (z-score or MAD-based robust z-score) from that consensus, flag member(s) over threshold. Pure numpy arithmetic — reuse the same MAD math already implemented for the existing single-sensor MAD detector, applied against the cross-sectional group statistic instead of a member's own history. No PyOD class models "who diverged from peers" directly; this is a ~20-line function, not an import. |
+| Flux (InfluxDB 2.x query language — not a package) | InfluxDB 2.x server-side, already deployed | Time-alignment of group members onto a common grid | `aggregateWindow(every, fn, createEmpty: true)` downsamples each member's series onto fixed windows; chained with `pivot(rowKey: ["_time"], columnKey: ["_field","entity_id"], valueColumn: "_value")` produces one row per aligned timestamp with one column per group member. Server-side (InfluxDB does the resampling) — no new NuGet package. |
 
 ### Development Tools
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| `dotnet publish` | Produces self-contained publish output including `wwwroot/` | CI already runs this; Web SDK automatically copies `wwwroot/**` into publish output |
-| `dotnet watch` (dev only) | Hot-reload during local development | Standard .NET 8 SDK tool; not installed in the container |
-
----
+| npm (or pnpm) | Installs Preact/Vite build toolchain, runs `vite build` | Build-time only, in a Docker multi-stage build stage or on the dev machine before `docker build` — never present in the final runtime image. Mirrors the existing pattern where `dotnet publish` runs before `docker build`, and `argus/Dockerfile` just `COPY`s `orchestrator/publish/`. |
 
 ## Installation
 
-```xml
-<!-- Argus.Orchestrator.csproj — two changes only -->
-<!-- 1. Change SDK -->
-<Project Sdk="Microsoft.NET.Sdk.Web">
-
-<!-- 2. Remove explicit Microsoft.Extensions.Hosting (now implicit via Web SDK) -->
-<!-- All other PackageReference entries are unchanged -->
-```
-
 ```bash
-# No new NuGet packages required — everything is in the Web SDK
-# htmx: download once, commit to wwwroot/
-curl -Lo orchestrator/Argus.Orchestrator/wwwroot/htmx.min.js \
-     https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js
+# Detector (Python) — NO new packages. ECOD/COPOD/PCA/IForest already ship inside
+# pyod==3.6.0, which is already pinned in detector/requirements.txt. No edits needed there.
+
+# SPA build (new, separate toolchain from detector/orchestrator)
+npm create vite@latest argus-ui -- --template preact
+cd argus-ui
+npm install
+npm run build   # outputs to dist/ (configure outDir to feed the orchestrator's wwwroot/)
 ```
 
----
-
-## config.yaml Changes Required
-
-Add three keys to `argus/config.yaml`:
-
-```yaml
-# NEW: enable Ingress ("Open Web UI" button in HA add-on panel)
-ingress: true
-ingress_port: 8099          # Kestrel listens on this port inside the container
-panel_icon: mdi:tune-variant  # MDI icon shown in HA sidebar (optional; mdi:puzzle is default)
-panel_title: "Argus Config"   # Sidebar label (optional; defaults to add-on name)
+```csharp
+// InfluxDB.Client 5.0.0 (.NET) — already a dependency, new query pattern only.
+// Build the aggregateWindow + pivot Flux query as a string, hand it to the existing QueryApi.
+var flux = $@"
+from(bucket: ""{bucket}"")
+  |> range(start: {start})
+  |> filter(fn: (r) => r._measurement == ""{measurement}"" and ({entityFilter}))
+  |> aggregateWindow(every: {window}, fn: mean, createEmpty: true)
+  |> pivot(rowKey: [""_time""], columnKey: [""_field"", ""entity_id""], valueColumn: ""_value"")";
 ```
 
-**Notes:**
-- `ingress_port` must match the port Kestrel is configured to listen on. Default is 8099.
-- Do **not** expose the port via `ports:` — Ingress is the only ingress path; no external port needed.
-- `panel_admin: true` (default) is correct; this UI is for the owner only.
-- `ingress_stream: false` (default) is correct; no chunked/SSE streaming from the config UI.
-- `watchdog: "tcp://[HOST]:50051"` (existing gRPC port) is unaffected.
+```dockerfile
+# argus/Dockerfile — new multi-stage build addition (illustrative)
+FROM node:22-slim AS ui-build
+WORKDIR /ui
+COPY ui/package*.json ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run build   # outputs to /ui/dist
 
-Configure Kestrel to listen on 0.0.0.0:8099 (not loopback — Supervisor connects from 172.30.32.2):
-
-```json
-// appsettings.json
-{
-  "Kestrel": {
-    "Endpoints": {
-      "Ingress": {
-        "Url": "http://0.0.0.0:8099"
-      }
-    }
-  }
-}
+FROM ${BUILD_FROM}
+# ... existing .NET + Python install steps unchanged ...
+COPY --from=ui-build /ui/dist /opt/argus/orchestrator/wwwroot
+# Node/npm never appear in this final stage — only the compiled static output does.
 ```
-
-Or via environment variable in the s6 run script:
-```bash
-ASPNETCORE_URLS=http://0.0.0.0:8099
-```
-
----
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| `Microsoft.NET.Sdk.Web` (co-host) | Separate .NET process (second s6 service) | Never for this project — config UI needs access to the same singletons (`EntitiesConfig`, reload channel); separate process requires IPC and doubles .NET runtime overhead |
-| `Microsoft.NET.Sdk.Web` (co-host) | Node.js/Python/nginx sidecar | Only if the UI technology was incompatible with .NET — not the case here |
-| Server-rendered HTML + HTMX | React/Vue/Svelte SPA | If the UI required complex client-side state (e.g., real-time graph, drag-and-drop reordering with offline state). A config form does not. |
-| `wwwroot/` static files | `ManifestEmbeddedFileProvider` (embedded resources) | If the assembly must ship as a single binary with no loose files. For a Docker add-on image this is unnecessary complexity. |
-| htmx 2.0.10 | Alpine.js (7 KB) | Alpine is a fine alternative for purely declarative attribute-driven UI with no server interaction patterns. HTMX wins here because the entity-list needs server-fetched partial HTML swaps. |
-| Kestrel (built-in) | nginx sidecar in front of Kestrel | Only if TLS termination or complex rewrite rules are needed. HA Ingress handles TLS; no nginx needed. |
+|-------------|-------------|--------------------------|
+| PyOD ECOD/COPOD/PCA/IForest (same lib, multivariate mode) | PyOD `KNN`, `LOF`, `OCSVM` | Also accept multivariate `X`, already BSD, already in the same `pyod` install — good candidates to expose later in the "expanded algorithm library" chooser (a separate v4.0 target feature), additive to ECOD/COPOD/PCA/IForest rather than a replacement for the MVP. |
+| Custom z-score/MAD peer-divergence function | PyOD `HBOS` scored per-timestamp across members | If peer-divergence needs to handle non-Gaussian group distributions robustly, HBOS (already BSD, already in `pyod`) can score "how unusual is this member's value among its peers right now" without custom math. For v1 of this feature, a manual z-score/MAD comparison is simpler and matches the existing MAD-detector code style already in the repo. |
+| Preact | Vue 3 (MIT) | If the UI grows into a more complex, multi-view stateful app needing built-in routing/state conventions (SFCs, Pinia), Vue's heavier footprint (~22KB) and stronger conventions pay off. Not justified for a config/chooser/search UI. |
+| Preact | Svelte (MIT) | If raw bundle size is the only criterion, Svelte edges out Preact at small scale (compiles away the framework at build time, roughly 2-7KB for a small app vs Preact's ~3-4KB runtime) — but Svelte is a different authoring paradigm (compiler-driven, no runtime vdom, its own template syntax) with less "drop-in React-like" familiarity. Preact is recommended here because its React-compatible API (JSX, hooks) keeps the learning curve low for a developer who has only built server-rendered htmx UI so far (v3.0). If already comfortable with Svelte, it's an equally valid MIT choice with a marginal size edge. |
+| Server-side Flux `aggregateWindow` + `pivot` | .NET-side resampling (manual bucket-and-average over raw points) | Only if resampling logic needs to be decoupled from InfluxDB entirely (e.g., for the deferred streaming-groups feature, where there's no Influx behind the window). For v4.0's stated batch-first scope, server-side Flux is strictly simpler — no new .NET resampling code, no risk of window-boundary mismatch between what Influx stored and what .NET recomputes. |
 
----
-
-## What NOT to Add
+## What NOT to Use
 
 | Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| React / Vue / Svelte | Requires Node.js in CI, adds 100–500 MB to CI image, complicates ingress base-path handling at build time | htmx 2.0.10 + server-rendered HTML |
-| Blazor Server or Blazor WebAssembly | Blazor WASM adds ~6–10 MB to download; Blazor Server requires persistent SignalR WebSocket — fragile behind HA Supervisor proxy. Neither fits a 5-endpoint config form. | Minimal API + htmx |
-| `UseForwardedHeaders` / `UsePathBase` middleware | HA Supervisor strips the ingress prefix before forwarding — the app sees requests at `/`, not at `/api/hassio_ingress/<token>/`. Calling `UsePathBase` with a static path would break routing; dynamic path from `X-Ingress-Path` is only needed for the `<base href>` tag. | Read `X-Ingress-Path` header directly in the root handler |
-| Separate HTTPS / TLS in Kestrel | HA Supervisor Ingress handles TLS externally; Kestrel serves plain HTTP on 8099 inside the container | Plain HTTP Kestrel endpoint on 8099 |
-| `aspnet:8.0` Docker base image | Project uses `base-debian:bookworm` + dotnet-install.sh; switching base image breaks s6-overlay and Python co-installation | Keep existing base image |
-| OpenAPI / Swagger | This is an internal UI, not a public API. Zero consumers outside the htmx-driven UI. | None |
-| SignalR | Config reload can be done with a simple POST + redirect. No real-time push to the browser is needed from the server side. | `hx-post` + `hx-swap` on form submit |
-| ML.NET | Excluded by project constraint D2 | Python detector (no change) |
-| CDN-referenced htmx | HA add-on operates offline/LAN; CDN fetch fails on air-gapped installs | Bundle `htmx.min.js` in `wwwroot/` |
+|-------|-----|--------------|
+| PyOD deep-learning detectors (AutoEncoder, VAE, DeepSVDD) for v4.0 groups | Pull in `torch` as an optional extra — GPU-oriented, large image footprint, conflicts with the CPU-only constraint carried into v4.0's batch-first scope; overkill for small (2-10 member) sensor groups | ECOD, COPOD, PCA, IForest — classical, CPU-only, already covered by `pyod==3.6.0` |
+| ADTK, or any MPL-2.0-licensed library, for peer-divergence math | License constraint (BSD/Apache/MIT only) unchanged from v1-v3 | Plain numpy/scipy z-score/MAD computation (no new dependency) |
+| A dedicated "group anomaly detection" / distributional-divergence package | Those target "is this whole group's distribution unusual vs. a reference," a different problem from "which single member diverges from its peers right now." No mature, permissively-licensed, actively maintained package fits the peer-divergence framing; adding one would import a dependency to solve what is a ~20-line function | Custom statistical computation (see Supporting Libraries) |
+| .NET-side custom resampling library/NuGet package | InfluxDB's own `aggregateWindow`/`pivot` already solves alignment server-side; a second resampling implementation risks producing windows that don't match what's stored, and adds an unneeded dependency | Flux query string via the existing `QueryApi.QueryAsync` |
+| React for the SPA | Larger baseline bundle (~42-45KB per current comparisons) than Preact for equivalent functionality, and its ecosystem gravitationally pulls in more packages (react-router, state libraries) that add further build surface and image size than a config/chooser UI needs | Preact — same JSX/hooks API, smaller footprint |
+| Loading Preact/Vite output (or fonts, icon sets, any JS) from a public CDN at runtime | Violates "no cloud / self-hosted only" (D9) and the air-gapped LAN operation the add-on has run under since v1; a CDN reference breaks for any operator without internet-reachable HA and silently reintroduces an external runtime dependency | Bake the Vite `dist/` build output into the Docker image at build time — same `COPY orchestrator/publish/` idiom the orchestrator itself already uses; the runtime container makes zero outbound calls for UI assets |
+| Installing Node/npm inside the final HA add-on image | Bloats image size and attack surface for a tool only needed to *produce* static files, never to *run* them; also not present in the current base image (`ghcr.io/home-assistant/base-debian:bookworm`) | Multi-stage Docker build: a `node:xx` stage runs `npm run build`, then `COPY --from=ui-build /ui/dist ./wwwroot` copies only the compiled static output into the final stage — mirrors how `orchestrator/publish/` is already built externally and just `COPY`'d in today |
+| htmx (v3.0's choice) for the v4.0 chooser/search UI | v3.0's STACK.md correctly recommended htmx for a *simple config form* — that rationale doesn't hold once the UI needs a stateful algorithm chooser with live "best for" descriptions and fuzzy friendly-name search, which is much more naturally expressed as component state than server round-trips per keystroke | Preact SPA (this file) |
 
----
+## Stack Patterns by Variant
 
-## Stack Patterns
+**If group size stays small (2-10 members — typical HA groups like "all room humidity sensors" or "4 tire pressures"):**
+- ECOD and COPOD (parameter-light, distribution-based, no training-set-size sensitivity) are the safest joint-multivariate defaults.
+- PCA needs `n_features < n_samples` in the fit window to stay numerically stable — worth a guard if a group ever has very few historical samples in the batch window.
 
-**If Kestrel port conflicts with another service:**
-- Set `ingress_port` in `config.yaml` to a different value (e.g., 8080) and set `ASPNETCORE_URLS=http://0.0.0.0:8080` in the s6 run script.
+**If the algorithm chooser needs more "best for X" variety later (post-MVP):**
+- IForest handles nonlinear/non-Gaussian joint relationships better than PCA/COPOD but is more expensive to refit repeatedly; a reasonable "Advanced" option, not a default preset.
 
-**If config reload requires notifying background workers:**
-- Inject `IHostApplicationLifetime` or a custom `IConfigReloadSignal` singleton into both the API handler and the affected worker. The API POST writes new YAML to `/data/entities.yaml`, then signals the singleton; the worker's `ExecuteAsync` loop checks the signal. No process restart needed.
+**If peer-divergence groups mix units/scales per member (e.g., temperature °C and humidity %):**
+- Normalize (z-score) each member's own history first, then compare normalized deviations across members — otherwise a member with naturally larger absolute variance always looks "most different" even when behaving normally.
 
-**If the entity list is large (>200 sensors):**
-- Use `hx-get="/api/entities?q={search}"` with HTMX search input debounce (`hx-trigger="keyup changed delay:300ms"`) to filter server-side. The server calls the already-wired `SelectDiscoverableSensors` and returns an HTML partial — same pattern as the streaming path uses today.
-
----
+**If the SPA later needs client-side routing beyond a single page (separate chooser/search/dashboard views):**
+- Preact has a small official router (`preact-router`, MIT) that stays consistent with the "light SPA" framing — avoid a heavier meta-framework (Next/Nuxt-style) that assumes server-rendering infrastructure this project doesn't want.
 
 ## Version Compatibility
 
-| Component | Version | Notes |
-|-----------|---------|-------|
-| `Microsoft.NET.Sdk.Web` | .NET 8 | Compatible with all existing NuGet packages; Web SDK is a superset of Worker SDK |
-| `Microsoft.Extensions.Hosting` | Remove explicit reference | Now implicit via Web SDK; keeping it at 8.0.1 is safe but redundant |
-| htmx | 2.0.10 | No IE11 support (htmx 2.x dropped it); HA frontend runs Chromium — fine |
-| `YamlDotNet` | 16.3.0 (existing) | No change needed |
-| Kestrel | .NET 8 built-in | Listens on 0.0.0.0:8099; plain HTTP only |
-| HA Supervisor Ingress proxy | n/a | Connects from 172.30.32.2 to container IP:8099; strips ingress path prefix from URL |
-
----
+| Package A | Compatible With | Notes |
+|-----------|------------------|-------|
+| `pyod==3.6.0` | Python 3.11 (add-on base image, per `argus/Dockerfile`) and Python 3.12 (standalone `deploy/` image) | PyOD 3.6.x officially supports Python 3.9-3.13 — both images already in use are covered; no version bump needed for multivariate work. |
+| InfluxDB.Client 5.0.0 (.NET) | InfluxDB OSS 2.x (already deployed) | `aggregateWindow`/`pivot` are core Flux stdlib functions, not client-library features — any Flux string works through the existing `QueryApi.QueryAsync`; no client upgrade needed. |
+| Vite 8.x | Node >=20 | Build-stage/dev-machine requirement only; does not affect the runtime image's Python/.NET version requirements. |
+| Preact 10.x | Vite 8.x via `@preact/preset-vite` | Standard, actively maintained combination; JSX handled by the preset without a separate Babel config. |
 
 ## Sources
 
-- [ASP.NET Core hosted services (.NET 8 official docs)](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/host/hosted-services?view=aspnetcore-8.0) — confirms `AddHostedService` + `WebApplication.CreateBuilder` work together; verified June 2026
-- [.NET Worker Services docs](https://learn.microsoft.com/en-us/dotnet/core/extensions/workers) — SDK difference (`Microsoft.NET.Sdk.Worker` vs `Microsoft.NET.Sdk.Web`); confirmed BackgroundService works under both
-- [ASP.NET Core .NET 5 → 6 migration guide](https://learn.microsoft.com/en-us/aspnet/core/migration/50-to-60?view=aspnetcore-8.0) — confirms Generic Host (`IHost`) is NOT deprecated; `WebApplication` is the preferred host going forward but Generic Host is still fully supported
-- [HA Developer Docs — Presenting your app (Ingress)](https://developers.home-assistant.io/docs/apps/presentation/) — `ingress`, `ingress_port`, `ingress_entry`, `panel_icon`, `panel_title`, `ingress_stream` keys; `X-Ingress-Path` header; 172.30.32.2 source IP restriction; default port 8099
-- [home-assistant/supervisor ingress.py source](https://github.com/home-assistant/supervisor/blob/main/supervisor/api/ingress.py) — confirms Supervisor strips URL prefix before forwarding to container; sets `X-Remote-User-ID/Name/Display-Name`; `X-Ingress-Path` is set by the Supervisor HTTP client (separate from the API proxy handler)
-- [HA Community — X-Ingress-Path usage](https://community.home-assistant.io/t/how-to-use-x-ingress-path-in-an-add-on/276905) — practical pattern: use header value in `<base href>` tag; confirmed approach used by multiple add-on authors
-- [HA Community — absolute path handling with HA Ingress](https://community.home-assistant.io/t/how-to-handle-absolute-paths-with-ha-ingress/370572) — confirms relative paths work through proxy without rewriting; `X-Ingress-Path` needed only for `<base href>` generation
-- [htmx.org npm](https://www.npmjs.com/package/htmx.org) — version 2.0.10, last published ~2 months ago (April 2026); BSD 0-Clause license (confirmed permissive, passes project constraint)
-- [htmx 2.0.0 release announcement](https://htmx.org/posts/2024-06-17-htmx-2-0-0-is-released/) — htmx 2.x change summary; extensions separated; DELETE now uses URL params
-- [ASP.NET Core static files docs](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/static-files?view=aspnetcore-8.0) — `UseStaticFiles()` with `wwwroot/` default path; `ManifestEmbeddedFileProvider` for embedded-resource alternative
-- [ASP.NET Core proxy/load balancer docs](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/proxy-load-balancer?view=aspnetcore-8.0) — `UsePathBase`, `UseForwardedHeaders`, `X-Forwarded-Prefix` — confirmed NOT needed here because Supervisor strips prefix before forwarding
+- [PyOD official docs](https://pyod.readthedocs.io/) — confirmed ECOD/COPOD/PCA/IForest classes, unified fit/decision_function/predict API, `contamination` param — MEDIUM confidence (official docs, cross-checked across versions 2.0.7-3.6.1)
+- [PyOD GitHub repo — LICENSE](https://github.com/yzhao062/pyod/blob/master/LICENSE) — BSD-2-Clause confirmed directly — HIGH confidence (primary source fetched)
+- [PyOD on PyPI](https://pypi.org/project/pyod/) — 3.6.1 latest upstream (project pins 3.6.0, already verified installed in repo's `detector/requirements.txt`); Python 3.9-3.13 support; CPU-only core detectors confirmed; numpy/scipy/scikit-learn/numba deps (all BSD) — MEDIUM confidence
+- [InfluxDB Flux `aggregateWindow()` docs](https://docs.influxdata.com/flux/v0/stdlib/universe/aggregatewindow/) — window/resample semantics — MEDIUM confidence (official InfluxData docs)
+- [InfluxDB v2 window-aggregate guide](https://docs.influxdata.com/influxdb/v2/query-data/flux/window-aggregate/) — `aggregateWindow` + `pivot` pattern for multi-series alignment — MEDIUM confidence
+- [InfluxDB.Client C# GitHub / NuGet](https://github.com/influxdata/influxdb-client-csharp) — `QueryApi.QueryAsync` streaming Flux query pattern confirmed for the 5.0.0 line — LOW-MEDIUM confidence (web-search summary, not directly fetched changelog)
+- [Preact GitHub / npm](https://github.com/preactjs/preact) — 10.29.3 current, MIT license, ~3KB gzipped — LOW confidence (web-search snapshot; re-verify exact version at implementation time)
+- [Vite releases](https://vite.dev/releases) — 8.1.2 current, MIT — LOW confidence (web-search snapshot)
+- Bundle-size comparison sources (WeBridge, StackShare, Sentry Engineering blog) — Preact ~3-4KB, Svelte ~2-7KB, Vue ~22KB, React ~42-45KB gzipped for comparable small apps — LOW confidence (secondary blog sources, directional only, not benchmarked against this project's actual UI)
+- [ASP.NET Core static files docs](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/static-files?view=aspnetcore-8.0) — `UseStaticFiles` + `MapFallbackToFile` pattern for serving a built SPA from Kestrel — MEDIUM confidence (official Microsoft docs)
+- Repo files read directly: `detector/requirements.txt` (confirms `pyod==3.6.0` pinned today), `argus/Dockerfile` (confirms orchestrator is published externally and just `COPY`'d — the pattern this file recommends reusing for the SPA's `dist/` output) — HIGH confidence (primary source, read directly)
+- `.planning/research/STACK.md` (v3.0, 2026-06-30) — prior htmx decision and ASP.NET Core/Ingress hosting facts, superseded for UI framework choice only — HIGH confidence (internal, previously verified)
 
 ---
-*Stack research for: Argus v3.0 Ingress Configuration UI*
-*Researched: 2026-06-30*
+*Stack research for: Argus v4.0 — group/multivariate anomaly detection + light-SPA UI*
+*Researched: 2026-07-02*

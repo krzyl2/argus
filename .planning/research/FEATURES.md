@@ -1,70 +1,14 @@
 # Feature Research
 
-**Domain:** Home Assistant add-on Ingress configuration web UI (v3.0)
-**Researched:** 2026-06-30
-**Confidence:** MEDIUM — HA Ingress mechanics from official developer docs (HIGH); UX patterns from ecosystem survey of real add-ons (MEDIUM); static-file/path-base specifics from community issues (MEDIUM); .NET file-watch reload from official docs (HIGH)
+**Domain:** Self-hosted home-automation anomaly detection — group/multivariate detection + algorithm-chooser UX (v4.0 milestone)
+**Researched:** 2026-07-02
+**Confidence:** MEDIUM (patterns cross-corroborated across commercial tools and ML literature; no single authoritative source, so treat specifics as directional not gospel)
 
----
+> Note: this file covers ONLY the v4.0 milestone (group/multivariate detection + UX). The prior v3.0 Ingress Configuration UI research this file previously held is shipped and preserved in git history (see commit history for `.planning/research/FEATURES.md` prior to 2026-07-02).
 
-## Scope
+## Context Recap (from PROJECT.md)
 
-This file covers ONLY the new v3.0 Ingress Configuration UI. Existing v2.0 features (streaming
-detection, MQTT discovery, batch scheduling, health entity, add-on packaging) are shipped and out
-of scope. The three UI scenarios under research:
-
-- **(a) Entity discovery + selection** — browse/filter/search live HA sensors, see current values,
-  select which Argus tracks
-- **(b) Per-entity detector assignment** — assign HST/MAD/STL with editable parameters
-- **(c) Apply without restart** — save → reload → feedback/validation loop
-
-Dependencies on v2.0 capabilities are noted throughout.
-
----
-
-## How HA Ingress Works — Critical Background
-
-Understanding the Ingress mechanism is prerequisite to all feature decisions below.
-
-### Ingress plumbing
-
-- Add-on `config.yaml` must declare `ingress: true` and `ingress_port: <port>` (default 8099).
-- HA Supervisor reverse-proxies `https://ha-host/api/hassio_ingress/<token>/` to
-  `http://172.30.32.1:<ingress_port>/` inside the add-on container.
-- **Authentication is handled by HA.** The user is already authenticated before the request
-  reaches the add-on — the add-on does NOT need to implement auth.
-- **Only connections from `172.30.32.2` must be allowed** — the add-on should reject other IPs.
-- HA injects the `X-Ingress-Path` header on every request, containing the base path prefix
-  (e.g. `/api/hassio_ingress/abc123`). The app MUST use this for all absolute URL generation.
-- Protocols supported: HTTP/1.x, streaming, WebSockets.
-- `ingress_entry` is the URL HA opens when the user clicks "Open Web UI".
-
-### Critical path-base pitfall
-
-Ingress prepends a dynamic path prefix to all requests. Static assets served with hardcoded root
-paths (`/app.js`, `/style.css`) will 404 through the proxy. The two valid approaches:
-
-1. **Relative paths only** — all asset references use relative URLs (`./app.js`, `../style.css`);
-   works without knowing the prefix at build time.
-2. **`UsePathBase` middleware** — read `X-Ingress-Path` at startup or per-request and set
-   `app.UsePathBase(ingressPath)` so ASP.NET Core strips the prefix before routing.
-   `UsePathBase` must be registered BEFORE `UseRouting` in the middleware pipeline.
-
-Option 1 (relative paths) is simpler and has no runtime dependency; Option 2 is required if the
-app uses absolute redirects or generates absolute URLs server-side.
-
-### What the orchestrator already has (v2.0 assets)
-
-| Existing capability | How UI reuses it |
-|--------------------|-----------------|
-| `HaWebSocketClient.GetStatesAsync()` | Fetch all live entity states for the discovery browser |
-| `SelectDiscoverableSensors()` | Filter to numeric sensors not yet configured |
-| `EntitiesConfig` / `EntitiesConfigLoader` | Config model the UI reads and writes |
-| `entities.yaml` under `/data/` | Config file the UI persists changes to |
-| `ConnectionSettings.HaToken` (`SUPERVISOR_TOKEN`) | Auth for making HA API calls from the UI backend |
-| `DetectorConfig` + `HstParams` | Parameter schema the per-entity form is built from |
-
-The UI backend runs inside the same process as the orchestrator (ASP.NET minimal API added to the
-existing `Host`). It does not need a separate process or new container.
+Existing pipeline: per-entity univariate detection (MAD, STL, River HST) → MQTT-discovered `binary_sensor` (flag) + `sensor` (score) per source entity. v3.0 shipped Ingress config UI (entity_id search only, per-entity detector assignment, hot-reload). v4.0 must add: peer-divergence group detection, joint-multivariate group detection, batch-first via InfluxDB resampling, expanded algorithm library with friendly chooser, friendly-name/area search, and a light-SPA UI rebuild.
 
 ---
 
@@ -72,255 +16,199 @@ existing `Host`). It does not need a separate process or new container.
 
 ### Table Stakes (Users Expect These)
 
-These are the non-negotiable features for a usable Ingress config UI. Missing any one of them
-means the UI is broken or confusing.
+Features a single operator will consider "obviously required" once group detection exists at all — missing these makes the group feature feel broken or untrustworthy.
 
-| Feature | Why Expected | Complexity | v2.0 Dependency | Notes |
-|---------|--------------|------------|-----------------|-------|
-| Ingress endpoint accessible via "Open Web UI" | Every HA add-on with a web UI uses Ingress; missing = button does nothing | LOW | Adds `ingress: true` + `ingress_port` to `config.yaml`; orchestrator adds ASP.NET minimal API server on that port | Port 8080 recommended (avoids conflict with watchdog gRPC on 50051) |
-| Live sensor list showing all HA numeric sensors | Without this the user has no idea what entity_ids exist; they are forced to use Developer Tools separately | MEDIUM | Reuses `HaWebSocketClient.GetStatesAsync()` + `SelectDiscoverableSensors()` already in v2.0 | Returns entity_id + current numeric value; no need to re-implement the HA call |
-| Current value shown per sensor in the list | Users need context to identify sensors (e.g. "22.3" for a temp vs a raw counter) | LOW | Values already returned by `GetStatesAsync()` | Format to 2 decimal places; omit unit (not available from basic get_states) |
-| Text search / filter on entity_id | A typical HA instance has 200-2000 entities; unfiltered list is unusable | LOW | Client-side JS only; no server round-trip needed | Substring match on entity_id string; update list on keyup |
-| Distinction: "already tracking" vs "available to add" | User must see which sensors Argus monitors and which are new candidates | LOW | Read `entities.yaml` from `/data/` (already written by startup) | Two sections or visual differentiation (checkbox state, label, color) |
-| Select/deselect sensors from the discovered list | Core action — add a sensor to tracking | LOW | Writes to `entities.yaml` via save action | Checkbox or toggle per row; bulk select not required for MVP |
-| Per-entity detector type selector (HST/MAD/STL) | Requirements spec (UI-03) explicitly calls this out; it is the main config action beyond entity selection | MEDIUM | `DetectorConfig.Name` + typed param structs already exist in v2.0 | Dropdown per entity; each detector has a distinct parameter set |
-| Per-detector parameter fields with defaults shown | Without visible defaults, users have no idea what "n_trees" means or what a safe value is | MEDIUM | `HstParams.From()` defaults already defined in `EntitiesConfig.cs` | Show current value pre-filled; display valid range next to each field |
-| Input validation with visible error messages before save | Without this users silently save bad config (e.g. `high_threshold: 2.0` which is out of range [0,1]) | MEDIUM | Parameter ranges are already coded in `HstParams` defaults; need to expose as validation rules | Validate on form submit; highlight fields in error; block save if invalid |
-| Save button persists changes to `/data/entities.yaml` | Core action; without persistence changes are lost on restart | LOW | `EntitiesConfigLoader` already reads this file; UI backend writes it | Atomic write (write to temp file, rename) to avoid partial writes |
-| Apply without add-on restart | Requirements spec (CFG-04) requires changes apply within seconds; a restart takes 15-30+ seconds and clears model state | HIGH | File-watch on `entities.yaml` in the orchestrator; reconfigure streaming pipeline in-place | This is the most technically complex table-stakes feature — see dependency notes |
-| Success/failure feedback after save | User needs to know whether the save worked and whether the orchestrator accepted the reload | LOW | The reload mechanism must return success/error status; UI polls or uses SSE | Toast notification or status banner; show error text on failure |
-| Config state survives add-on restart | User expects configuration to persist; losing it on restart = trust broken | LOW | `/data/` volume already survives restarts (v2.0 maps `type: data`) | No new work needed beyond correct path |
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| Peer-divergence group detection with per-member attribution | The canonical use case (4 tire pressures, one diverges) is meaningless without knowing WHICH member — a single "group anomaly" flag with no attribution answers the wrong question | MEDIUM | Standard approach: compute each member's deviation from group consensus (e.g. z-score of residual-from-group-mean, or pairwise distance to peers); a genuinely diverging member shows abnormal distance to ALL peers while healthy members show only minor mutual deviation. No new ML library needed — this is arithmetic over already-scored/aligned series, or a simple robust-stats layer on top |
+| Group membership defined at config time | Operator already assigns detector+params per entity in v3.0 UI; grouping is a natural extension, not a new mental model | LOW | Reuses `EntityConfig.Groups` placeholder already in the model (currently parsed-and-ignored) |
+| Time-alignment for group members before comparison | Sensors report on independent schedules; comparing raw unaligned samples produces false divergence | MEDIUM | Batch-first plan already covers this via InfluxDB resampling to a common grid (confirmed available). This is a hard prerequisite, not optional — do this before any group algorithm work |
+| Per-member HA entity output for peer-divergence (not just a single group-level flag) | HA automations key off individual entities; "group anomaly, go check which one yourself" breaks the existing UX contract Argus already set (one flag+score pair per source entity) | MEDIUM–HIGH | See **Output-Shape Decision** below — this is the most consequential design choice in the milestone |
+| Joint-multivariate group detection with a single group-level flag+score | Different semantic than peer-divergence: the question is "is this combination normal," not "who's the outlier" — one flag per group is the correct and expected shape here, no per-member attribution implied | MEDIUM | Standard approach: PyOD multivariate detectors (PCA reconstruction error, ECOD, COPOD, IsolationForest) or Hotelling's T² over the aligned feature vector. PyOD already in stack (D10) |
+| Sensitivity preset (Low/Med/High) replacing raw parameter exposure | Operator is not a data scientist; existing v3.0 UI already exposes per-entity detector+params — friendly presets are the natural next step for expanded algorithm library, and every commercial anomaly tool surveyed (Datadog, New Relic, Dynatrace, GA4) does this | LOW–MEDIUM | Maps preset labels to internal params per detector (e.g. MAD threshold multiplier, PyOD contamination rate, HST window size). Pure UI/config-mapping work, no new ML |
+| Advanced toggle to reveal raw parameters | Power users (this operator, notably) will eventually want to override a preset for one sensor; hiding the escape hatch is worse than not having presets at all | LOW | Simple UI show/hide; params underneath already exist |
+| Search sensors by friendly name (not just entity_id) | Already an explicit v4.0 requirement; entity_id search alone is the acknowledged v3.0 gap | LOW–MEDIUM | HA's own entity picker component already does fuzzy search across entity_id + friendly name + area + domain — this is the reference pattern, not something to design from scratch |
+| Categorize/browse long sensor list by HA area and/or domain | Same picker reference pattern; with dozens of rooms × sensor types the flat list becomes unusable well before "hundreds of entities" | LOW–MEDIUM | Requires area metadata from HA (available via WebSocket API, already a data source); group config UI benefits doubly since groups are naturally area-scoped (e.g. "all bedroom sensors") |
 
-### Differentiators (Argus-Specific Value)
+### Differentiators (Competitive Advantage)
 
-These features are not expected by default but meaningfully improve the UX for this specific use case.
+Not required for group detection to "work," but meaningfully raise trust/usability for a self-hosted single-operator tool with no support team to lean on.
 
-| Feature | Value Proposition | Complexity | v2.0 Dependency | Notes |
-|---------|-------------------|------------|-----------------|-------|
-| include_patterns / exclude_patterns wired to real selection | The v2.0 schema has these fields but they are IGNORED; closing this gap is the explicit v3.0 goal (REQUIREMENTS CFG-02) | MEDIUM | `include_patterns` / `exclude_patterns` exist in `config.yaml` options schema; orchestrator must now actually apply them | Pattern UI: two text inputs (one pattern per line or comma-separated); preview which entities match before save |
-| Live pattern preview ("these 7 sensors would be tracked") | Users cannot tell if their glob `sensor.*_temperature` matches 2 or 20 sensors without running it | MEDIUM | Reuses `SelectDiscoverableSensors()` server-side; exposed via a preview endpoint | Debounce input → GET /api/ui/preview?patterns=... → returns matched count + list |
-| Multiple detectors per entity | v2.0 config model supports multiple `detectors:` per entity but the UI only needs to expose 1 per entity for MVP; surfacing the multi-detector model is a differentiator | MEDIUM | `EntityConfig.Detectors: List<DetectorConfig>` already supports multiple | "Add detector" button per entity row; UI renders each detector as a collapsible panel |
-| Detector parameter documentation shown inline | HST/MAD/STL parameters are ML concepts; showing a one-line tooltip ("Higher = more sensitive; default: 0.7") prevents misuse | LOW | No dependency — purely UI content | Tooltip or `<details>` element per parameter field |
-| Reload status visible in UI (applying / applied / error) | When "apply without restart" is in progress the user needs feedback that the orchestrator is reconfiguring | LOW | Reload mechanism must surface status; UI polls `GET /api/ui/status` | Status badge: "Idle / Reloading / Error" with timestamp of last successful reload |
-| Sensor count summary (N tracked, M available) | Quick orientation; how many sensors is Argus watching? | LOW | Count from loaded `EntitiesConfig` | Single line at top of page: "Tracking 3 sensors. 47 numeric sensors available." |
-| Unsaved-changes warning before navigating away | Prevents accidental loss of edits if the user clicks the HA sidebar while mid-edit | LOW | No dependency | Browser `beforeunload` event; warn only if form is dirty |
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| "Best for…" descriptions per algorithm in the chooser | Operator picking between MAD/STL/HST/PCA/ECOD/COPOD has no ML background; a one-line "best for slow-drifting sensors" vs "best for spiky/bursty sensors" turns algorithm choice from guesswork into a decision | LOW | Static copy, no logic — highest value-to-effort ratio in this milestone |
+| Guided "what are you monitoring?" chooser (template → algorithm pre-select) | Commercial tools (Elastic ML jobs, Azure AI Anomaly Detector, Flowmon) use exactly this pattern: pick a data-type template, get a sensible default, still land on manual selection underneath | MEDIUM | Do NOT build a black-box "auto-select and hide the choice" — always show and allow override of what got picked, given this operator's stated preference for direct control over magic |
+| Per-member contribution/attribution for the joint-multivariate case (which sensor drove the joint anomaly) | Answers "the room is jointly abnormal — but is it the humidity or the temp that's driving it?" Genuinely useful for the leak-detection example, not just nice-to-have | HIGH | Standard technique is per-feature reconstruction error (PCA/autoencoder) or Shapley decomposition — meaningfully harder than peer-divergence attribution (needs a trained model with feature-level error, not just an aggregate score). Treat as a stretch differentiator, not v4.0 baseline; can ship joint-multivariate WITHOUT this first, add attribution in a later phase once the base output shape is proven |
+| Sensitivity preset applies uniformly across detector families | Avoids the operator having to relearn what "High sensitivity" means when switching a sensor from MAD to PCA | MEDIUM | Requires a normalized internal sensitivity scale (e.g. 0.0–1.0) that each detector adapter maps to its own native parameter range — real design work, but pays for itself immediately given "expanded algorithm library" is explicitly in scope |
+| Area-scoped group suggestions ("these N sensors share an area — group them?") | Reduces group-config friction; area metadata is already available from HA | LOW–MEDIUM | Purely a config-UI suggestion, not automatic grouping — keep operator in control |
 
-### Anti-Features (Scope Traps to Explicitly Avoid)
+### Anti-Features (Commonly Requested, Often Problematic)
 
-These are commonly requested or tempting features that should NOT be built for v3.0.
+Things that look attractive for an anomaly tool but are wrong for a self-hosted, single-operator, no-cloud, no-support-team context.
 
-| Feature | Why Tempting | Why Problematic | What To Do Instead |
-|---------|-------------|-----------------|-------------------|
-| Full SPA framework (React, Vue, Svelte) | Modern, component-based, good DX | Adds a build pipeline to the .NET project; assets must be bundled and embedded in the image; significant complexity for a single-page config UI used infrequently | Use server-rendered HTML with vanilla JS or HTMX for dynamic parts. The config UI has ~3 screens; it does not need a component framework. |
-| InfluxDB configuration in the Ingress UI | All config in one place | InfluxDB settings are in `options.json` (managed by Supervisor); the Ingress UI does not own them. Writing them from the UI bypasses the Supervisor's options model and creates two sources of truth. | Leave InfluxDB config in the HA add-on options tab (Supervisor-managed). Ingress UI owns only entity selection and detector assignment. |
-| Add-on options tab removal | Single config UI is cleaner | The Supervisor options form handles fields the Ingress UI cannot (InfluxDB credentials, detector endpoint, batch interval). Removing the options tab breaks those fields. | Keep both. Document the split: options tab = infrastructure settings; Ingress UI = sensor + detector config. |
-| Live sensor value streaming / dashboard | "Wouldn't it be cool to see live anomaly scores?" | That is a monitoring dashboard, not a configuration UI. It requires SSE or WebSocket per-sensor streams, a real-time chart library, and significant ongoing maintenance. It dilutes the v3.0 focus. | HA already displays the MQTT-published binary_sensor + score sensor entities on any dashboard. Link to those entities from the UI if a live view is desired. |
-| User authentication / session management | Security concern | HA Ingress already authenticates the user before the request reaches the add-on. Adding a second auth layer confuses users and duplicates HA's work. | Trust the Ingress layer. Accept all connections from `172.30.32.2` (the Supervisor proxy IP) without additional auth. |
-| Undo / revision history | "What if I make a mistake?" | Adds complexity (storing previous config versions under `/data/`) with low frequency of use. The add-on restart itself is a recovery path (old model state is still on disk). | Document that the previous `entities.yaml` can be restored via File Editor if needed. A single backup copy (`.entities.yaml.bak`) written before each save is sufficient. |
-| Auto-discovery-only mode (no explicit entity list) | Zero config | Monitoring every numeric sensor produces model pollution and false positives from sensors that are naturally non-stationary (e.g. energy counters). Users need to choose what to watch. | Keep explicit selection as the primary mode. Use `include_patterns` to reduce typing, not to eliminate intention. |
-| Per-entity calibration / threshold tuning UI | Full control | HST threshold tuning requires understanding the anomaly score distribution for each sensor, which requires historical data and statistics the UI cannot display cleanly. Exposing raw threshold sliders without context leads to misconfiguration. | Expose only the documented `high_threshold` / `low_threshold` / `min_consecutive` fields with their defaults shown. Hide deeper tuning (frozen window, variance threshold) behind an "Advanced" toggle. |
-| Grafana-style iframe embed in HA dashboard | "Show sensor data inside a Lovelace card" | HA Ingress URLs are not embeddable in iframe/webpage Lovelace cards without an active Ingress session. This is a known HA limitation. Attempting it produces auth errors. | The anomaly entities themselves (binary_sensor + score sensor) are natively embeddable in Lovelace. No iframe needed. |
-| Multi-user concurrent editing | Two users editing config simultaneously | Single-user, single-operator system (PROJECT.md constraint). File-based config has no locking. | No concurrent editing protection needed. Document that only one operator should edit at a time (trivially true in a home setup). |
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|------------------|-------------|
+| Fully automatic algorithm selection (tool picks the "best" detector with no visible reasoning) | Feels like it removes cognitive load ("just make it smart") | Single operator has no one to escalate to when the black box is wrong; opaque auto-selection erodes exactly the trust this tool depends on (self-hosted users already chose Argus over a cloud SaaS specifically for control). Also contradicts the developer's own stated preference for direct, opinionated tooling over magic | Guided chooser that pre-selects AND shows why, with one-click override — "recommended: X because Y" not "we picked X" |
+| Continuous sensitivity slider (0–100) instead of Low/Med/High presets | Feels more "precise" | False precision — the operator has no ground truth to calibrate against, so a 100-point scale just creates decision paralysis without adding real control. Every commercial tool surveyed converges on discrete presets + advanced escape hatch, not a raw continuous default | Low/Med/High presets (3 well-chosen points) + Advanced toggle for the rare case a raw param is truly needed |
+| Automatic dynamic group discovery (ML infers which sensors "belong together") | Sounds impressive, reduces config work | Unverifiable and untrustworthy for a 1-operator, dozens-of-sensors deployment — wrong automatic groupings silently produce wrong anomaly attributions with no feedback loop to catch it. This is exactly the kind of "smart" feature explicit config wins over | Explicit group config (already table stakes above), optionally with area-scoped *suggestions* the operator approves |
+| Real-time/streaming group detection in this milestone | "Streaming already exists for univariate, why not groups too?" | PROJECT.md already explicitly defers this ("Streaming groups... after batch groups prove the model") — time-alignment across independently-reporting sensors is fundamentally harder in a streaming context (no fixed grid to resample onto), and doing it before the batch model is validated risks building the wrong abstraction twice | Batch-first via InfluxDB resampling now; streaming (windowed, last-value-carried-forward) only after the batch group model is proven in production |
+| Cross-group / whole-house "meta-anomaly" dashboard (anomaly of anomalies) | Feels like a natural next layer once groups exist | Scope creep well beyond "analyze groups of sensors" — turns Argus into a dashboarding/BI tool, which PROJECT.md explicitly puts out of scope ("Custom HA dashboards — auto-created entities are sufficient") | Keep output as auto-created HA entities per group; if the operator wants a rollup view, that's an HA dashboard concern, not Argus's |
+| Notification/alerting logic tied to sensitivity presets (e.g. "High sensitivity = also page me") | Natural-feeling extension once you have a sensitivity concept | PROJECT.md explicitly excludes acting on anomalies — "Argus only exposes entities; operator wires reactions in HA/Node-RED." Presets must stay confined to detection threshold, never bleed into notification behavior | Presets affect only detector params; all alerting stays downstream in HA automations, unchanged |
+
+---
+
+## Output-Shape Decision: Peer-Divergence Group Detection
+
+This is the most consequential open design question the downstream requirements phase must settle explicitly. Two shapes were considered:
+
+### Option A — One binary_sensor per group + a "which member" attribute
+- **Shape:** `binary_sensor.tire_pressure_group_anomaly` with state `on`/`off`, plus an attribute like `diverging_member: sensor.tire_pressure_fl`.
+- **Pros:** Fewer entities created; matches "group anomaly" framing conceptually; simpler MQTT discovery footprint (one flag+score pair per group, like today's per-entity pattern).
+- **Cons:** HA automations cannot template-trigger cleanly off an *attribute* the way they can off entity *state* — templating on an attribute value works but is clunkier and less discoverable than a dedicated entity; if the group later needs to flag multiple simultaneously-diverging members (e.g. two tires wearing together), a single attribute can't represent that without becoming a list, which historically causes HA templating pain.
+- **Fits existing pattern?** No — breaks the "one flag+score pair per source entity" contract Argus established in v1–v3.
+
+### Option B — Per-member binary_sensor + score, scoped under the group
+- **Shape:** Each group member gets its own `binary_sensor.<entity>_peer_divergence` + score sensor (mirroring exactly how today's per-entity univariate detectors work), where the score reflects "how much this member currently diverges from its group's peers."
+- **Pros:** Fully consistent with the existing v1–v3 output contract — operator already knows how to consume flag+score pairs per entity; each member's divergence is independently automatable in HA (e.g. "notify if `binary_sensor.tire_pressure_fl_peer_divergence` turns on"); naturally supports multiple simultaneous divergent members without any data-structure change.
+- **Cons:** More entities created (N members × 2 entities vs 2 entities per group) — for a 4-tire group this is 8 entities instead of 2; MQTT discovery volume scales with group size, not group count (relevant given the earlier "empty include patterns select nothing" flood-prevention fix already in v3.0 history — the project has been burned by entity-count explosions before).
+
+### Recommendation
+
+**Option B (per-member flag+score), with the group name/other-members exposed as an attribute for context.** Rationale:
+1. Consistency with the already-shipped contract is worth more than saving entities — the operator (and any HA automation already written) expects "anomaly on this entity → binary_sensor for this entity."
+2. Peer-divergence is semantically "does THIS member have a problem," which is a per-entity question even though it's computed relative to a group — the entity model should match the semantic, not the computation shape.
+3. The project's own history (GlobExpander flood-prevention fix, 2.0.9) shows entity-count sensitivity is a known concern — mitigate by scoping this to explicitly-configured groups only (never auto-discovered), keeping counts bounded and operator-controlled.
+
+This is the opposite shape from **joint-multivariate** detection (Option A pattern — one flag+score per GROUP, no per-member split), because the underlying question is different: peer-divergence asks "which member," joint-multivariate asks "is the combination normal." Do not conflate the two output shapes — they should follow different rules even though both are "group" features.
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Ingress endpoint (config.yaml + ASP.NET server)]
-    └──required by──> ALL UI features
+Batch-first InfluxDB resampling (time-alignment)
+    └──requires──> [already have: InfluxDB confirmed available, D-model has Groups placeholder]
+    └──blocks──> Peer-divergence group detection
+    └──blocks──> Joint-multivariate group detection
 
-[Entity discovery browser]
-    └──requires──> [HaWebSocketClient.GetStatesAsync() — already exists]
-    └──requires──> [SelectDiscoverableSensors() — already exists]
-    └──requires──> [SUPERVISOR_TOKEN available — already exists]
-    └──enhances──> [Entity selection checkboxes]
+Peer-divergence group detection (per-member output)
+    └──requires──> Batch-first resampling
+    └──requires──> Group config UI (define membership)
+    └──enhances──> Existing per-entity univariate pipeline (reuses scoring/HA-entity infrastructure, does NOT replace it)
 
-[Entity selection checkboxes]
-    └──requires──> [Entity discovery browser]
-    └──requires──> [Read current entities.yaml — already exists via EntitiesConfigLoader]
-    └──feeds──> [Save → write entities.yaml]
+Joint-multivariate group detection (group-level output)
+    └──requires──> Batch-first resampling
+    └──requires──> Group config UI (define membership)
+    └──requires──> Expanded algorithm library (PyOD multivariate detectors: PCA/ECOD/COPOD)
 
-[Detector type selector + parameter fields]
-    └──requires──> [Entity selection] (must know which entities are selected)
-    └──requires──> [DetectorConfig + HstParams — already in v2.0]
-    └──requires──> [Input validation rules]
-    └──feeds──> [Save → write entities.yaml]
+Per-member attribution for joint-multivariate (differentiator)
+    └──requires──> Joint-multivariate group detection (base output shape proven first)
+    └──requires──> Per-feature reconstruction error or Shapley decomposition (new capability, not in current PyOD usage)
 
-[Save → write entities.yaml]
-    └──requires──> [Input validation passes]
-    └──triggers──> [Reload without restart]
+Sensitivity preset (Low/Med/High)
+    └──requires──> Normalized internal sensitivity scale per detector adapter
+    └──enhances──> Both existing univariate AND new group detectors uniformly
 
-[Reload without restart (CFG-04)]
-    └──requires──> [File watcher on entities.yaml — NEW, not in v2.0]
-    └──requires──> [In-place pipeline reconfiguration — NEW, not in v2.0]
-    └──requires──> [Save → write entities.yaml]
-    └──feeds──> [Reload status indicator in UI]
+"Best for..." descriptions
+    └──requires──> Expanded algorithm library (need algorithms to describe)
+    └──conflicts with──> nothing; pure additive UI copy
 
-[include_patterns / exclude_patterns wired]
-    └──requires──> [Entity discovery browser] (pattern expansion needs live entity list)
-    └──requires──> [Save → write entities.yaml]
-    └──optional──> [Live pattern preview endpoint]
+Guided "what are you monitoring?" chooser
+    └──requires──> "Best for..." descriptions (reuses same algorithm-to-use-case mapping)
+    └──enhances──> Sensitivity preset + Advanced toggle (guided flow should still land on the same preset/advanced controls, not a separate config path)
 
-[Live pattern preview]
-    └──requires──> [include_patterns / exclude_patterns wired]
-    └──requires──> [HaWebSocketClient.GetStatesAsync()]
+Friendly-name search + area/domain categorization
+    └──requires──> HA area metadata (already available via WebSocket API, existing data source)
+    └──enhances──> Group config UI (grouping is naturally area-scoped)
 
-[Reload status indicator]
-    └──requires──> [Reload without restart]
-    └──requires──> [Status endpoint GET /api/ui/status]
+Light SPA UI rebuild
+    └──blocks──> nothing functionally, but is the delivery vehicle for: sensitivity presets, "best for" copy, guided chooser, friendly-name search — sequencing these before/alongside the SPA rebuild matters for roadmap phase ordering
 ```
 
-### Key dependency notes
+### Dependency Notes
 
-- **Reload without restart is the single most complex dependency.** It requires the orchestrator
-  to watch `entities.yaml` for changes and reconfigure the live streaming pipeline without
-  cancelling the host. The v2.0 pipeline reads `EntitiesConfig` once at startup and registers it
-  as a singleton — this must change to a `IOptionsMonitor<EntitiesConfig>` or equivalent reactive
-  pattern. This is NOT currently implemented and is the highest-risk item for v3.0.
-
-- **Entity discovery browser has zero new infrastructure cost.** `GetStatesAsync()` and
-  `SelectDiscoverableSensors()` already exist in v2.0; the UI just needs an HTTP endpoint that
-  calls them and returns JSON.
-
-- **Ingress path-base is a blocking issue for static assets.** All `<script>`, `<link>`, and
-  `<img>` tags must use relative paths, or the app must read `X-Ingress-Path` at startup and
-  call `app.UsePathBase()` before `app.UseRouting()`. This must be solved before the first
-  working UI prototype.
+- **Both group detection modes require batch-first resampling first:** this is a hard technical prerequisite (unaligned timestamps make any cross-sensor comparison meaningless), and PROJECT.md already sequences it this way. Roadmap should treat resampling as its own early phase, not bundled invisibly into the first detection-mode phase.
+- **Per-member attribution for joint-multivariate should NOT be bundled with the base joint-multivariate phase.** It is meaningfully harder (needs per-feature error decomposition, not just an aggregate score) and the base group-level flag/score is independently shippable and valuable on its own. Treat as a follow-on phase or explicit stretch goal.
+- **Sensitivity presets and "best for" descriptions both depend on having an expanded algorithm library** — sequence algorithm expansion before or alongside the chooser UX work, not after.
+- **The SPA rebuild is a delivery mechanism, not a blocking dependency** — the underlying preset-mapping, area metadata, and algorithm descriptions can be built and tested independently of the frontend framework choice, then wired into the SPA. Don't let SPA-rebuild timeline gate the backend UX-support work.
 
 ---
 
-## MVP Definition for v3.0
+## MVP Definition (for this milestone, not the whole product)
 
-### Must ship (v3.0 launch)
+### Launch With (v4.0 core)
 
-- [ ] `ingress: true` + `ingress_port` in `config.yaml` — enables "Open Web UI" button
-- [ ] ASP.NET minimal API server on ingress port, added to existing orchestrator host
-- [ ] `X-Ingress-Path` / relative-path handling so static assets resolve through the Supervisor proxy
-- [ ] Entity discovery page: fetch all HA numeric sensors, show entity_id + current value, text search
-- [ ] Entity selection: checkboxes; distinquish already-tracked from available; persist selection to `entities.yaml`
-- [ ] Per-entity detector assignment: detector type dropdown (HST/MAD/STL); parameter fields with defaults; parameter validation with error messages
-- [ ] Save action: atomic write to `/data/entities.yaml`; single `.bak` backup before overwrite
-- [ ] Reload without restart: file watcher triggers in-place pipeline reconfiguration; status returned to UI
-- [ ] Success/failure feedback: status banner or toast after save + reload attempt
-- [ ] `include_patterns` / `exclude_patterns` wired: pattern fields in UI; expansion applied before writing `entities.yaml` (closes v2.0 gap)
-- [ ] `ingress_entry` documented in DOCS.md; updated DOCS-02 requirement satisfied
+- [ ] Batch-first InfluxDB resampling (time-alignment on common grid) — hard prerequisite for everything else in this milestone
+- [ ] Peer-divergence group detection, per-member binary_sensor + score output (Option B above) — the headline feature and canonical example (tire pressures)
+- [ ] Joint-multivariate group detection, single group-level binary_sensor + score output — the second headline feature (humidity+temp → leak)
+- [ ] Group membership config UI (explicit, operator-defined — no auto-discovery)
+- [ ] Sensitivity preset (Low/Med/High) + Advanced toggle, applied to at least the new group detectors (existing univariate detectors can adopt it in the same pass if low-cost)
+- [ ] Friendly-name search across the sensor list
+- [ ] Area/domain categorization of the sensor browse list
 
-### Add after v3.0 ships (v3.x)
+### Add After Validation (v4.x)
 
-- [ ] Live pattern preview — only if users find pattern matching confusing without it
-- [ ] Multiple detectors per entity in UI — model already supports it; UI currently shows 1
-- [ ] Advanced parameter toggle (frozen window, variance threshold) — hide by default, expose on demand
-- [ ] Unsaved-changes warning — browser `beforeunload`; low effort, add when UI is stable
+- [ ] "Best for…" descriptions per algorithm — cheap, but sequence after the algorithm library itself stabilizes so copy doesn't need rewriting
+- [ ] Guided "what are you monitoring?" chooser — validate that operators actually want hand-holding before building the flow (this developer is self-directed per profile; may prefer direct selection with good descriptions over a wizard)
+- [ ] Per-member attribution for joint-multivariate anomalies (which sensor drove the joint flag) — real value, real complexity; prove the base joint-multivariate output first
 
-### Defer to v4+
+### Future Consideration (post-v4.0)
 
-- [ ] Monitoring dashboard / live anomaly scores — distinct milestone, not config UI
-- [ ] Per-entity calibration UI with historical data — requires InfluxDB query integration in the UI
-- [ ] Multi-detector comparison view — requires understanding score distributions
+- [ ] Streaming groups (already explicitly deferred in PROJECT.md, pending batch model validation)
+- [ ] Sensitivity preset normalized scale extended across every future algorithm added — defer generalized framework until 2-3 more algorithms exist and the pattern is proven, not designed speculatively now
 
 ---
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| Ingress endpoint live | HIGH | LOW | P1 |
-| X-Ingress-Path / path-base handling | HIGH | LOW | P1 (blocker) |
-| Entity discovery browser | HIGH | LOW | P1 |
-| Text search/filter on entity list | HIGH | LOW | P1 |
-| Entity selection + tracking status | HIGH | LOW | P1 |
-| Detector type selector | HIGH | MEDIUM | P1 |
-| Parameter fields with defaults | HIGH | MEDIUM | P1 |
-| Input validation + error messages | HIGH | MEDIUM | P1 |
-| Save → write entities.yaml | HIGH | LOW | P1 |
-| Reload without restart (CFG-04) | HIGH | HIGH | P1 |
-| Success/failure feedback | HIGH | LOW | P1 |
-| include_patterns/exclude_patterns wired | MEDIUM | MEDIUM | P1 |
-| Reload status indicator | MEDIUM | LOW | P2 |
-| Sensor count summary | LOW | LOW | P2 |
-| Unsaved-changes warning | LOW | LOW | P2 |
-| Live pattern preview | MEDIUM | MEDIUM | P2 |
-| Multiple detectors per entity in UI | LOW | MEDIUM | P3 |
-| Advanced parameter toggle | LOW | LOW | P3 |
-| Monitoring dashboard | MEDIUM | HIGH | P3 (separate milestone) |
+|---------|------------|----------------------|----------|
+| Batch resampling (time-alignment) | HIGH | MEDIUM | P1 |
+| Peer-divergence detection (per-member output) | HIGH | MEDIUM | P1 |
+| Joint-multivariate detection (group-level output) | HIGH | MEDIUM | P1 |
+| Group config UI | HIGH | LOW–MEDIUM | P1 |
+| Sensitivity preset + Advanced toggle | HIGH | LOW–MEDIUM | P1 |
+| Friendly-name search | MEDIUM–HIGH | LOW–MEDIUM | P1 |
+| Area/domain categorization | MEDIUM | LOW–MEDIUM | P1 |
+| "Best for..." descriptions | MEDIUM | LOW | P2 |
+| Guided "what are you monitoring?" chooser | MEDIUM | MEDIUM | P2 |
+| Per-member attribution for joint-multivariate | MEDIUM–HIGH | HIGH | P2/P3 |
+| Streaming groups | MEDIUM | HIGH | P3 (already deferred) |
 
-**Priority key:** P1 = must have for v3.0 launch; P2 = add when core works; P3 = future
+**Priority key:**
+- P1: Must have for v4.0 launch
+- P2: Should have, add when possible within v4.0 or immediately after
+- P3: Nice to have, explicitly deferred
 
 ---
 
-## Ingress Config.yaml Changes Required
+## Competitor / Reference Feature Analysis
 
-The v2.0 `config.yaml` does not declare ingress. These additions are required:
+No direct competitor is a self-hosted single-operator HA anomaly add-on; the closest references are (a) commercial observability anomaly tools for UX patterns, and (b) HA's own entity-picker for search/browse patterns.
 
-```yaml
-# Add these fields to argus/config.yaml
-ingress: true
-ingress_port: 8080        # any free port; avoid 50051 (gRPC watchdog)
-ingress_entry: /          # path HA opens; "/" with UsePathBase is fine
-panel_icon: mdi:tune      # sidebar icon shown in HA
-panel_title: Argus Config # sidebar label
-```
-
-The watchdog currently points to `tcp://[HOST]:50051` (gRPC). The ingress port (8080) should also
-be reachable for a `http://` watchdog entry if the health endpoint is added to the minimal API.
-
----
-
-## Reload Without Restart — Technical Options
-
-This is the highest-complexity table-stakes feature. Three approaches ranked by risk:
-
-### Option R1 — FileSystemWatcher + IOptionsMonitor (recommended)
-
-Use `IOptionsMonitor<EntitiesConfig>` with a custom JSON/YAML file provider. On file change:
-1. Reload `entities.yaml` from disk.
-2. Diff old vs new entity set.
-3. Add new entities to `ScoreStreamPipeline` and `_configuredEntities` HashSet.
-4. Remove dropped entities (send MQTT `unavailable`, unregister from pipeline).
-5. Return success to UI via status endpoint.
-
-Risk: `ScoreStreamPipeline` and `HaListenerWorker` currently read `EntitiesConfig` once at
-construction time (singleton). The DI graph must be restructured to tolerate live entity set
-changes. This is the main implementation risk.
-
-Mitigation: scope the reload to only what changes — the `_configuredEntities` HashSet in
-`NetDaemonHaEventSource` and the per-entity `EntityRuntimeState` map in `ScoreStreamPipeline`.
-The gRPC channel and MQTT connection do not need to restart.
-
-### Option R2 — Soft restart (process self-restart)
-
-Write config, then signal the orchestrator to exit with code 0. The s6 supervisor restarts it.
-Simpler to implement; respects the existing startup path entirely.
-
-Downside: ~5-10 second gap during restart; in-flight gRPC streams drop; MQTT LWT fires briefly.
-Not acceptable per CFG-04 ("within seconds").
-
-### Option R3 — Config-gen bridge only (no in-process reload)
-
-UI writes new `entities.yaml`; a separate config-gen script regenerates and restarts only the
-entities-tracking state. Requires IPC between script and orchestrator (signal, named pipe, HTTP).
-More complex than R1 with no benefit.
-
-**Recommendation: R1.** The IOptionsMonitor pattern is well-supported in .NET 8 and documented.
-The key constraint is that `reloadOnChange: true` must be set on the YAML file provider, and
-`UsePathBase` must be registered before `UseRouting` if absolute redirects are needed.
-
----
+| Feature | Datadog / New Relic / Dynatrace | Azure AI Anomaly Detector / Elastic ML | HA native entity picker | Argus v4.0 Approach |
+|---------|----------------------------------|------------------------------------------|--------------------------|----------------------|
+| Sensitivity control | Slider mapped to internal threshold; some offer named modes (Basic/Agile/Robust in Datadog) | Auto-selects "best" algorithm from a gallery, less operator control | N/A | Low/Med/High preset + Advanced toggle — more transparent than full auto-select, simpler than a raw slider |
+| Algorithm guidance | Minimal — mostly automatic, little exposed rationale | Wizard-driven job creation (pick index/fields/function), one-click jobs for common patterns | N/A | "Best for..." descriptions + optional guided chooser that shows AND explains its pick, never hides it |
+| Entity/metric search | Standard text search, tag-based filtering | Field/index picker | Fuzzy search across entity_id, friendly name, integration, device; filter by area/domain | Mirror HA's own pattern directly — it's already the tool this add-on lives inside |
+| Group/multi-metric anomaly | "Multi-metric" / correlated-metric monitors exist in most APM tools, output is typically a single incident with contributing-metric breakdown | Multivariate anomaly detection APIs return one anomaly score per multivariate model + optional per-variable contribution scores | N/A | Two distinct output shapes as designed above: per-member for peer-divergence, single group-level for joint-multivariate — deliberately not copying APM's "one incident, contributing signals" blend, because HA's entity model rewards per-entity granularity where it's semantically correct |
 
 ## Sources
 
-- [HA Add-on Presentation / Ingress docs](https://developers.home-assistant.io/docs/add-ons/presentation) — ingress: true, ingress_port, X-Ingress-Path header, IP restriction
-- [HA community: Addon ingress thread](https://community.home-assistant.io/t/addon-ingress/936226) — real add-on developer pitfalls with path resolution
-- [HA community: Trouble with static assets in custom addon with ingress](https://community.home-assistant.io/t/trouble-with-static-assets-in-custom-addon-with-ingress/712298) — relative paths vs X-Ingress-Path
-- [HA community: How to use X-Ingress-Path in an add-on](https://community.home-assistant.io/t/how-to-use-x-ingress-path-in-an-add-on/276905) — base URL extraction pattern
-- [Understanding PathBase in ASP.NET Core — Andrew Lock](https://andrewlock.net/understanding-pathbase-in-aspnetcore/) — UsePathBase placement before UseRouting
-- [Using PathBase with .NET 6 WebApplicationBuilder — Andrew Lock](https://andrewlock.net/using-pathbase-with-dotnet-6-webapplicationbuilder/) — minimal API specific guidance
-- [Real-Time Config Updates with IOptionsMonitor .NET](https://medium.com/codenx/real-time-configuration-updates-in-asp-net-core-with-live-loading-of-appsettings-json-d63eac388d28) — file watcher + IOptionsMonitor pattern
-- [MinimalAPI IOptionsMonitor known issue — dotnet/aspnetcore#34056](https://github.com/dotnet/aspnetcore/issues/34056) — builder.Configuration vs DI IConfiguration mismatch warning
-- [hms-homelab/hms-baby-tracker](https://github.com/hms-homelab/hms-baby-tracker) — real HA add-on with Ingress UI (FastAPI + SQLite pattern)
-- [HTMX + Alpine.js for config UIs — InfoWorld](https://www.infoworld.com/article/3856520/htmx-and-alpine-js-how-to-combine-two-great-lean-front-ends.html) — lightweight alternative to SPA for config UIs
+- [Home Assistant Entity filter card](https://www.home-assistant.io/dashboards/entity-filter/) — MEDIUM confidence (official docs)
+- [Home Assistant Selectors docs](https://www.home-assistant.io/docs/blueprint/selectors/) — MEDIUM confidence (official docs)
+- [Home Assistant Community — filtering entities by area](https://community.home-assistant.io/t/efficiently-filtering-area-entities/796356) — LOW confidence (community discussion)
+- [Anomaly detection based on profile history and peer history (patent)](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/9166993) — LOW confidence (peer-deviation weighted-stddev approach)
+- [Correlation-Based Anomaly Detection Method for Multi-sensor System (PMC)](https://pmc.ncbi.nlm.nih.gov/articles/PMC9173954/) — LOW confidence (faulty sensor shows abnormal distance to all peers)
+- [Online Multivariate Anomaly Detection and Localization for High-Dimensional Settings (PMC)](https://pmc.ncbi.nlm.nih.gov/articles/PMC9656001/) — LOW confidence (Hotelling's T² approach)
+- [Shapley Values of Reconstruction Errors of PCA for Explaining Anomaly Detection (arXiv)](https://arxiv.org/pdf/1909.03495) — LOW confidence (per-feature attribution technique)
+- [Anomaly Detection made easy with PyOD (Medium)](https://medium.com/data-reply-it-datatech/anomaly-detection-made-easy-with-pyod-960faf6da4e5) — LOW confidence, but consistent with project's existing PyOD/D10 usage
+- [Datadog Anomaly Monitor docs](https://docs.datadoghq.com/monitors/types/anomaly/) — MEDIUM confidence (official product docs, sensitivity/algorithm mode pattern)
+- [New Relic anomaly detection docs](https://docs.newrelic.com/docs/alerts/create-alert/set-thresholds/anomaly-detection/) — MEDIUM confidence (official docs, sensitivity slider)
+- [Azure AI Anomaly Detector](https://azure.microsoft.com/en-us/products/ai-services/ai-anomaly-detector) — MEDIUM confidence (official product page, auto-algorithm-selection pattern)
+
+**Confidence caveat:** Most ML-technique sources here are LOW confidence per the classify-confidence tier (general web search, not vendor/official docs or verified library documentation). The HA-specific and commercial-vendor-docs sources are MEDIUM. Treat the *shape* of these findings (per-member vs group-level output, preset+advanced pattern, guided-but-transparent chooser) as solid — these patterns are consistent and unsurprising across every source checked — but treat specific algorithm names (Hotelling's T², specific PyOD detectors) as a starting point for the STACK research, not a final decision.
 
 ---
-*Feature research for: Home Assistant add-on Ingress configuration web UI (v3.0)*
-*Researched: 2026-06-30*
+*Feature research for: Argus v4.0 — Group & Multivariate Anomaly Detection + UX*
+*Researched: 2026-07-02*

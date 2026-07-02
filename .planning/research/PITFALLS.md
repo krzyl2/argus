@@ -1,371 +1,292 @@
 # Pitfalls Research
 
-**Domain:** HA Ingress web UI added to an existing .NET 8 Worker-Service add-on (Argus v3.0)
-**Researched:** 2026-06-30
-**Confidence:** HIGH (Ingress mechanics, ASP.NET path handling); MEDIUM (reload race — no direct HA add-on .NET precedent found; pattern-derived from gRPC streaming design + .NET hosted-service literature)
+**Domain:** Adding group/multivariate anomaly detection + a light-SPA UI to an existing HA add-on (Argus v4.0)
+**Researched:** 2026-07-02
+**Confidence:** HIGH for codebase-grounded pitfalls (proto shape, MQTT discovery, config model, Ingress middleware — read directly from source); MEDIUM for general ML/time-series/SPA-ecosystem pitfalls (web-sourced, cross-checked across independent sources per the verification protocol).
+
+This file is scoped to what v4.0 is *adding*. It assumes the existing v3.0 Ingress/htmx pitfalls (`X-Ingress-Path` middleware, Kestrel bind address, atomic config writes, `FileSystemWatcher` debounce) are already solved and live-verified in `.planning/research/PITFALLS.md`'s prior pass — do not re-solve those; this file covers what breaks when you build *on top* of that foundation.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: X-Ingress-Path Breaks All Absolute Asset and API URLs
+### Pitfall 1: Univariate Proto Forces an Awkward Multivariate Bolt-On
 
 **What goes wrong:**
-The HA Supervisor Ingress proxy routes requests through a dynamic, per-session URL of the form `/api/hassio_ingress/{token}/{path}`. The exact prefix changes every session. If any HTML page, JavaScript bundle, or API `fetch()` call uses an absolute URL starting with `/` (e.g., `<script src="/app.js">` or `fetch('/api/config')`), the browser resolves it against the HA host root — not against the ingress prefix — and gets a 404 or is refused by HA's own auth layer. The page loads but shows a blank UI, missing styles, or silent API failures.
-
-This applies to:
-- `<script src="/...">`, `<link href="/...">` in HTML
-- `fetch('/api/...')` or `axios.get('/api/...')` calls that hardcode a leading `/`
-- CSS `url('/images/...')` references
-- Any redirect response from Kestrel that writes an absolute `Location:` header
+`proto/argus.proto` is single-series end to end: `Point { entity_id, value, timestamp }`, `Verdict { entity_id, score, ... }`, and every RPC (`ScoreStream`, `Fit`, `ScoreBatch`, `SaveModel`, `LoadModel`) takes one `entity_id` and one `repeated Point window`. If group detection is implemented by looping the existing `ScoreBatchRequest` once per group member and comparing verdicts in the .NET orchestrator, you get peer-divergence approximated post-hoc from independently-fit univariate models — not real multivariate detection (PyOD's `ECOD`/`COPOD`/`PCA`/HBOS multivariate detectors need a single feature matrix `X[n_samples, n_features]` fit jointly). This looks like it works (you get *a* score per member) but is statistically a different, weaker technique than what "joint multivariate" in the v4.0 goal actually means.
 
 **Why it happens:**
-Ingress was designed for apps that already use relative paths (like ESPHome's web UI). The HA Supervisor provides the `X-Ingress-Path` header so the backend can reconstruct the base path, but many web frameworks default to generating absolute paths. A server-rendered HTML page using `<base href="/">` will break; one using `<base href="{{ ingress_path }}/">` (where `ingress_path` comes from the request header) will work. Developers who test with a direct port hit (not through ingress) never encounter the problem.
+The path of least resistance is to keep the existing gRPC surface unchanged and fake groups in the orchestrator by fanning out N `ScoreBatchRequest` calls and eyeballing the results. It compiles, it ships, and nobody notices the difference between "N independent univariate models compared after the fact" and "one multivariate model over the joint feature vector" until the joint-anomaly detection mode (e.g., humidity+temp+pressure jointly abnormal → leak) simply never fires because no component is individually anomalous.
 
 **How to avoid:**
-Two layers of defence are required:
-
-1. **ASP.NET/Kestrel layer — set PathBase from the header.** In the minimal-API setup, read `X-Ingress-Path` from the request and call `app.Use` to set `context.Request.PathBase` before routing. The correct middleware ordering is: `UsePathBase` middleware → `UseRouting()` (explicitly called, to override the automatic placement). Example:
-   ```csharp
-   app.Use(async (ctx, next) =>
-   {
-       if (ctx.Request.Headers.TryGetValue("X-Ingress-Path", out var ingressPath))
-           ctx.Request.PathBase = new PathString(ingressPath.ToString());
-       await next();
-   });
-   app.UseRouting(); // must come after the above, not before
-   app.UseStaticFiles();
-   app.MapGet("/api/config", ...);
-   ```
-   With PathBase set, `Link.GetPathByName()`, redirect helpers, and static-file middleware all prepend the correct prefix automatically. **Do not call `UsePathBase(staticValue)` — the prefix is dynamic per session.**
-
-2. **HTML/frontend layer — use relative paths everywhere.** All `<script>`, `<link>`, `<img>`, and `fetch` calls must use relative paths (no leading `/`). Inject a `<base href="./"></base>` tag into every HTML page. If using a JS bundler, set `publicPath: './'` (Vite: `base: './'`).
-
-Do not attempt to read `X-Ingress-Path` only in JavaScript; the header is not sent to the browser — it is a server-to-server header added by the Ingress proxy.
+Extend the proto with a first-class multi-series message before writing any group detection code: a `GroupPoint`/`GroupWindow` message carrying `repeated string member_ids` + a matrix (or repeated per-member `Point` lists sharing a timestamp grid) and a `GroupVerdict` carrying both a joint anomaly score and a per-member attribution score. Keep the existing univariate messages untouched (additive proto change, not a breaking one) — old single-sensor `ScoreStream`/`ScoreBatch`/`Fit` callers must keep compiling and running unmodified.
 
 **Warning signs:**
-- Browser DevTools Network tab shows 404 for `GET /app.js` where the URL lacks the `/api/hassio_ingress/...` prefix.
-- The page renders but no CSS or JS loads.
-- `fetch('/api/config')` returns a 401 from HA's own auth (not from Kestrel).
-- Works fine when hitting the add-on port directly (`http://addon-hostname:8099/`) but breaks when opened via "Open Web UI" in HA.
+- Group "joint multivariate" mode never flags anything that peer-divergence mode doesn't already catch.
+- Detector-side Python code has no import of a genuinely multivariate PyOD estimator (`pyod.models.pca`, `.ecod`, `.copod`, `.hbos`) fit on a 2D array — only loops calling the same univariate detector N times.
+- Code review finds group scoring implemented entirely in the .NET orchestrator (comparing independently-computed univariate verdicts) with no new gRPC message type.
 
 **Phase to address:**
-v3 Phase 1 (Ingress scaffolding / Kestrel wiring). The `X-Ingress-Path` middleware must be in place before any HTML or API endpoint is added. Test by opening the UI exclusively through the HA Ingress panel, never by direct port access.
+Proto/detector-contract phase (first phase of v4.0). This is a foundational decision — retrofitting a real multivariate message type after peer-divergence ships on the fake approach means redoing the detector interface and the orchestrator's group-scoring call sites.
 
 ---
 
-### Pitfall 2: Kestrel Bound to Wrong Interface — Ingress Gets "502: Bad Gateway"
+### Pitfall 2: Feature Scaling Ignored — Pressure Dominates Humidity/Temperature in Joint Scores
 
 **What goes wrong:**
-The HA Supervisor Ingress proxy, running at `172.30.32.2`, makes HTTP connections to the add-on container's internal IP (the container side of the add-on network bridge) on the `ingress_port`. If Kestrel binds to `127.0.0.1` (loopback only), the Supervisor cannot reach it from `172.30.32.2`. The HA UI shows a permanent "502: Bad Gateway" when clicking "Open Web UI". No error appears in the orchestrator logs because Kestrel never receives the connection.
-
-The mirror mistake is to also open a `ports:` mapping in `config.yaml`, which would expose the web UI on the host network — bypassing auth entirely and creating an unauthenticated public endpoint on the add-on's host port.
+Argus's v1 entities mix units with wildly different numeric ranges: pressure (~950–1050 hPa), humidity (0–100 %RH), temperature (~-20 to 40 °C). Any joint multivariate detector (PyOD PCA, HBOS, ECOD, kNN, LOF) computes distances or densities over the raw feature vector. Without per-feature standardization, pressure's ~100-unit range and larger absolute magnitude will dominate the anomaly score; a genuine humidity spike (leak scenario) gets drowned out by normal day-to-day pressure drift. This is the single most common way a "joint humidity+pressure" detector silently reduces to "a pressure detector."
 
 **Why it happens:**
-ASP.NET's `WebApplication.CreateBuilder` defaults to `http://localhost:5000` (loopback). Developers test locally with direct browser access (which works on loopback) and do not discover the Supervisor-reach problem until the add-on is installed on real HA OS. Adding a `ports:` entry to `config.yaml` is the quickest workaround but is the wrong fix — it creates a port visible to everything on the LAN.
-
-Argus already has the correct pattern for the gRPC watchdog: binding the Python detector to `0.0.0.0` so the Supervisor TCP watchdog (`tcp://[HOST]:50051`) can probe it. The same principle applies to Kestrel.
+PyOD's `fit()` API accepts a raw 2D array and returns scores without validating or requiring pre-scaled input — nothing errors out, so an unscaled group model looks like it "just works" and produces plausible-looking scores. The failure only surfaces as a subtle accuracy problem (wrong root cause, missed leaks) that's hard to catch without a labeled test case.
 
 **How to avoid:**
-- Bind Kestrel to `0.0.0.0` on the `ingress_port` (e.g. 8099 or another chosen port):
-  ```csharp
-  builder.WebHost.ConfigureKestrel(opts =>
-      opts.Listen(System.Net.IPAddress.Any, 8099));
-  ```
-  Or via environment: `ASPNETCORE_URLS=http://0.0.0.0:8099`.
-- In `config.yaml`: set `ingress: true`, `ingress_port: 8099`. Do NOT add a `ports:` entry for 8099.
-- Restrict to the Supervisor's IP at the application layer if security tightening is needed (allow only `172.30.32.2` in the middleware), but do not use OS-level bind restriction that would also block the Supervisor.
+Standardize every feature (z-score: `(x - rolling_mean) / rolling_std`, computed per-member from that member's own history, not a fixed global constant) before it enters any joint multivariate model. Store the per-member scaler alongside the group model (same lifecycle as `SaveModel`/`LoadModel` — the scaler is part of the model's persisted state, not recomputed ad hoc). Do this in the Python detector, not the .NET orchestrator, since scaling parameters are a model-fitting concern (D2: all ML in Python).
 
 **Warning signs:**
-- "Open Web UI" in HA shows a full-page "502: Bad Gateway" immediately.
-- Orchestrator logs show no incoming HTTP request at all when the UI is opened.
-- `ss -tlnp | grep 8099` inside the container shows `127.0.0.1:8099` (loopback-only).
-- The gRPC detector watchdog passes (it binds `0.0.0.0`) but the UI fails.
+- Joint anomaly scores correlate almost 1:1 with the pressure sensor's raw z-score and barely move with humidity/temperature swings.
+- A synthetic test (spike humidity only, holding pressure/temp flat) fails to trigger the joint detector.
+- No scaler object exists in the persisted group-model bytes; every `Fit` call recomputes normalization from scratch using the current window's mean/std (masks drift, breaks if the window is short).
 
 **Phase to address:**
-v3 Phase 1 (Ingress scaffolding). The bind address must be set and tested as part of the Kestrel startup, before any UI content is served. Acceptance criterion: "Open Web UI" must reach Kestrel in a real HA Supervisor environment.
+Detector implementation phase for joint multivariate mode. Add a scaling unit test (mixed-unit synthetic group, verify each feature contributes comparably to the score) as an explicit acceptance criterion before this phase is called done.
 
 ---
 
-### Pitfall 3: Host Builder Migration — `Host.CreateApplicationBuilder` Cannot Add Kestrel; Requires Switching to `WebApplication.CreateBuilder`
+### Pitfall 3: Time-Alignment Treated as an Afterthought — Batch Groups Silently Compare Misaligned Readings
 
 **What goes wrong:**
-The current `Program.cs` uses `Host.CreateApplicationBuilder(args)` (a Generic Host, no web server). Adding ASP.NET minimal-API and Kestrel requires switching to `WebApplication.CreateBuilder(args)`. This is not additive — the two builder types have different APIs, different default service registrations, and produce different host types. Attempting to add `IWebHostBuilder` configuration to a Generic Host fails at compile time or produces an `InvalidOperationException` at startup.
-
-If the migration is done naively (wholesale replacement), existing DI registrations, `AddHostedService<>` calls, and `AddSingleton<>` entries all carry over correctly, but ordering and startup sequencing change:
-
-- `WebApplication` starts the HTTP server before calling `StartAsync` on hosted services. This means the `/api/config` endpoint is reachable before `HaListenerWorker` has connected to HA — API calls can arrive before the system is ready.
-- The default Kestrel URLs (`http://localhost:5000` and `https://localhost:5001`) conflict if an unrelated port is already in use on the container.
-- `ASPNETCORE_URLS` environment variable can override Kestrel endpoints system-wide, which is easy to accidentally set in the s6 environment and hard to debug.
+`InfluxDbReader.QueryAsync` today returns one entity's raw, irregularly-timestamped points sorted ascending — HA's `state_changed` events fire only on value change, so cadence varies per entity (a stable pressure sensor may report every 10 minutes; a twitchy humidity sensor every 30 seconds). For group detection, naively zipping two members' point lists by index (`points[i]` from sensor A paired with `points[i]` from sensor B) compares readings from different wall-clock times — a "joint anomaly" at index 47 may be comparing sensor A's value from 09:00 with sensor B's value from 09:47. This produces false positives (values look inconsistent because they were never simultaneous) and false negatives (the actual coincident anomaly falls between misaligned samples).
 
 **Why it happens:**
-Generic Host (`Host.CreateApplicationBuilder`) is the right host for worker services with no HTTP. Moving to `WebApplication.CreateBuilder` is required to get Kestrel. The .NET template for "Worker Service" does not include web hosting; the "Web API" template does not include `AddHostedService`. Developers merging the two find that the builder swap is straightforward but that the application lifecycle ordering subtleties are not.
+The existing single-sensor code has never needed cross-entity alignment — each entity's window is self-contained. Group detection is the first place two independent, irregularly-sampled time series must be reconciled onto a shared axis, and it is easy to underestimate this because "just zip the lists" compiles and produces a result that looks reasonable on eyeball inspection with clean synthetic data.
 
 **How to avoid:**
-- Replace `Host.CreateApplicationBuilder(args)` with `WebApplication.CreateBuilder(args)`. All `builder.Services.AddSingleton<>` and `builder.Services.AddHostedService<>` calls are identical in both builders — no changes to the DI registrations.
-- Use `var app = builder.Build(); ... app.Run();` (instead of `var host = builder.Build(); host.Run();`). The `WebApplication` type is also an `IHost`.
-- Explicitly configure Kestrel (see Pitfall 2) so the default `localhost:5000` is never used.
-- Add a readiness gate to the API: the `/api/config` endpoint should return `503 Service Unavailable` (with a `Retry-After` header) until `HaListenerWorker` has emitted its first "healthy" signal. This prevents the UI from displaying a partially-initialized state.
-- Do not set `ASPNETCORE_URLS` in the s6 environment — control the port only through `builder.WebHost.ConfigureKestrel(...)`.
+Resample every group member onto a common fixed-interval grid before joint scoring — the v4.0 scope already commits to this ("Batch-first: InfluxDB resampling for time-alignment"). Concretely: pick a grid interval (start conservative — e.g. 5 min, matching realistic sensor cadence) and use InfluxDB's own `aggregateWindow()` in the Flux query (mean or last-value per bucket) rather than pulling raw points and resampling in .NET/Python — InfluxDB is already the batch source and doing the resampling at the query layer avoids shipping raw irregular data across the wire twice. For gaps (a sensor didn't report in a bucket — HA only emits on state change), use last-value-carried-forward with an explicit staleness cap (e.g., don't carry forward more than 3 buckets / 15 min) rather than unlimited forward-fill, which would let a stale/dead sensor silently masquerade as "no change" indefinitely. Never blindly index-zip two independently-fetched point lists.
 
 **Warning signs:**
-- Compile error: `'Host' does not contain a definition for 'ConfigureWebHostDefaults'`.
-- Runtime error: `System.InvalidOperationException: Unable to resolve service for type 'IWebHostEnvironment'`.
-- API endpoint returns data before `HaListenerWorker` has finished its HA health gate, leading to empty entity lists in the UI.
-- Port 5000 conflict at startup when another service already binds that port.
+- Group Flux query still filters by `entity_id` per member and returns raw (non-`aggregateWindow`) points that get zipped by list position in .NET/Python.
+- No explicit gap/staleness handling — a group member that stops reporting (dead battery, HA restart) keeps contributing its last known value forever with no flag.
+- Synthetic test with two sensors at deliberately different cadences (one every 30s, one every 10min) produces plausible-looking but wrong-timestamp-paired joint scores.
 
 **Phase to address:**
-v3 Phase 1 (Kestrel / host builder migration). The builder swap is Phase 1 work item 1; the readiness gate is Phase 1 work item 2. Both must be completed before any UI feature work begins.
+Batch-groups phase (InfluxDB resampling phase, per v4.0 scope). The `aggregateWindow` + staleness-cap resampling should be a named, tested component — not inlined into the group scoring loop — since streaming groups later will need the same alignment logic.
 
 ---
 
-### Pitfall 4: Config Write Integrity — Corrupt `entities.yaml` and Schema Drift
+### Pitfall 4: Unit Mismatch Within a "Group" Isn't Validated at Config Time
 
 **What goes wrong:**
-Three sub-problems compose this pitfall:
-
-**4a. Non-atomic writes corrupting the config file.** If the UI save handler does `File.WriteAllText("/data/entities.yaml", yaml)` and the orchestrator's `FileSystemWatcher` fires a reload exactly when the file is half-written, `EntitiesConfigLoader.Load()` reads a truncated YAML document, throws an exception, and the running configuration is lost. The pipeline may crash or silently revert to an empty entity list.
-
-**4b. Concurrent access — UI save vs orchestrator read.** There is no locking between the HTTP handler writing the file and the `FileSystemWatcher` event reading it. On a dual-core Pi 4, these race on file handles. `YamlDotNet` deserialization does not tolerate partial reads.
-
-**4c. Schema drift between the UI, config-gen, and `EntitiesConfigLoader`.** `gen-entities.py` generates YAML in the shape `EntitiesConfigLoader` expects. If the UI writes a richer JSON/YAML format that `EntitiesConfigLoader` does not understand (e.g., a new `threshold` field not in `DetectorConfig.Params`), and `EntitiesConfigLoader` uses `IgnoreUnmatchedProperties()`, the data is silently dropped. The UI shows the user's saved parameters; the orchestrator ignores them. This is a hard-to-detect regression.
+`EntityConfig.Groups` is currently a parsed-and-ignored `object?` placeholder with zero validation. Once activated, nothing stops an operator from grouping semantically incompatible sensors (e.g., outdoor temp °C with a battery-percentage sensor, or three temperature sensors where one reports °F due to a misconfigured integration). `HaStateDto` already carries `unit_of_measurement` (added in v3.0 for the sensor registry) — if group activation doesn't cross-check unit compatibility across a group's members using that existing data, the detector will silently compute nonsense joint statistics on incompatible units, and peer-divergence mode will flag every member of a mixed-unit group as "diverging" permanently.
 
 **Why it happens:**
-`EntitiesConfigLoader.Load()` currently reads the file once at startup as a static call. There is no existing reload path, no file lock, and no schema versioning. The `gen-entities.py` path and the planned UI save path are two independent writers to the same file. YamlDotNet's `IgnoreUnmatchedProperties()` makes it easy for the loader to silently swallow fields the UI adds.
+The `Groups`/`Covariates` fields were designed purely as YAML placeholders in v1–v3 (parsed to avoid schema errors, never read). There is no existing validation pathway for cross-entity semantic consistency because until now every config validation concern was per-entity, not per-group.
 
 **How to avoid:**
-
-For write integrity (4a + 4b):
-- Write to a temp file in `/data` (same filesystem), then `File.Move(tempPath, targetPath, overwrite: true)`. This is atomic on POSIX filesystems (rename syscall). The orchestrator always reads a complete file.
-  ```csharp
-  var tmp = Path.Combine(Path.GetDirectoryName(configPath)!, $".entities.tmp.{Guid.NewGuid():N}.yaml");
-  await File.WriteAllTextAsync(tmp, yaml, ct);
-  File.Move(tmp, configPath, overwrite: true); // atomic rename
-  ```
-- Use a `SemaphoreSlim(1)` in the API handler to serialize concurrent UI save requests.
-- In the reload path, open the file with `FileShare.Read` and handle `IOException` (file locked) with a 200ms retry before re-throwing.
-
-For schema drift (4c):
-- Remove `IgnoreUnmatchedProperties()` from `EntitiesConfigLoader` once the schema is stable, or replace it with `StrictMode` and maintain a versioned schema.
-- Add a schema version field to `entities.yaml` (e.g., `schema_version: 2`). The loader checks the version at startup and rejects files written by a newer UI than the orchestrator understands.
-- The UI's YAML serializer must use the same property naming convention as `EntitiesConfigLoader` (`UnderscoredNamingConvention`). A mismatch (camelCase from a JS client-serialized object) will cause silent field drops.
+When activating `Groups`, validate at config-load/UI-save time (not detector-fit time) that all members share `unit_of_measurement` (exact match, or an explicit allowed-conversion table if you want to support °C/°F mixing — simplest is to just reject mixed units). Surface this validation in the SPA UI as a hard error on group creation, not a silent skip. Reuse `IHaSensorRegistry`'s existing per-entity `unit_of_measurement` data — it's already fetched from HA and cached; this is a config-time cross-reference, not a new HA API call.
 
 **Warning signs:**
-- Orchestrator logs show `YamlDotNet.Core.YamlException: mapping values are not allowed` after a UI save — classic partial-read.
-- All entities disappear from MQTT after a UI save (config read as empty).
-- UI shows detector parameters the user saved, but log shows default parameters being used.
-- `ARGUS_ENTITIES_PATH` points to `/data/entities.yaml`; `gen-entities.py` also writes the same path at startup — if both run at container start during a reload, one clobbers the other.
+- Group config schema/loader accepts a `Groups` list with no unit-compatibility check.
+- A group containing a `%` humidity sensor and a `hPa` pressure sensor is accepted as a "peer-divergence" group (peer-divergence assumes members are comparable — pressure and humidity are never comparable peers, only valid as *joint* multivariate features, not as divergence peers).
+- No test exercises a mixed-unit group and asserts rejection or an explicit warning.
 
 **Phase to address:**
-v3 Phase 1 (config model and write path) for the atomic write and semaphore. v3 Phase 3 (per-entity detector/parameter UI) for the schema-drift risk — that is when the YAML schema first gains new fields beyond the `gen-entities.py` baseline.
+Config-model activation phase (where `Groups`/`Covariates` go from parsed-and-ignored to live). This is a cheap, purely-validation fix — much cheaper to add here than to debug "why does peer-divergence always fire" later.
 
 ---
 
-### Pitfall 5: Reload Races — Config Applied to Live ScoreStreamPipeline Drops or Duplicates Detectors
+### Pitfall 5: Small-N Groups Make Peer-Divergence Statistically Meaningless
 
 **What goes wrong:**
-`ScoreStreamPipeline.RunAsync()` runs a long-lived fan-out loop keyed by `entity_id`. Each entity has its own bidirectional gRPC stream, per-entity channel (`Channel.CreateBounded<HaReading>(500)`), and `EntityRuntimeState` (hysteresis gate, warm-up counter, `FrozenSensorDetector`). A config reload must:
-
-1. Discover added entities (open new streams, create new channels and states).
-2. Discover removed entities (drain the channel, close the stream gracefully, unpublish MQTT discovery for orphaned entities).
-3. Update parameters for unchanged entities (e.g., threshold changes) without resetting the warm-up counter or discarding the in-memory model state.
-
-Problems that arise without explicit reload coordination:
-- **Duplicate detectors**: If the reload naively restarts the entire `RunAsync` loop (by cancelling and restarting `HaListenerWorker`), all entities rebuild from scratch, resetting warm-up counters and losing the in-memory HST sliding window state.
-- **Dropped readings**: Between cancelling the old pipeline and starting the new one, `HaListenerWorker` is still receiving WebSocket events. If those events are not buffered, they are lost. A `Channel<HaReading>` buffer of 500 at the worker level would help, but there is currently no such buffer between `NetDaemonHaEventSource` and the pipeline.
-- **Orphaned MQTT entities**: If an entity is removed from config but its MQTT discovery topic is not retracted (by publishing an empty payload to the discovery topic), the HA entity persists indefinitely in "unavailable" state. Users see stale entities they cannot delete without restarting HA.
-- **Model state loss**: `ScoreStreamPipeline.BuildEntityStates()` creates a fresh `EntityRuntimeState` for each entity. River's HST window state lives only in the Python detector process — it survives a reload because the detector is not restarted. But `HysteresisGate` and `FrozenSensorDetector` state live in `EntityRuntimeState` on the .NET side and are reset on every pipeline rebuild.
+Peer-divergence ("which member diverges from its group") implicitly assumes a group large enough that a robust "normal" consensus can be computed and one outlier doesn't skew it. Argus's own example in PROJECT.md — "one tire pressure rising unlike the others" — implies groups as small as N=2–4 (e.g., 4 tire sensors, or 2–3 sensors in one room). With N=2, "divergence from the group" is mathematically just "which of the two values is bigger" — there is no robust consensus to diverge from, and standard techniques (z-score against group mean/std, leave-one-out comparison) become unstable or degenerate at N≤3. Shipping peer-divergence without an explicit small-N floor produces a feature that behaves erratically for the most common real-world group sizes.
 
 **Why it happens:**
-The current pipeline is designed for startup-only configuration (config read once, pipeline runs until shutdown). There is no partial-reload path. The simplest reload implementation (cancel + restart `HaListenerWorker`) is safe for correctness but breaks warm-up and hysteresis continuity.
+Textbook peer-comparison/ensemble techniques (and most PyOD/River examples) are demonstrated on datasets with many features or many samples; the literature doesn't call out that N=2–4 groups need a fundamentally different (or at least floor-guarded) approach. It's easy to implement "z-score vs. group mean, flag outliers beyond threshold" and not notice it degenerates until a real 2-member group is configured.
 
 **How to avoid:**
-
-For the v3.0 milestone, recommend the **restart-on-save** strategy as the minimal viable approach:
-- On UI save, write the new `entities.yaml`, then post a reload signal (e.g., send `SIGHUP` to the orchestrator process, or set a shared `CancellationTokenSource`).
-- The orchestrator restarts only `HaListenerWorker` and `ScoreStreamPipeline`. All other services (MQTT, HealthPublisher, BatchScheduler) continue uninterrupted.
-- Accept the model state reset cost. For HST with `window=250`, the warm-up period is typically 250 readings ≈ 4 minutes at one reading/second per entity. Document this in the UI as "changes apply within ~5 minutes".
-- Retract MQTT discovery for removed entities: before restarting the pipeline, compare the old and new entity lists and publish empty payloads to the discovery topics of removed entities.
-
-Defer the fully incremental reload (add/remove entities without resetting state) to a later phase. It requires refactoring `ScoreStreamPipeline` to accept a live `IDelta<EntityConfig>` and is significantly more complex.
+Set and document an explicit minimum group size for peer-divergence (e.g., require N≥3, ideally N≥4-5 for meaningful leave-one-out consensus) and use a robust statistic (median + MAD, not mean + stddev, since a single outlier in a small group otherwise corrupts the very consensus you're comparing against — reuse the existing MAD detector logic/params already in the codebase for single-sensor mode, D-10). For N=2, either refuse to run peer-divergence (surface as a UI validation warning: "peer-divergence needs at least 3 members") or fall back to a simple documented rule (e.g., flag if the pairwise difference exceeds a threshold — but label this explicitly as a degraded mode, not standard peer-divergence).
 
 **Warning signs:**
-- After a UI save adding a new entity, the HA entity for the new sensor never appears (pipeline not reloaded).
-- After a UI save removing an entity, its `binary_sensor` stays "unavailable" in HA forever (MQTT discovery not retracted).
-- After any reload, all sensors report normal for ~4 minutes (warm-up reset) and anomaly detection resumes — operator mistakes this for a bug.
-- Two pipeline instances running simultaneously, producing duplicate MQTT publishes for the same entity.
+- No minimum-group-size check anywhere in group config validation or detector code.
+- Peer-divergence math uses mean/stddev instead of median/MAD (mean is not robust — the one anomalous member pulls the "consensus" toward itself).
+- A 2-member group test always flags exactly one member as "the anomaly" even when both are behaving normally relative to their own history (there's no way to prove a real anomaly with N=2 alone).
 
 **Phase to address:**
-v3 Phase 4 (reload-without-restart / CFG-04). The restart-on-save approach is acceptable for Phase 4; incremental reload is a future milestone item. MQTT discovery retraction for removed entities must be implemented as part of Phase 4.
+Peer-divergence detection phase. Add the minimum-N guard and median/MAD-based consensus as explicit, tested requirements — not left to the detector's default statistical choice.
+
+---
+
+### Pitfall 6: Peer-Divergence "Which Member" Attribution Presented as Certain When It's a Ranking
+
+**What goes wrong:**
+Attribution ("which sensor is the anomalous one") in any multi-member comparison is inherently a *ranking under uncertainty*, not a ground-truth fact — especially when features are correlated (e.g., two indoor temp sensors in adjacent rooms naturally move together; a real HVAC event could make *both* look like they diverge from a three-member group, and whichever crosses the threshold first "wins" attribution somewhat arbitrarily). If the MQTT/HA-facing binary_sensor for a group is named/worded as if it definitively identifies the faulty sensor ("Kitchen humidity is the anomaly"), users will over-trust it, especially with correlated members or the small-N problem from Pitfall 5.
+
+**Why it happens:**
+The single-sensor binary_sensor UX (D8: Polish friendly names, "is_anomaly" boolean) sets a precedent of confident, binary framing that doesn't map cleanly onto attribution, which is fundamentally probabilistic. Carrying the same UX pattern forward to groups without adjustment implies false certainty.
+
+**How to avoid:**
+Expose the attribution as a score/rank (already have the `Verdict.score` field pattern — reuse it: publish a per-member "divergence score" sensor, not just a single boolean "this one is the anomaly"), and word the HA entity attributes/name to reflect "most likely divergent member" rather than a flat assertion. Cover the correlated-features case explicitly in whatever documentation/UI copy accompanies groups: warn that tightly correlated members reduce attribution confidence, and (if feasible) surface a correlation warning at group-config time using the same historical data already pulled for Fit.
+
+**Warning signs:**
+- The only group-level MQTT output is a single `binary_sensor` naming one specific member with no accompanying confidence/score.
+- Group members that are known to be physically correlated (e.g., 2 sensors in the same room) get "confidently" blamed one at a time across different events with no consistency, and nobody flags this as expected behavior of a ranking method.
+
+**Phase to address:**
+Peer-divergence detection phase (algorithm design) and the SPA UI's group-detail view (surfacing attribution as a ranked/scored list, not a single verdict).
 
 ---
 
 ## High-Risk Pitfalls
 
-### Pitfall 6: Image Bloat from Node.js Build Steps Pushing Past 2 GB
+### Pitfall 7: Group MQTT Entity Churn When Group Membership Changes
 
 **What goes wrong:**
-Adding a JavaScript frontend (Vite, a small React/Preact SPA, or even vanilla JS bundled with esbuild) introduces a Node.js build step. Common mistakes:
-
-- Including `node_modules` in the final Docker layer (typically 200–500 MB of dev dependencies that are not needed at runtime).
-- Using a single-stage Dockerfile where `npm install` (all deps including devDeps) is run in the same stage as the `dotnet publish` and Python pip install steps — all layers end up in the final image.
-- Caching `npm install` in a layer above `COPY detector/requirements.txt` — the pip layer is large, and if the npm layer invalidates it, CI rebuild times double.
-- Using `node:latest` (1+ GB) as the build stage base instead of `node:20-slim` (~200 MB).
-
-The current add-on image already contains `.NET 8 runtime` (~120 MB) + `Python 3.11 + ML deps` (~900 MB uncompressed). Adding an unbundled Node.js build environment pushes past 2 GB, violating the DOCS-02 budget.
-
-**How to avoid:**
-Use a multi-stage Dockerfile. The Node.js build stage produces static assets only; those assets are `COPY --from=builder` into the final image as plain files (no Node.js runtime needed at runtime):
-
-```dockerfile
-# Stage 1: JS build (never reaches the final image)
-FROM node:20-slim AS ui-builder
-WORKDIR /ui
-COPY ui/package.json ui/package-lock.json ./
-RUN npm ci --prefer-offline
-COPY ui/ ./
-RUN npm run build  # produces /ui/dist/
-
-# Stage 2: final image (existing Dockerfile content)
-FROM ${BUILD_FROM}
-...
-COPY --from=ui-builder /ui/dist/ /opt/argus/orchestrator/wwwroot/
-```
-
-This keeps Node.js and `node_modules` entirely out of the final image. The `wwwroot/` folder is then served by Kestrel's `UseStaticFiles()` middleware.
-
-Alternative: generate server-rendered HTML at compile time using a lightweight static site generator or a simple Python script — no JavaScript framework at all. For a config UI with ~3 pages, plain HTML + a few hundred lines of vanilla JS (no bundler) may be the better tradeoff: no Node.js build step, no bundle size concerns, no framework upgrade churn.
-
-**Warning signs:**
-- `docker build` output shows a `RUN npm install` or `RUN npm ci` step that takes >2 minutes in the final stage (not a builder stage).
-- `docker image inspect <image> | jq '.[0].Size'` returns more than 2 GB.
-- `docker history <image>` shows a layer of >200 MB from an npm step.
-- CI build for aarch64 exceeds 30 minutes.
-
-**Phase to address:**
-v3 Phase 1 (UI technology decision — open question Q1 in REQUIREMENTS.md). If a JS framework is chosen, the multi-stage Dockerfile must be established before any feature content is added. The CI image-size gate (fail if >2 GB) must be added in the same phase.
-
----
-
-### Pitfall 7: Kestrel Running Alongside s6 BackgroundServices — Port Binding and Graceful Shutdown
-
-**What goes wrong:**
-Two specific problems arise from Kestrel coexisting with s6 and existing `BackgroundService` workers:
-
-**7a. Port conflict with gRPC watchdog.** The existing `watchdog: "tcp://[HOST]:50051"` in `config.yaml` monitors the gRPC port. Adding an HTTP port (8099) does not conflict with 50051, but if Kestrel's default ports (5000, 5001) are not explicitly suppressed, they bind in addition to 8099. Two of these ports may collide with other add-ons or the HA Supervisor's own services.
-
-**7b. Graceful shutdown ordering under s6.** When s6 sends `SIGTERM` to the orchestrator process, the .NET Generic Host (and `WebApplication`) registers a SIGTERM handler that calls `IHost.StopAsync()`. The shutdown sequence is: Kestrel stops accepting new requests → BackgroundService.StopAsync() is called for each hosted service in reverse registration order → host exits. The default shutdown timeout is 30 seconds in .NET 8.
-
-Problems:
-- If `HaListenerWorker.ExecuteAsync` does not observe `stoppingToken` promptly (it is blocked on `_scoreStreamPipeline.RunAsync()` which is awaiting gRPC reads), the worker hangs until the gRPC call is cancelled by the underlying cancellation. If the gRPC stream cancellation takes >30s (network partition), .NET forcefully aborts and s6 may log a false "service crashed" exit.
-- s6's `S6_KILL_GRACETIME` (default 5000ms) may fire before .NET's shutdown completes, sending SIGKILL. Set `S6_KILL_GRACETIME` high enough (e.g., 10000ms / 10 seconds) to let .NET drain gracefully.
-- The s6 `finish` script for the orchestrator service currently calls `/run/s6/basedir/bin/halt` (correct for v3). No change is needed for the Kestrel addition — the halt call terminates the entire container, not just the process.
-
-**How to avoid:**
-- Suppress all default Kestrel endpoints: use `builder.WebHost.ConfigureKestrel(opts => opts.Listen(IPAddress.Any, 8099))` and set `ASPNETCORE_URLS` to an empty string or explicitly override it to prevent the default localhost:5000 from also binding.
-- Set `builder.WebHost.UseUrls(string.Empty)` before `ConfigureKestrel` to clear the default URL list.
-- Ensure `HaListenerWorker.ExecuteAsync` propagates `stoppingToken` all the way into the gRPC call. In `ScoreStreamPipeline.RunAsync`, the fan-out task and per-entity tasks all receive `ct` — this is already correct. Verify `NetDaemonHaEventSource.ReadAllAsync(stoppingToken)` also propagates cancellation (it should end the channel on cancellation).
-- Add `ShutdownTimeout = TimeSpan.FromSeconds(15)` to the host options to give BackgroundServices enough time to drain.
-- Set `ENV S6_KILL_GRACETIME=10000` in the Dockerfile.
-
-**Warning signs:**
-- `netstat -tlnp` inside the container shows both `0.0.0.0:5000` and `0.0.0.0:8099` bound (double binding).
-- s6 logs show orchestrator exit code 137 (SIGKILL) rather than a clean exit during add-on stop.
-- "Open Web UI" causes a 502 immediately after add-on start (Kestrel not yet bound when the UI is clicked).
-- HaListenerWorker takes >10 seconds to stop after SIGTERM.
-
-**Phase to address:**
-v3 Phase 1 (host builder migration and Kestrel wiring). The shutdown timeout and `S6_KILL_GRACETIME` settings should be validated in Phase 1 as part of the "start/stop add-on cleanly" acceptance criterion.
-
----
-
-### Pitfall 8: `gen-entities.py` Startup Path Collides With UI-Written Config
-
-**What goes wrong:**
-Currently, `10-config-gen.sh` runs `gen-entities.py` at every container start, unconditionally overwriting `/data/entities.yaml` with content derived from `options.json` (the HA add-on options form). After v3.0 ships, the UI will be the authoritative writer of `/data/entities.yaml`. On the next add-on restart or update, `gen-entities.py` runs again and overwrites the UI-saved config with the dumb `options.json` entity list (all with `hst` defaults, no per-entity detector parameters). All user configuration from the UI is silently erased.
+Today, `UniqueId.AnomalyId`/`ScoreId` are deterministic functions of `(entity_id, detector)` — stable as long as config doesn't change, and v3.0 already built `DiscoveryPublisher.RetractAsync` + hot-reload diffing specifically for entity add/remove. Groups introduce a second dimension of churn: a group's `unique_id` will need to be some deterministic function of its *member set* (or a stable group name/ID). If group membership changes (operator adds/removes a member via the SPA), and the group's `unique_id` is derived from the member list (e.g., a hash or sorted concatenation of member entity_ids), then editing membership silently mints a *brand-new* `unique_id` — the old group entity is orphaned in HA (never retracted, because the reload-diffing logic only knows how to diff *entity* config, not *group* config) and a new "stale" group entity appears alongside it.
 
 **Why it happens:**
-`gen-entities.py` was designed as the only config source. It does not know whether the user has ever opened the UI. The two config-writing paths (startup script and UI save) have no coordination.
+The existing hot-reload/retraction machinery (`ILiveEntitiesConfig`, `ConfigChanged` diffing in `HaListenerWorker`) was built and tested against the mental model "entities are added/removed," which is a flat list diff. Groups add a second nested collection whose *identity* is ambiguous — is a group identified by a stable operator-assigned name (survives membership edits) or by its member set (churns on every edit)? If this isn't decided explicitly, whichever engineer implements it first will pick membership-derived IDs because it's the "obvious" deterministic choice, without realizing it breaks retraction semantics.
 
 **How to avoid:**
-Make `gen-entities.py` conditional on whether a UI-authored config already exists:
-```python
-if os.path.exists("/data/entities.yaml") and is_ui_authored("/data/entities.yaml"):
-    # UI config present — skip overwrite; only validate it is readable
-    sys.exit(0)
-else:
-    # First boot or no UI config — generate from options.json
-    write_from_options()
-```
-Add a marker field to UI-authored YAML (e.g., `_source: ui`) that `gen-entities.py` checks. Alternatively, write a separate lock file (`/data/.ui_config_present`) on first UI save.
-
-Also: the v3.0 UI should allow importing from `options.json` on first open (so the user does not have to re-enter entities already configured in the add-on options), but after the first UI save, `options.json` entity list is treated as a migration source only.
+Give every group a stable, operator-assigned (or UI-generated-once) `group_id` that is independent of its member list — analogous to how HA's own `device.identifiers` stays stable across entity changes. `unique_id` for group MQTT entities derives from `group_id` + detector, never from the member list. When membership changes, the same group entity is republished (retained MQTT overwrite, same topic) with updated `sw_version`/attributes if needed — no retract/recreate. Only retract a group's discovery topics when the *group itself* is deleted, exactly mirroring the existing per-entity retract path (`RetractAsync` already has the right shape — extend it to accept group configs, don't reinvent it).
 
 **Warning signs:**
-- User saves complex per-entity detector parameters in the UI; after an add-on restart or OTA update, all entities revert to `hst` with default params.
-- Log at startup shows `Config-gen complete` (which means gen-entities.py ran) followed by the orchestrator loading fewer detectors than the user configured.
-- `git diff /data/entities.yaml` (mentally) between pre-restart and post-restart shows all `params:` blocks reverted to `{}`.
+- Group `unique_id` generation code takes the member list (or its hash) as an input.
+- Editing a group's members in the SPA causes a new HA device/entity to appear rather than the existing one updating.
+- No `group_id` field exists anywhere in the (to-be-designed) group config schema — only a `members: [...]` list.
 
 **Phase to address:**
-v3 Phase 1 or Phase 2. The conditional gen-entities.py check must be in place before any user can save config via the UI (Phase 2). If it is not present at Phase 2, the first user to save config and then restart will lose their work.
+Config-model + MQTT-discovery phase for groups (early — this is a schema decision, not an implementation detail to patch later). Verify with the same retraction test pattern used in v3.0 (T-03-01 style: change membership, assert old topic untouched, same topic re-published).
+
+---
+
+### Pitfall 8: Group Detection Waiting on the Slowest Member Blocks the Streaming Path
+
+**What goes wrong:**
+The Core Value's <2s latency target is explicitly scoped to single-sensor streaming in v4.0 ("group latency needs a separate, looser target — groups wait for member alignment"), which correctly anticipates the risk — but the risk is *implementation leakage*, not just a documented exception. If group scoring (even batch-only, per v4.0's batch-first scope) is wired into the *same* `ScoreStreamPipeline`/`HaListenerWorker` fan-out loop that serves single-sensor streaming — e.g., a shared channel, a shared gRPC client, or a shared per-tick loop — then a slow/blocked group computation (waiting on InfluxDB resampling, or a member whose Influx data hasn't landed yet) can back up that shared resource and degrade the untouched single-sensor path's actual latency, even though group detection is "just" batch and "separate" on paper.
+
+**Why it happens:**
+It is architecturally convenient to reuse `BatchSchedulerWorker`'s existing per-tick loop (`RunBatchAsync` iterating `_liveConfig.Get().Entities`) for group scoring too, since the batch infrastructure (InfluxDB reader, `IBatchDetectorClient`, timer) already exists. But `BatchSchedulerWorker` already fully owns the batch path and is decoupled from `ScoreStreamPipeline`/`HaListenerWorker` (the streaming path) — the risk is specifically if a shared/blocking resource (gRPC channel pool, InfluxDB client connection pool sized too small, or a single `DetectionGateway` health gate) is shared between the two paths and a slow group query exhausts it.
+
+**How to avoid:**
+Keep group batch scoring as its own scheduled loop (either a new `BackgroundService` or an extension of `BatchSchedulerWorker` that iterates groups *after* or in a separate cycle from per-entity batch scoring, with independent error isolation — the existing per-entity try/catch pattern in `RunBatchAsync` already isolates entity failures from each other; extend that same isolation to groups). Verify the gRPC channel used for group `ScoreBatch`/`Fit` calls doesn't share a bounded connection pool with the streaming path's `ScoreStream` calls in a way that lets one starve the other (check `Grpc.Net.Client` channel configuration — a shared `GrpcChannel` with default HTTP/2 multiplexing is fine; a shared bounded thread pool or semaphore gating both paths is not). Add a latency/health metric distinguishing "single-sensor streaming latency" from "group batch latency" so a regression in one is visible independent of the other.
+
+**Warning signs:**
+- Single-sensor streaming latency (already the Core Value's verified <2s metric) regresses after group batch scoring is added, even though group scoring is "batch, not streaming."
+- Group scoring code lives inside `HaListenerWorker` or `ScoreStreamPipeline` rather than alongside `BatchSchedulerWorker`.
+- A single shared `SemaphoreSlim` or bounded channel gates both per-entity streaming sends and group batch requests.
+
+**Phase to address:**
+Group batch-scoring implementation phase. Add a regression check (measure single-sensor streaming latency before/after group batch feature lands) as an explicit verification step, not just a functional test of groups themselves.
+
+---
+
+### Pitfall 9: Introducing a Node Build Step Breaks the Multi-Stage Image Discipline Established in v2.0/v3.0
+
+**What goes wrong:**
+The existing add-on Dockerfile already juggles a multi-arch (amd64+aarch64) build with a CI gate asserting compressed size < 2 GB and "torch-free." A Node.js SPA build step is a *second* language toolchain added to an already dense build pipeline (`.NET publish` + Python pip install + now `npm ci && npm run build`). The generic risk (Node build tools bloating the final image) is already documented in the existing v3.0 PITFALLS.md (Pitfall 6/Technical Debt table) for the htmx-era decision that ultimately *avoided* a Node step — v4.0 is now deliberately taking on the thing v3.0 avoided. The specific new risk for v4.0 is: since the project builds locally via `buildx` (not CI, per "Local buildx→GHCR release (not CI)" — a v3.0 Key Decision), an `npm ci` step running for aarch64 emulated under QEMU (matching the existing v2.0 GH Actions two-job QEMU pattern, if still used, or local buildx multi-arch) can be extremely slow or flaky, turning what was previously a fast local release process into a multi-minute-per-arch bottleneck, and any accidental inclusion of `node_modules`/dev dependencies in the final stage silently re-inflates the image past the existing 2 GB gate.
+
+**Why it happens:**
+The multi-stage pattern (`FROM node:20-slim AS ui-builder ... COPY --from=ui-builder /dist/ ...`) is well understood in principle (already documented in the existing PITFALLS.md as the correct approach), but is easy to get subtly wrong on the first real implementation: forgetting `--omit=dev` / running `npm ci` without `NODE_ENV=production`, or accidentally `COPY`-ing the entire `ui/` source tree (including `node_modules` if `.dockerignore` isn't updated) into the final stage instead of just the built `dist/` output.
+
+**How to avoid:**
+Reuse the exact multi-stage pattern already validated in the v3.0 research (builder stage on `node:20-slim`, `npm ci` there only, `COPY --from=ui-builder /ui/dist/ wwwroot/` into the final stage). Add `ui/node_modules` to `.dockerignore` defensively even though the builder stage handles it correctly (defense in depth against future Dockerfile edits). Keep the existing CI/local image-size assertion (`docker image inspect ... jq '.[0].Size'` < budget) as a release gate, but *revise the budget number* — v4.0 explicitly drops the old 2 GB target as a stated tradeoff ("the add-on image grows... dropped" per PROJECT.md), so pick and document a new explicit ceiling rather than silently letting the gate rot or get deleted. Time-box a test build for aarch64 early (before committing to a specific SPA framework) to catch QEMU-emulation slowness before it's baked into the release workflow.
+
+**Warning signs:**
+- Local `buildx` release process for a new version takes dramatically longer than the v3.0 baseline, specifically during the aarch64 leg.
+- `docker history` on the shipped image shows an `npm` or `node_modules` layer larger than the built `dist/` output alone would justify.
+- The old 2 GB CI gate either still exists unmodified (will start failing builds) or was silently deleted (no size regression protection at all) — both are wrong; the correct fix is a deliberate, documented new number.
+
+**Phase to address:**
+SPA build/deploy integration phase (whichever phase wires the chosen SPA framework into the Dockerfile). Re-baseline the image-size gate explicitly as part of this phase's acceptance criteria, don't let it be an incidental side effect.
+
+---
+
+### Pitfall 10: SPA Breaks the X-Ingress-Path Handling That htmx Deliberately Solved
+
+**What goes wrong:**
+The current server-rendered htmx UI (v3.0) solved Ingress's dynamic base-path problem cleanly because every page is rendered server-side with the `X-Ingress-Path` value already known to Kestrel (`PathBase` middleware) at render time — links, forms, and htmx `hx-get`/`hx-post` attributes can simply be relative or explicitly prefixed using the value read from the request. A client-side-routed SPA (React Router / Vue Router in "history" mode, or any bundler with a baked-in `base` config) typically has its asset base path and route base fixed at **build time**, not per-request — but HA Ingress's prefix (`/api/hassio_ingress/{token}/...`) is dynamic per session/install and cannot be known at build time. This is exactly the problem the v3.0 architecture avoided by staying server-rendered; the SPA migration reintroduces it from scratch.
+
+**Why it happens:**
+SPA tooling (Vite, CRA, Vue CLI) is designed around a single, mostly-static deployment base path (e.g., serving from `/` or a known subpath configured once in `vite.config.js`). It has no built-in concept of "the base path is different on every single page load, decided by an HTTP request header." Developers reach for a build-time `base: '/some/path'` config out of habit; it works in local dev (served at `/`) and breaks only when opened through the real HA Ingress panel — the same "works on direct port access, breaks in Ingress" failure signature the v3.0 research already caught for htmx, but harder to fix in an SPA because it's not just link hrefs, it's bundler-emitted asset URLs *and* the client router's internal state.
+
+**How to avoid:**
+Pick one of two known-working strategies, decided explicitly in the SPA framework/build phase rather than discovered by trial and error:
+1. **Hash-based routing + relative asset paths.** Configure the SPA's router in hash mode (`/#/groups` instead of `/groups`) so the client-side router never depends on the server-visible path at all, and set the bundler's asset base to `./` (relative) so all JS/CSS/image URLs resolve relative to wherever `index.html` was actually served from (which Kestrel's existing `PathBase` + `UseStaticFiles()` already handles correctly, per the existing v3.0 middleware). This sidesteps the dynamic-base-path problem entirely — no runtime templating needed.
+2. **Runtime index.html templating.** If hash routing is rejected for UX reasons, have Kestrel serve `index.html` through a small handler (not raw `UseStaticFiles()` for that one file) that injects the request's actual `X-Ingress-Path` value into a `<base href="...">` tag or a global JS variable (`window.__INGRESS_BASE__`) at request time, and configure the SPA's router/fetch calls to read that value instead of a build-time constant. This is strictly more complex (a second SPA-specific pitfall: the API client's `fetch()` base URL must also read the same runtime value, not a bundler env var).
+
+Either way, verify by opening the SPA exclusively through "Open Web UI" in a real HA Supervisor (never direct port access) before considering the SPA phase done — this is the same verification discipline the existing PITFALLS.md already prescribes for htmx, and it applies unchanged.
+
+**Warning signs:**
+- SPA works when accessed via direct port (`http://addon-host:8099/`) but shows a blank page or broken assets/routes only through the HA Ingress panel.
+- Bundler config (`vite.config.js` / `vue.config.js`) has a hardcoded `base: '/'` or any fixed non-relative path.
+- Client-side router is in "history"/"browser" mode with no hash, and no runtime base-path injection exists anywhere in the served `index.html`.
+- The SPA's API client constructs request URLs from an `import.meta.env.VITE_API_BASE` (build-time) rather than a runtime-read value.
+
+**Phase to address:**
+SPA scaffolding phase (before any feature UI is built on top of it) — this must be solved and verified against real Ingress before the algorithm-chooser or friendly-name-search UI work begins, exactly as the v3.0 research treated the equivalent htmx pitfall as Phase-1, blocking work.
+
+---
+
+### Pitfall 11: SPA API Calls Bypass or Duplicate the Existing Supervisor-IP Auth Check
+
+**What goes wrong:**
+The current `IsAuthorizedRequest` check in `Program.cs` gates server-rendered page routes (`GET /sensors`) by `RemoteIpAddress` (Supervisor IP or loopback). An SPA architecture typically restructures the backend into a set of JSON API endpoints consumed by client-side `fetch()`/`axios` calls, often introducing new endpoints (`GET /api/groups`, `POST /api/groups`, `GET /api/detectors/catalog`, etc.) for the algorithm chooser and friendly-name search. Each new endpoint must independently apply the same `IsAuthorizedRequest` gate — it is easy to add a new `app.MapGet`/`MapPost` for SPA data and forget the auth check that was previously applied uniformly to the (small) set of server-rendered routes, especially since minimal-API endpoint definitions don't share middleware by default unless deliberately grouped.
+
+**Why it happens:**
+The existing pattern applies `IsAuthorizedRequest(req.HttpContext)` as the first line inside each handler (seen in the `/sensors` handler) rather than as route-group middleware. This is fine for 2-3 routes but doesn't scale safely to the larger API surface an SPA needs (groups CRUD, detector catalog, search) — a new contributor adding "just one more small endpoint" for SPA data has no structural reminder to add the auth line, unlike a middleware-based approach which is automatically applied to every route in a group.
+
+**How to avoid:**
+Before adding the SPA's API surface, refactor the ad-hoc per-handler `IsAuthorizedRequest` calls into route-group middleware (`app.MapGroup("/api").AddEndpointFilter(...)` or a dedicated middleware applied to a `/api` prefix) so every current and future API endpoint is covered by construction, not by each handler author remembering to add a line. This is a good moment to also close out the "Phase 4 full validate_session" TODO already flagged in the `Program.cs` comment (`// Full validate_session cookie-based auth is scheduled for Phase 4`) if v4.0 is that phase — check whether that deferred work is now due.
+
+**Warning signs:**
+- A new `/api/...` endpoint for SPA data has no `IsAuthorizedRequest` call and no group-level filter covering it.
+- `grep` for `IsAuthorizedRequest` shows it called inconsistently — some handlers have it, newer SPA-era ones don't.
+- The `ARGUS_DEV_TRUST_ALL_REQUESTS` dev bypass flag is still checked per-handler rather than centrally, risking a handler that forgets the check entirely (bypass or not).
+
+**Phase to address:**
+SPA API-surface design phase (the phase that defines the JSON API contract for groups/detectors/search). Convert to group-level middleware as part of that phase, not retrofitted after several endpoints already exist ad hoc.
 
 ---
 
 ## Moderate Pitfalls
 
-### Pitfall 9: Auth Assumption — Ingress Does NOT Re-Verify HA Session for Individual API Requests
+### Pitfall 12: `Groups`/`Covariates` Activation Silently Changes Behavior for Existing Configs
 
 **What goes wrong:**
-HA Ingress authenticates at the WebSocket/HTTP session level using a token embedded in the `X-Ingress-Path` URL. Individual subsequent requests within that session are proxied without re-authentication. This means:
-- An API endpoint like `POST /api/config/save` is reachable by anyone who holds the ingress session token.
-- The token is per-user and tied to a HA session, so it is not publicly guessable. However, if a logged-in HA user is malicious or the token leaks, the API is exploitable.
-- Argus is single-operator (no multi-user concern), but this is still a design assumption to document: the UI does not need to implement its own auth, but it also cannot rely on per-request auth from the proxy.
+`EntitiesConfig.Covariates`/`Groups` are typed as `object?` today specifically so that any YAML shape can be parsed-and-ignored without breaking existing configs (the comment says exactly this: "Parsed but ignored in Phase 1"). The moment these fields become live, every existing `entities.yaml` on disk (written by the v3.0 UI, with these fields either absent or containing whatever ad hoc placeholder shape a user or `gen-entities.py` happened to write) must deserialize into whatever *typed* schema v4.0 introduces (e.g., `List<GroupConfig>` instead of `object?`). If the new type is stricter than the old `object?` catch-all, existing configs with a malformed or unexpected `groups:`/`covariates:` YAML block (even an empty `{}` versus expected `[]`) can fail to load entirely — regressing the exact "hard failure on startup with no entities configured" bug that v3.0's `EntitiesConfigLoader` softening was built to prevent.
+
+**Why it happens:**
+`object?` is forgiving by construction; any concrete replacement type is not. The people who wrote existing `entities.yaml` files (or `gen-entities.py`, if it ever emits placeholder `groups:`/`covariates:` keys) had no schema to conform to, so real-world files may contain inconsistent or absent representations of these fields.
 
 **How to avoid:**
-For Argus (single-operator, self-hosted), no additional auth is needed beyond the HA session. Do NOT add a separate auth layer — it would require session management outside HA and defeats the purpose of Ingress.
-
-Do NOT expose the ingress port via `ports:` in `config.yaml`. The "no separately exposed port" constraint in UI-01 is the correct security boundary.
-
-Document this assumption explicitly in the phase acceptance criteria so future contributors do not add unnecessary API keys or JWT middleware.
+Treat this exactly like the v3.0-established pattern for schema evolution: keep the loader tolerant (`groups: null`/absent → empty list, not a load failure), add an explicit test loading a *real, pre-v4.0* `entities.yaml` sample (captured from the live-verified 2.0.9 bring-up) through the new loader before shipping, and keep `IgnoreUnmatchedProperties()`-style tolerance for the transition period rather than hard-failing on unexpected shapes. Since YamlDotNet schema drift was already flagged as a named risk in the existing PITFALLS.md (Pitfall 4c) for the UI/loader relationship generally, extend that same discipline explicitly to the `Groups`/`Covariates` activation rather than treating it as a fresh problem.
 
 **Warning signs:**
-- `ports:` entry added to `config.yaml` for the ingress port — this is a security regression.
-- Middleware added to Kestrel that returns 401 for missing `Authorization` header — breaks the ingress flow since the proxy does not add that header.
+- No test loads a config file captured from an actual pre-v4.0 installation (only newly hand-written fixtures with the new schema already in the expected shape).
+- `EntitiesConfigLoader` throws (rather than defaulting to empty) when `groups:` is absent or `null` in an old file.
+- The add-on regresses to the exact "crashes on boot" class of bug that the v3.0 `EntitiesConfigLoader` softening fixed — but for the new fields instead of the old `entities` list.
 
 **Phase to address:**
-v3 Phase 1 (Kestrel wiring). Document the auth model in the code as a comment. Verify the `ports:` entry is absent from `config.yaml`.
+Config-model activation phase. Add the real-file regression test as an explicit gate before merging the typed `Groups`/`Covariates` schema.
 
 ---
 
-### Pitfall 10: Static File Serving — `UseStaticFiles` Ignores PathBase Without Explicit Configuration
+### Pitfall 13: Detector-Chooser "Presets" Encode Assumptions That Don't Hold for Groups
 
 **What goes wrong:**
-ASP.NET's `UseStaticFiles()` middleware serves files from `wwwroot/` by default, using the request path after stripping `PathBase`. If `PathBase` is set correctly from `X-Ingress-Path` (Pitfall 1), static file URLs like `./app.js` (relative) resolve correctly. However, if the HTML page uses a `<base href="./"></base>` tag and the JS code then attempts to `fetch('api/config')` (relative, no leading slash), the browser resolves it relative to the page URL which already includes the ingress prefix — this works. But if JS uses `fetch('./api/config')`, the browser may strip the last path segment — this is a subtle difference that causes 404s only for one-segment-deep routes.
+The v4.0 UX goal introduces "readable parameter presets (Sensitivity Low/Med/High)" as a simplification layer over raw detector parameters. This preset abstraction was almost certainly designed against single-sensor detectors (MAD, HST, STL) where "sensitivity" maps cleanly to one threshold knob. Multivariate/group detectors (PyOD PCA/ECOD/HBOS, or a peer-divergence MAD-variant) may have parameters that don't collapse into a single Low/Med/High sensitivity axis (e.g., PCA's `n_components`, or a group detector's minimum-N floor from Pitfall 5) — if the preset UI is built generically first and detector-specific parameter needs are discovered afterward, either the presets become misleading (a "sensitivity" slider that doesn't actually control what the user thinks) or group detectors get bolted onto the UI awkwardly.
 
-Additionally, `UseStaticFiles()` must be called AFTER the PathBase middleware but BEFORE `UseRouting()` if static files should not go through route matching.
-
-**How to avoid:**
-- Use `app.UseStaticFiles(new StaticFileOptions { RequestPath = "" })` after the PathBase middleware.
-- Standardize all JS `fetch` calls to use `fetch('api/config')` (no leading dot-slash) when the page is at the root of the ingress base path.
-- Add a smoke test that loads the HTML page and confirms CSS and JS assets return HTTP 200 through the Ingress URL (not direct port access).
-
-**Phase to address:**
-v3 Phase 1 (Kestrel + static files wiring).
-
----
-
-### Pitfall 11: `FileSystemWatcher` Double-Fire on YAML Write
-
-**What goes wrong:**
-When the UI save handler writes `/data/entities.yaml`, many editors and file-write implementations emit multiple `Changed` events for a single logical write (e.g., one for the truncate, one for the content write, one for the metadata flush). If the reload handler triggers on each event, `EntitiesConfigLoader.Load()` is called three times within 50ms. If the atomic-rename pattern (Pitfall 4) is used correctly, only one `Renamed` event fires (for the rename of the temp file to the target), but `FileSystemWatcher` can still emit spurious duplicates.
+**Why it happens:**
+It's natural to design the friendly chooser UI first (since it's the more visible, user-facing win) and treat "which parameters exist per detector" as a data-driven afterthought. But group/multivariate detectors have qualitatively different parameter shapes than single-sensor ones, and this mismatch is more visible in a UI explicitly designed for simplicity/friendliness.
 
 **How to avoid:**
-- Debounce the watcher callback: use a `System.Threading.Timer` that resets on each event and fires the actual reload 300ms after the last event.
-- Use `FileSystemWatcher` on the `Renamed` event type (from the temp file to target) rather than `Changed` — this fires once per atomic write.
-- Track a sequence number or file modification timestamp; skip reload if the file has not actually changed since last reload.
+Design the preset schema to be per-detector-type from the start: each detector declares its own mapping from `{Low, Medium, High}` (or "N/A, not sensitivity-shaped") to its actual parameter dict, rather than a single global slider definition the UI assumes applies everywhere. For group detectors, decide explicitly whether "sensitivity" even makes sense as a concept, or whether groups need a different simple-mode axis (e.g., "how many members must agree" or "how strict is joint scoring").
+
+**Warning signs:**
+- The preset-to-parameter mapping table is defined once, globally, rather than per detector/mode.
+- Group detector configuration in the SPA reuses the exact same Low/Med/High UI component with no adaptation, and "Medium" silently maps to defaults that don't reflect the min-N or scaling concerns from Pitfalls 2/5.
 
 **Phase to address:**
-v3 Phase 4 (reload-without-restart).
+Algorithm-chooser UX phase, ideally sequenced *after* group/multivariate detector parameters are known (not before), so the preset abstraction is designed against the full parameter surface, not just single-sensor detectors.
 
 ---
 
@@ -373,110 +294,113 @@ v3 Phase 4 (reload-without-restart).
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Restart entire add-on on config save | Simple reload logic | 4–5 min detection gap per reload; user loses warm-up state | Acceptable for Phase 4 MVP; document in UI |
-| `IgnoreUnmatchedProperties()` on YAML loader | No loader churn when adding fields | Schema drift: UI writes fields loader silently drops | Only during initial schema exploration; remove before ship |
-| Non-atomic `File.WriteAllText` for config save | Two lines of code | Corrupt config on partial write during concurrent reload | Never — always use atomic rename |
-| Single-stage Dockerfile with Node.js build tools | Simpler Dockerfile | +500 MB–1 GB image bloat from `node_modules` | Never if image budget is 2 GB |
-| `UseStaticFiles()` before PathBase middleware | Default middleware order | Static file 404s through Ingress path | Never — PathBase must come first |
-| `ports:` entry in config.yaml alongside `ingress: true` | Direct browser debug access | Unauthenticated public endpoint on host network | Never in production; use only in local dev override |
-
----
+| Fake "multivariate" by looping univariate `ScoreBatch` per member and diffing in .NET | No proto change, ships fast | Joint anomalies (leak-style, no single member individually abnormal) never detected; misrepresents the feature | Never for "joint multivariate" mode; acceptable only as an interim peer-divergence-only MVP if explicitly labeled as such |
+| Skip per-feature scaling in first multivariate detector pass | Simpler Fit/Score code | Pressure/high-magnitude features dominate scores; wrong root cause on leak-style anomalies | Never — add a mixed-unit synthetic test before shipping any joint detector |
+| Zip group members' Influx points by list index instead of resampling | Fast to write | Compares non-simultaneous readings; false positives/negatives on real cadence mismatches | Never |
+| Membership-derived group `unique_id` | "Obvious" deterministic choice | Orphaned MQTT entities on every membership edit | Never — use a stable operator-assigned `group_id` |
+| Mean/stddev consensus for peer-divergence instead of median/MAD | Simpler math | Degenerates badly at small N; one outlier corrupts its own detection baseline | Never for N<10; acceptable for large groups where a single outlier can't skew the mean much |
+| Build-time-fixed SPA base path (no hash routing, no runtime templating) | Standard SPA tooling defaults | Breaks under HA's dynamic Ingress prefix; blank page in production | Never for an Ingress-hosted add-on |
+| Ad hoc per-handler auth checks for new SPA API endpoints | Fast to add one endpoint | Auth coverage gaps as API surface grows | Acceptable only until the API surface exceeds ~3-4 routes; convert to group middleware before then |
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| HA Ingress proxy | Absolute URLs in HTML/JS (`/api/config`) | All URLs relative; PathBase middleware strips prefix server-side |
-| HA Ingress proxy | Reading `X-Ingress-Path` in JS (client-side) | Header is server-to-server; read it in Kestrel middleware only |
-| ASP.NET PathBase + WebApplication | Call `UsePathBase` after `UseRouting` | Call explicit `UseRouting()` after `UsePathBase` middleware; do not rely on automatic placement |
-| Kestrel default URLs | `ASPNETCORE_URLS=http://localhost:5000` | Override to `http://0.0.0.0:8099`; suppress the default |
-| `gen-entities.py` + UI save | gen-entities.py overwrites UI config on restart | Guard gen-entities.py with `_source: ui` marker or lock file |
-| `/data/entities.yaml` writes | `File.WriteAllText` directly to target path | Atomic rename: write to `.tmp` then `File.Move(tmp, target, overwrite: true)` |
-| FileSystemWatcher for reload | Trigger on every `Changed` event | Debounce 300ms; watch `Renamed` event for atomic renames |
-| ScoreStreamPipeline reload | Cancel + restart entire pipeline | Restart only `HaListenerWorker`; retract MQTT discovery for removed entities |
-
----
+| InfluxDB (group batch) | Query raw points per member, zip by index | Use Flux `aggregateWindow()` per member onto a shared grid; cap forward-fill staleness |
+| PyOD multivariate detectors | Fit on raw mixed-unit feature matrix | Standardize per-feature (z-score using each member's own rolling stats); persist scaler with the model |
+| HA MQTT discovery (groups) | Derive `unique_id` from member list/hash | Stable `group_id` independent of membership; retract only on group deletion, not on every membership edit |
+| HA Ingress + SPA | Build SPA with default history-mode router and absolute build-time base path | Hash-based routing + relative asset base, or runtime `X-Ingress-Path` templating of `index.html` |
+| gRPC proto (group scoring) | Reuse univariate `ScoreBatchRequest`/`Verdict` looped per member | Add an additive multi-series message type; keep existing univariate RPCs unchanged |
+| `EntitiesConfig.Groups`/`Covariates` activation | Replace `object?` with a strict typed schema with no back-compat test | Tolerant loader (null/absent → empty), regression test against a real pre-v4.0 `entities.yaml` |
+| SPA API auth | New `/api/*` endpoints added without the existing `IsAuthorizedRequest`-equivalent check | Route-group middleware applied to all `/api/*` endpoints, not a per-handler line to remember |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Node.js dev deps in final image | Image >2 GB; 20+ min pull on RPi | Multi-stage build; `COPY --from=ui-builder /dist/ /wwwroot/` | Day 1 of first JS build |
-| No debounce on FileSystemWatcher | Three rapid config reloads per UI save | 300ms debounce timer | Any time UI save fires (every save) |
-| Kestrel on default port 5000 + 8099 | Two ports bound; unexpected port conflict | Suppress defaults; explicit `ConfigureKestrel` | At first `WebApplication.CreateBuilder` migration |
-| Config save resets all EntityRuntimeState | 4 min anomaly-detection gap after every UI save | Document; defer incremental reload to future milestone | Every config save by user |
-| Restart-on-save drops in-flight readings | Readings from HA during restart window lost | Buffer at HaListenerWorker level (Channel<HaReading>); tolerate a few missed events | During a save at high event rate (>1 event/sec per entity) |
+| Group batch scoring sharing a resource (gRPC channel, semaphore) with the streaming path | Single-sensor <2s latency regresses after groups ship | Independent scheduling loop + independent connection/pool sizing for group batch calls | As soon as a group's Influx query or Fit call is slow (large window, cold cache) |
+| Unbounded forward-fill for missing group-member readings | Dead/unreachable sensor silently "agrees" with the group forever | Staleness cap on carried-forward values (e.g., 3 buckets) | Any sensor outage during a group evaluation window |
+| Node build step under QEMU aarch64 emulation | Local `buildx` release time balloons from minutes to tens of minutes | Test aarch64 build time early; consider native ARM build runner if it becomes a bottleneck | First real multi-arch SPA build |
+| Re-fitting group scaler from scratch on every batch tick | Normalization drifts if window is short; inconsistent scores tick-to-tick | Persist scaler as part of the saved model state (same lifecycle as detector params) | Any group with a batch interval shorter than its natural signal drift period |
 
----
+## Security Mistakes
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| New SPA `/api/*` endpoints missing the Supervisor-IP/loopback auth gate | LAN peers other than HA Supervisor can read/write group config or trigger detector actions | Route-group middleware enforcing the same `IsAuthorizedRequest`-equivalent check across all `/api/*` routes by construction |
+| SPA API client hardcodes `Authorization`/API-key headers to "fix" ingress auth confusion | Reintroduces the auth-model confusion the v3.0 research explicitly warned against (Ingress does not need app-level auth) | Do not add token/API-key auth; rely on Supervisor-IP + Ingress session model, documented explicitly in code as v3.0 already does |
+| Group config accepts arbitrary member `entity_id` values without validating they exist in `IHaSensorRegistry` | Detector Fit/Score calls reference nonexistent entities, or (Flux injection surface) unsanitized entity_ids reach InfluxDB queries | Validate group members against the existing sensor registry at config-save time; reuse the existing `_safeFluxString` allowlist guard in `InfluxDbReader` for any new group-query construction |
+
+## UX Pitfalls
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|------------------|
+| Group binary_sensor states a single member as "the anomaly" with full confidence | Users chase the wrong sensor when attribution is a probabilistic ranking, especially with correlated members | Publish a per-member score/rank sensor alongside (or instead of) a single flat "this one" boolean; word entity names as "most likely" |
+| Sensitivity Low/Med/High preset reused unchanged for group/multivariate detectors | "Medium" silently means something different (or nothing coherent) for a joint multivariate detector vs. a single-sensor one | Per-detector-type preset-to-parameter mapping, decided after group detector parameters are known |
+| No UI feedback when a group is too small (N<3) for peer-divergence | Users configure a 2-member group expecting meaningful divergence detection, get erratic/meaningless flags | Explicit UI validation warning at group-creation time with the minimum-N rule stated plainly |
+| No UI feedback on mixed-unit groups | Users group temperature + humidity for "peer-divergence" (a category error) and get permanently-flagging nonsense | Hard validation error at group-save time using existing `unit_of_measurement` data already in the sensor registry |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **X-Ingress-Path middleware**: Open the UI exclusively via "Open Web UI" in HA, never via direct port hit. Confirm all CSS, JS, and API calls return 200 with correct content.
-- [ ] **Kestrel bind address**: `ss -tlnp | grep 8099` inside the container shows `0.0.0.0:8099`, not `127.0.0.1:8099`. No port 5000 or 5001 binding visible.
-- [ ] **No `ports:` entry**: `config.yaml` has `ingress: true` and `ingress_port: 8099` but no `ports:` entry for 8099.
-- [ ] **Atomic write**: Simultaneously trigger a UI save and a `FileSystemWatcher` reload event; verify the config file is never read in a partial state.
-- [ ] **gen-entities.py conditional**: Save complex per-entity config in UI; restart the add-on; confirm the UI-authored config survives intact.
-- [ ] **MQTT discovery retraction**: Remove an entity via the UI; confirm its `binary_sensor` is removed from HA (not left "unavailable") within 30 seconds.
-- [ ] **Shutdown timing**: Stop the add-on from HA UI; confirm s6 logs a clean exit (not exit code 137 / SIGKILL).
-- [ ] **Image size**: `docker image inspect <image> | jq '.[0].Size'` confirms total size < 2 GB after adding UI assets and JS build stage.
-- [ ] **Schema round-trip**: Save an entity with non-default detector parameters via the UI; confirm the orchestrator logs those exact parameters at next startup.
-- [ ] **Readiness gate**: Open the UI within 5 seconds of add-on start (before `HaListenerWorker` connects to HA); confirm the API returns a clear "not ready" response, not stale or empty data.
-
----
+- [ ] **Multivariate detection**: Verify the detector-side code actually fits a joint multivariate PyOD model on a 2D feature matrix — not N independent univariate `ScoreBatch` calls diffed in .NET.
+- [ ] **Feature scaling**: Run a synthetic mixed-unit test (spike one low-magnitude feature like humidity while holding pressure flat) and confirm the joint score responds — not just the high-magnitude feature.
+- [ ] **Time alignment**: Test two group members at deliberately different cadences (e.g., 30s vs 10min reporting); confirm resampled/aligned comparison, not index-zipped raw points.
+- [ ] **Small-N peer-divergence**: Test a 2-member group; confirm either a UI-level rejection/warning or an explicitly-labeled degraded mode — not silent, unstable divergence math.
+- [ ] **Group MQTT stability**: Edit a group's membership via the SPA; confirm the *same* HA entity updates in place (no orphaned old entity, no duplicate new one).
+- [ ] **Single-sensor latency preserved**: Measure streaming latency before and after group batch scoring ships; confirm no regression on the existing <2s Core Value path.
+- [ ] **SPA under real Ingress**: Open the SPA exclusively via "Open Web UI" in a real HA Supervisor install (not direct port access); confirm all routes, assets, and API calls work — including on a fresh page reload mid-route (not just initial navigation from `/`).
+- [ ] **SPA API auth coverage**: Enumerate every `/api/*` route introduced for the SPA; confirm each is covered by the Supervisor-IP/loopback auth gate (ideally via shared middleware, not per-handler checks).
+- [ ] **Config back-compat**: Load a real, pre-v4.0 `entities.yaml` (from a live 2.0.9-era install) through the new loader with typed `Groups`/`Covariates`; confirm it loads without error and without silently dropping the file's existing per-entity config.
+- [ ] **Image size re-baselined**: Confirm the CI/local release process asserts a new, explicit image-size ceiling (not the stale 2 GB v3.0 number, and not silently removed).
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
-|---------|---------------|----------------|
-| Absolute URLs breaking Ingress (Pitfall 1) | MEDIUM | Fix PathBase middleware + relative paths in HTML/JS; rebuild image; no data loss |
-| 502 Bad Gateway / wrong bind address (Pitfall 2) | LOW | Change Kestrel bind to `0.0.0.0`; rebuild image; no data loss |
-| Host builder migration breaks DI (Pitfall 3) | MEDIUM | Migrate to `WebApplication.CreateBuilder`; re-run all existing integration tests |
-| Corrupt entities.yaml from non-atomic write (Pitfall 4a) | LOW | Restore from backup in `/data`; implement atomic rename before next release |
-| Schema drift: UI fields silently dropped (Pitfall 4c) | MEDIUM | Add schema version; align `EntitiesConfigLoader` and UI serializer; users must re-save config |
-| Pipeline duplicate detectors after reload (Pitfall 5) | MEDIUM | Implement pipeline restart gate; no data loss but 4-min detection gap on correction |
-| gen-entities.py wipes UI config on restart (Pitfall 8) | HIGH (user data) | Add conditional check immediately; users must re-enter config manually for this occurrence |
-| Image >2 GB (Pitfall 6) | LOW | Add multi-stage build; rebuild; re-push; no functional change |
-
----
+|---------|---------------|-----------------|
+| Fake multivariate (looped univariate) shipped as "joint detection" (P1) | HIGH | Requires proto extension + new detector code path; effectively redo the feature. Cheaper to catch in design review than after shipping. |
+| Unscaled joint detector dominated by one feature (P2) | MEDIUM | Add scaler to Python detector, refit affected group models; no proto/schema change needed, but users may have been getting wrong root-cause attributions in the interim |
+| Misaligned time-zipped group comparisons (P3) | MEDIUM | Swap in `aggregateWindow`-based resampling; refit; no data loss, but historical group verdicts before the fix were unreliable |
+| Membership-derived group `unique_id` causing MQTT churn (P7) | MEDIUM | Introduce stable `group_id`, migrate existing groups (one-time config migration to assign IDs), retract truly-orphaned old entities once |
+| SPA breaks under real Ingress (P10) | MEDIUM | Switch to hash routing or add runtime base-path templating; rebuild and re-verify against live Ingress; no data loss |
+| New `/api/*` endpoint missing auth check (P11) | LOW–HIGH depending on exposure window | Add the missing check immediately; audit logs/config for unauthorized access during the exposure window if the add-on was ever installed with that gap live |
+| Config load failure on `Groups`/`Covariates` activation (P12) | LOW | Loosen the loader back to tolerant parsing; this is exactly the class of regression v3.0's `EntitiesConfigLoader` softening already has a fix pattern for |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| X-Ingress-Path / absolute URLs (P1) | v3 Phase 1 | Open UI only via HA Ingress panel; verify all assets load |
-| Kestrel wrong bind address (P2) | v3 Phase 1 | `ss -tlnp` inside container; HA Supervisor "Open Web UI" succeeds |
-| Host builder migration (P3) | v3 Phase 1 | All existing BackgroundService integration tests pass after builder swap |
-| Config write integrity / schema drift (P4) | v3 Phase 1 (atomic write), v3 Phase 3 (schema) | Concurrent write+read test; schema round-trip test |
-| Reload race / pipeline restart (P5) | v3 Phase 4 | Save config; verify pipeline restarts; MQTT retraction for removed entities |
-| Image bloat / Node.js build (P6) | v3 Phase 1 (UI tech decision) | CI image-size gate: fail if >2 GB |
-| Kestrel + s6 shutdown ordering (P7) | v3 Phase 1 | Stop add-on from HA UI; confirm clean exit; no SIGKILL |
-| gen-entities.py overwrite (P8) | v3 Phase 2 (before first UI save) | Restart after UI save; UI config survives |
-| Auth assumption / no extra ports (P9) | v3 Phase 1 | `config.yaml` has no `ports:` for ingress port; Ingress auth verified |
-| UseStaticFiles + PathBase ordering (P10) | v3 Phase 1 | Static assets load through Ingress path |
-| FileSystemWatcher double-fire (P11) | v3 Phase 4 | Confirm single reload per UI save via log timestamps |
-
----
+|---------|------------------|---------------|
+| Fake multivariate via looped univariate calls (P1) | Proto/detector-contract phase (first v4.0 phase) | Code review confirms a real 2D-matrix PyOD fit exists for joint mode; proto diff is additive, not a rewrite of existing messages |
+| Unscaled mixed-unit joint scoring (P2) | Detector implementation phase (joint multivariate) | Synthetic mixed-unit test: low-magnitude feature spike must move the joint score |
+| Misaligned group time series (P3) | Batch-groups / InfluxDB resampling phase | Differing-cadence synthetic test; confirm `aggregateWindow`-based alignment, staleness cap present |
+| Unvalidated mixed-unit groups (P4) | Config-model activation phase | Test: mixed-unit group config is rejected or explicitly warned at save time |
+| Small-N peer-divergence instability (P5) | Peer-divergence detection phase | Test: N=2 group either rejected or explicitly degraded-mode; median/MAD (not mean/stddev) used |
+| Overconfident "which member" attribution (P6) | Peer-divergence phase + SPA group-detail UI | Group MQTT/UI surfaces a score/rank, not a single flat boolean; correlated-member test documented |
+| Group MQTT entity churn on membership change (P7) | Config-model + MQTT-discovery phase for groups | Test: edit membership, assert same entity updates in place, no orphan, mirrors existing T-03-01 retraction test pattern |
+| Group batch blocking single-sensor streaming path (P8) | Group batch-scoring implementation phase | Latency regression test: streaming <2s path measured before/after group feature lands |
+| Node build step image/QEMU bloat (P9) | SPA build/deploy integration phase | Re-baselined, explicit image-size gate; aarch64 build-time check |
+| SPA breaks HA Ingress dynamic base path (P10) | SPA scaffolding phase (before feature UI work) | Manual + scripted check: open exclusively via "Open Web UI," including deep-link reload, not just initial `/` load |
+| SPA API endpoints missing auth gate (P11) | SPA API-surface design phase | Route-group middleware covers all `/api/*`; enumerate routes and confirm coverage |
+| `Groups`/`Covariates` schema activation breaks old configs (P12) | Config-model activation phase | Regression test loads a real captured pre-v4.0 `entities.yaml` |
+| Detector-chooser presets don't fit group detector parameter shapes (P13) | Algorithm-chooser UX phase (sequence after group detector params are known) | Per-detector-type preset mapping table exists; group detectors have an explicit (possibly "N/A sensitivity") mapping, not a copy-pasted single-sensor one |
 
 ## Sources
 
-- [HA Add-on Presentation / Ingress — developers.home-assistant.io](https://developers.home-assistant.io/docs/add-ons/presentation)
-- [HA Add-on Configuration — ingress, ingress_port, ingress_stream — developers.home-assistant.io](https://developers.home-assistant.io/docs/add-ons/configuration)
-- [HA Supervisor Ingress Proxy mechanics — deepwiki.com/home-assistant/supervisor/6.3-proxy-and-ingress](https://deepwiki.com/home-assistant/supervisor/6.3-proxy-and-ingress)
+- Codebase (read directly, HIGH confidence): `proto/argus.proto`, `orchestrator/Argus.Orchestrator/Mqtt/DiscoveryPublisher.cs`, `orchestrator/Argus.Orchestrator/Config/EntitiesConfig.cs`, `orchestrator/Argus.Orchestrator/Batch/InfluxDbReader.cs`, `orchestrator/Argus.Orchestrator/Batch/BatchSchedulerWorker.cs`, `orchestrator/Argus.Orchestrator/Program.cs`, `.planning/PROJECT.md`, `.planning/MILESTONES.md`, prior `.planning/research/PITFALLS.md` (v3.0 Ingress/htmx pass)
+- [PyOD: A Python Toolbox for Scalable Outlier Detection (JMLR)](https://jmlr.org/papers/volume20/19-011/19-011.pdf)
+- [Time Series: The problem with resampling — TotalEnergies Digital Factory](https://medium.com/totalenergies-digital-factory/time-series-the-problem-with-resampling-7baea5a3873c)
+- [Sync Without Guesswork: Incomplete Time Series Alignment (arXiv)](https://arxiv.org/pdf/2512.18238)
+- [Conditional Attribution for Root Cause Analysis in Time-Series Anomaly Detection (arXiv)](https://arxiv.org/pdf/2604.17616)
+- [Root Cause Identification for Collective Anomalies given an Acyclic Summary Causal Graph (arXiv)](https://arxiv.org/pdf/2303.04038)
+- [Explainable correlation-based anomaly detection for Industrial Control Systems (PMC)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC11832479/)
+- [Home Assistant MQTT integration docs — discovery removal via empty retained payload](https://www.home-assistant.io/integrations/mqtt)
+- [MQTT discovery fails to completely remove a deleted entity — home-assistant/core#32509](https://github.com/home-assistant/core/issues/32509)
 - [How to use X-Ingress-Path in an add-on — community.home-assistant.io](https://community.home-assistant.io/t/how-to-use-x-ingress-path-in-an-add-on/276905)
-- [How to handle absolute paths with HA Ingress — community.home-assistant.io](https://community.home-assistant.io/t/how-to-handle-absolute-paths-with-ha-ingress/370572)
-- [Using PathBase with .NET 6 WebApplicationBuilder — andrewlock.net](https://andrewlock.net/using-pathbase-with-dotnet-6-webapplicationbuilder/)
-- [Understanding PathBase in ASP.NET Core — andrewlock.net](https://andrewlock.net/understanding-pathbase-in-aspnetcore/)
-- [Configure ASP.NET Core for proxy servers and load balancers — learn.microsoft.com](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/proxy-load-balancer)
-- [Add Web API Controllers to a Worker Service — medium.com/@adinas](https://medium.com/@adinas/add-webapi-controllers-to-a-worker-service-baabd838dac2)
-- [Extending graceful shutdown timeout for IHostedService — andrewlock.net](https://andrewlock.net/extending-the-shutdown-timeout-setting-to-ensure-graceful-ihostedservice-shutdown/)
-- [Concurrent hosted service start/stop in .NET 8 — stevejgordon.co.uk](https://www.stevejgordon.co.uk/concurrent-hosted-service-start-and-stop-in-dotnet-8)
-- [Addon Ingress community discussion — community.home-assistant.io](https://community.home-assistant.io/t/addon-ingress/936226)
-- [502 Bad Gateway Ingress error pattern — community.home-assistant.io (multiple threads)](https://community.home-assistant.io/t/502-bad-gateway-ingress-error/265775)
-- [Docker Multi-Stage Builds — iximiuz.com](https://labs.iximiuz.com/tutorials/docker-multi-stage-builds)
-- [FileSystemWatcher debounce — gist.github.com/cocowalla](https://gist.github.com/cocowalla/5d181b82b9a986c6761585000901d1b8)
-- [Avoiding file concurrency with FileSystemWatcher — intertech.com](https://www.intertech.com/avoiding-file-concurrency-using-system-io-filesystemwatcher/)
-- [s6-overlay graceful shutdown issues — github.com/just-containers/s6-overlay/issues/337](https://github.com/just-containers/s6-overlay/issues/337)
+- [Trouble with static assets in custom addon with ingress — community.home-assistant.io](https://community.home-assistant.io/t/trouble-with-static-assets-in-custom-addon-with-ingress/712298)
+- [How can I dynamically configure VUE_APP_URL_BASE_API for a HA addon with ingress — lune.dev](https://www.lune.dev/questions/7693/how-can-i-dynamically-configure-vueappurlbaseapi-for-a-home-assistant-addon-with)
+- [Single Page Application Routing Using Hash or URL — dev.to](https://dev.to/thedevdrawer/single-page-application-routing-using-hash-or-url-9jh)
+- [Ability to detect slow/blocked client on streaming RPC — grpc/grpc#18739](https://github.com/grpc/grpc/issues/18739)
+- [Should I add backpressure on stream sender side? — grpc/grpc-go#2747](https://github.com/grpc/grpc-go/issues/2747)
 
 ---
-*Pitfalls research for: HA Ingress web UI + .NET Kestrel + live config reload (Argus v3.0)*
-*Researched: 2026-06-30*
+*Pitfalls research for: Argus v4.0 — Group & Multivariate Anomaly Detection + SPA UX*
+*Researched: 2026-07-02*
