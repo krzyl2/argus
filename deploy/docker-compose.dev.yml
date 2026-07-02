@@ -59,6 +59,9 @@ services:
       ARGUS_TLS_CA: ""
       ARGUS_TLS_CERT: ""
       ARGUS_TLS_KEY: ""
+      # Dev-only: let a host browser reach the UI (published port → bridge gateway IP,
+      # not loopback, would otherwise 403). NEVER enable outside local dev.
+      ARGUS_DEV_TRUST_ALL_REQUESTS: "true"
     volumes:
       # Seed entity config from the repo (add-on generates this via config-gen; dev provides it).
       - ../entities.yaml:/app/entities.yaml:ro

@@ -215,8 +215,17 @@ var lastExcludePatterns = "";
 // NOTE: X-Ingress-Path is NOT treated as an auth credential — any LAN peer can
 // fabricate the header. The header is read separately (above) only to set PathBase.
 // Full validate_session cookie-based auth is scheduled for Phase 4.
-static bool IsAuthorizedRequest(HttpContext ctx)
+//
+// Dev-only bypass: docker-compose.dev.yml sets ARGUS_DEV_TRUST_ALL_REQUESTS=true so the
+// UI is reachable from a host browser (which arrives via the Docker bridge gateway, not
+// loopback). NEVER set this in the add-on/production — it disables the Supervisor-IP guard.
+var devTrustAllRequests = string.Equals(
+    builder.Configuration["ARGUS_DEV_TRUST_ALL_REQUESTS"], "true", StringComparison.OrdinalIgnoreCase);
+
+bool IsAuthorizedRequest(HttpContext ctx)
 {
+    if (devTrustAllRequests) return true;
+
     var remote = ctx.Connection.RemoteIpAddress;
     if (remote is null) return false;
 
