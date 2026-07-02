@@ -19,20 +19,20 @@ Requirements for this milestone. Each maps to exactly one roadmap phase.
 - [x] **GRP-06**: Joint-multivariate features are per-feature scaled/normalized before fitting so mixed units (e.g. hPa vs %RH) do not dominate the joint score; the scaler is persisted with the model
 - [x] **GRP-07**: Group models follow the existing Fit/Save/Load lifecycle, keyed by group_id + detector + version, without colliding with per-entity model keys
 - [x] **GRP-08**: Group anomaly entities are published and retracted via MQTT discovery on group creation/membership change without orphaning stale HA entities
-- [ ] **GRP-09**: Joint-multivariate detection attributes which member/feature drove the anomaly (per-feature reconstruction error), surfaced as a ranked contribution, not a flat boolean
+- [x] **GRP-09**: Joint-multivariate detection attributes which member/feature drove the anomaly (per-feature reconstruction error), surfaced as a ranked contribution, not a flat boolean
 
 ### Algorithm Library & Chooser (ALGO)
 
 - [x] **ALGO-01**: Operator selects detector sensitivity via a Low/Med/High preset for the new group detectors, mapping to underlying parameters without exposing raw values by default
 - [x] **ALGO-02**: An Advanced toggle reveals and lets the operator override the raw underlying parameters behind a preset
-- [ ] **ALGO-03**: Each selectable algorithm shows a "best for…" description explaining its intended use case in the chooser
+- [x] **ALGO-03**: Each selectable algorithm shows a "best for…" description explaining its intended use case in the chooser
 - [ ] **ALGO-04**: A guided "what are you monitoring?" chooser pre-selects a sensible algorithm AND visibly shows/explains its pick, always allowing one-click override
 
 ### Sensor Search & Browse (SRCH)
 
-- [ ] **SRCH-01**: Operator can search the sensor list by friendly_name (not only entity_id)
-- [ ] **SRCH-02**: The sensor list is categorized/browsable by HA area and/or domain
-- [ ] **SRCH-03**: The group-config UI suggests area-scoped candidate groups ("these N sensors share an area — group them?") that the operator approves; it never auto-groups
+- [x] **SRCH-01**: Operator can search the sensor list by friendly_name (not only entity_id)
+- [x] **SRCH-02**: The sensor list is categorized/browsable by HA area and/or domain
+- [x] **SRCH-03**: The group-config UI suggests area-scoped candidate groups ("these N sensors share an area — group them?") that the operator approves; it never auto-groups
 
 ### UI Rebuild (UI)
 
@@ -82,14 +82,14 @@ Which phases cover which requirements. Populated during roadmap creation.
 | GRP-06 | Phase 5 | Complete |
 | GRP-07 | Phase 5 | Complete |
 | GRP-08 | Phase 6 | Complete |
-| GRP-09 | Phase 8 | Pending |
+| GRP-09 | Phase 8 | Complete |
 | ALGO-01 | Phase 8 | Complete |
 | ALGO-02 | Phase 8 | Complete |
-| ALGO-03 | Phase 8 | Pending |
+| ALGO-03 | Phase 8 | Complete |
 | ALGO-04 | Phase 8 | Pending |
-| SRCH-01 | Phase 8 | Pending |
-| SRCH-02 | Phase 8 | Pending |
-| SRCH-03 | Phase 8 | Pending |
+| SRCH-01 | Phase 8 | Complete |
+| SRCH-02 | Phase 8 | Complete |
+| SRCH-03 | Phase 8 | Complete |
 | UI-01 | Phase 7 | Complete |
 | UI-02 | Phase 7 | Complete |
 | UI-03 | Phase 7 | Complete |
