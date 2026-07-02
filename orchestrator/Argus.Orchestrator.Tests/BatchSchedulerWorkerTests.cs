@@ -79,6 +79,12 @@ public class BatchSchedulerWorkerTests
         public int PublishFlagCallCount { get; private set; }
         public int PublishScoreCallCount { get; private set; }
 
+        /// <summary>Tracks (GroupId, MemberId) pairs received per PublishGroupFlagAsync call (in order).</summary>
+        public List<(string GroupId, string? MemberId)> GroupFlagCalls { get; } = new();
+
+        /// <summary>Tracks (GroupId, MemberId) pairs received per PublishGroupScoreAsync call (in order).</summary>
+        public List<(string GroupId, string? MemberId)> GroupScoreCalls { get; } = new();
+
         public Task PublishFlagAsync(string entityId, bool on, CancellationToken ct)
         {
             PublishFlagCallCount++;
@@ -95,10 +101,26 @@ public class BatchSchedulerWorkerTests
             => Task.CompletedTask;
 
         public Task PublishGroupFlagAsync(string groupId, string? memberId, bool on, CancellationToken ct)
-            => Task.CompletedTask;
+        {
+            GroupFlagCalls.Add((groupId, memberId));
+            return Task.CompletedTask;
+        }
 
         public Task PublishGroupScoreAsync(string groupId, string? memberId, double score, CancellationToken ct)
-            => Task.CompletedTask;
+        {
+            GroupScoreCalls.Add((groupId, memberId));
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Fake group Influx source for tests that don't exercise the group path.</summary>
+    private sealed class FakeGroupInfluxDataSource : IGroupInfluxDataSource
+    {
+        public Task<GroupAlignedData> QueryGroupAsync(
+            IReadOnlyList<string> members, string every, string aggFn, TimeSpan stalenessCap, CancellationToken ct)
+            => Task.FromResult(new GroupAlignedData(
+                Array.Empty<GroupRow>(),
+                new Dictionary<string, DateTime>()));
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -144,6 +166,7 @@ public class BatchSchedulerWorkerTests
             detector,
             publisher,
             MakeLive(OneEntityOneDetector()),
+            new FakeGroupInfluxDataSource(),
             NullLogger<BatchSchedulerWorker>.Instance);
 
         await worker.RunBatchForTestAsync(CancellationToken.None);
@@ -164,6 +187,7 @@ public class BatchSchedulerWorkerTests
             detector,
             publisher,
             MakeLive(OneEntityOneDetector()),
+            new FakeGroupInfluxDataSource(),
             NullLogger<BatchSchedulerWorker>.Instance);
 
         await worker.RunBatchForTestAsync(CancellationToken.None);
@@ -202,6 +226,7 @@ public class BatchSchedulerWorkerTests
             detector,
             publisher,
             MakeLive(entities),
+            new FakeGroupInfluxDataSource(),
             NullLogger<BatchSchedulerWorker>.Instance);
 
         // Should not throw even though ScoreBatch throws per entity
@@ -224,6 +249,7 @@ public class BatchSchedulerWorkerTests
             detector,
             new FakeStatePublisher(),
             MakeLive(OneEntityOneDetector()),
+            new FakeGroupInfluxDataSource(),
             NullLogger<BatchSchedulerWorker>.Instance);
 
         // Run nightly fit twice — second call should be suppressed by _fitRunToday
@@ -246,6 +272,7 @@ public class BatchSchedulerWorkerTests
             detector,
             new FakeStatePublisher(),
             MakeLive(OneEntityOneDetector()),
+            new FakeGroupInfluxDataSource(),
             NullLogger<BatchSchedulerWorker>.Instance);
 
         // Simulate two ticks at the same hour where nightly fit hour matches
@@ -298,6 +325,7 @@ public class BatchSchedulerWorkerTests
             detector,
             new FakeStatePublisher(),
             liveConfig,
+            new FakeGroupInfluxDataSource(),
             NullLogger<BatchSchedulerWorker>.Instance);
 
         // Act: swap config, then run batch — must use the NEW entity set
