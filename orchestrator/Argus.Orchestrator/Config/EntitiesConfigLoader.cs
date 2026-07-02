@@ -153,10 +153,11 @@ public class EntitiesConfigLoader
                     .Distinct()
                     .ToList();
 
-                if (registry is null || resolvedUnitValues.Count < 2)
+                if (registry is null)
                 {
+                    // WR-03: cold boot — registry not yet populated. Warn-only, do not reject.
                     logger.Log(LogLevel.Information, LogEvents.GroupConfigLoaded,
-                        "Group '{GroupId}' unit check skipped — sensor registry not yet populated with units for its members",
+                        "Group '{GroupId}' unit check skipped — sensor registry not yet populated",
                         group.GroupId);
                 }
                 else if (resolvedUnitValues.Count > 1)
@@ -166,6 +167,7 @@ public class EntitiesConfigLoader
                         group.GroupId, string.Join(", ", resolvedUnitValues));
                     continue;
                 }
+                // else: registry populated and units consistent (0 or 1 distinct value) — no log needed.
             }
 
             surviving.Add(group);
