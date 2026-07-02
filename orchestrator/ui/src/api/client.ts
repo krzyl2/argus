@@ -22,6 +22,13 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   // Callers inspect the `ok`/`kind` discriminant in the JSON body, not res.ok,
-  // per the UI-SPEC API contract shape.
-  return res.json() as Promise<T>;
+  // per the UI-SPEC API contract shape — but that only holds for responses that
+  // actually have a JSON body. A non-ok response with an empty body (e.g. the
+  // 403 IsAuthorizedRequest guard) must be rejected here with a clear error
+  // instead of letting res.json() throw a confusing SyntaxError.
+  const text = await res.text();
+  if (!res.ok && text === '') {
+    throw new Error(`POST ${path} failed: ${res.status}`);
+  }
+  return JSON.parse(text) as T;
 }

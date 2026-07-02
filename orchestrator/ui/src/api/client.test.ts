@@ -38,7 +38,7 @@ describe('apiPost', () => {
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) })
+      vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify({ ok: true }) })
     );
   });
   afterEach(() => {
@@ -61,5 +61,18 @@ describe('apiPost', () => {
         body: JSON.stringify(body),
       })
     );
+  });
+
+  it('parses a JSON body on success', async () => {
+    const result = await apiPost('api/sensors/save', {});
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('throws a clear error on a non-ok response with an empty body (e.g. 403)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 403, text: async () => '' })
+    );
+    await expect(apiPost('api/sensors/save', {})).rejects.toThrow(/403/);
   });
 });
