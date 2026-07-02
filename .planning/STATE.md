@@ -5,15 +5,15 @@ milestone_name: Group & Multivariate Anomaly Detection + UX
 current_phase: 08
 current_phase_name: Group Config UI + Algorithm Chooser
 status: executing
-stopped_at: Completed 06-03-PLAN.md — MQTT group entity layer
-last_updated: "2026-07-02T19:24:40.625Z"
+stopped_at: Completed 08-03-PLAN.md -- group authoring SPA + search/browse
+last_updated: "2026-07-02T19:37:24.026Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 08 execution started
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 19
-  completed_plans: 13
+  completed_plans: 14
   percent: 0
 ---
 
@@ -166,6 +166,10 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase 08]: [08-02] HaSensorEntry.UpdateSnapshot's 3rd param (entityAreaNames) is optional/defaulted to null on the single interface method rather than a second overload — keeps every pre-existing fake IHaSensorRegistry implementation compiling without touching files outside this plan's scope
 - [Phase 08]: [08-02] _patterns: is re-derived from the raw on-disk YAML on every group save rather than modeled in EntitiesConfig, since IgnoreUnmatchedProperties would otherwise drop it on load
 - [Phase 08]: [08-02] GroupInputValidator extracted as its own file mirroring InputValidator.cs convention, rather than inlining validation logic into Program.cs's POST /api/groups/save handler
+- [Phase 08-03]: HaSensorRegistry.GetFiltered extended to match friendly_name OR entity_id -- SRCH-01 could not work end-to-end from client copy alone since #/sensors search is server-filtered via GET /api/sensors?q=
+- [Phase 08-03]: GET /api/sensors now serializes areaName/domain -- HaSensorEntry carried these since 08-02 but Program.cs never put them in the JSON, so SRCH-02 area grouping had no data to render
+- [Phase 08-03]: MemberPicker renders its own lightweight checkbox rows instead of wrapping SensorListRow, since SensorListRow's detector-disclosure UI does not apply to member selection
+- [Phase 08-03]: deleteGroup composes on the same saveGroup POST path (full-list-replace minus one group) rather than a dedicated delete endpoint
 
 ### Blockers
 
@@ -200,11 +204,12 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 07 P03 | 20min | 2 tasks | 3 files |
 | Phase 08 P01 | 6min | 2 tasks | 7 files |
 | Phase 08 P02 | 10min | 3 tasks | 20 files |
+| Phase 08 P03 | 15min | 3 tasks | 22 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T19:22:04.519Z
-**Stopped at:** Completed 06-03-PLAN.md — MQTT group entity layer
+**Last session:** 2026-07-02T19:37:24.018Z
+**Stopped at:** Completed 08-03-PLAN.md -- group authoring SPA + search/browse
 **Resume file:** None
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
@@ -217,6 +222,6 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 ## Current Position
 
 Phase: 08 (Group Config UI + Algorithm Chooser) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-07-02 — Phase 08 execution started
