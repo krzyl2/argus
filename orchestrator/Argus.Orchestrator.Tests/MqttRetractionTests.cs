@@ -37,6 +37,26 @@ public class MqttRetractionTests
             Detectors = [new DetectorConfig { Name = detectorName, Params = [] }],
         };
 
+    private static GroupConfig MakePeerGroup(string groupId, params string[] members) =>
+        new()
+        {
+            GroupId = groupId,
+            FriendlyName = groupId,
+            Mode = "peer_divergence",
+            Detector = "peer_divergence",
+            Members = [.. members],
+        };
+
+    private static GroupConfig MakeJointGroup(string groupId, params string[] members) =>
+        new()
+        {
+            GroupId = groupId,
+            FriendlyName = groupId,
+            Mode = "joint",
+            Detector = "ecod",
+            Members = [.. members],
+        };
+
     // ─── Two publishes per removed entity ────────────────────────────────────
 
     [Fact]
@@ -190,5 +210,95 @@ public class MqttRetractionTests
         var scoreId   = UniqueId.ScoreId("sensor.pressure_indoor", "hst");
         Assert.Contains(calls, c => c.Topic == $"homeassistant/binary_sensor/{anomalyId}/config");
         Assert.Contains(calls, c => c.Topic == $"homeassistant/sensor/{scoreId}/config");
+    }
+
+    // ─── Group membership-change retraction (GRP-08) ─────────────────────────
+
+    [Fact]
+    public async Task RetractGroupAsync_PeerGroupShrink4To3_RetractsOnlyRemovedMemberTwoTopics()
+    {
+        // Arrange — peer group shrinking from 4 members to 3 (one removed)
+        var (calls, publish) = MakeRecorder();
+        var group = MakePeerGroup("garden_tires", "sensor.tire_fl", "sensor.tire_fr", "sensor.tire_rl", "sensor.tire_rr");
+        var removedMember = "sensor.tire_rr";
+
+        // Act — only the removed member is passed
+        await DiscoveryPublisher.RetractGroupAsync(publish, group, [removedMember], CancellationToken.None);
+
+        // Assert — exactly 2 messages, both for the removed member's topics
+        Assert.Equal(2, calls.Count);
+        var flagId = UniqueId.GroupFlagId(group.GroupId, removedMember);
+        var scoreId = UniqueId.GroupScoreId(group.GroupId, removedMember);
+        Assert.Contains(calls, c => c.Topic == $"homeassistant/binary_sensor/{flagId}/config");
+        Assert.Contains(calls, c => c.Topic == $"homeassistant/sensor/{scoreId}/config");
+    }
+
+    [Fact]
+    public async Task RetractGroupAsync_PeerGroupShrink4To3_DoesNotTouchSurvivingMembers()
+    {
+        // Arrange
+        var (calls, publish) = MakeRecorder();
+        var group = MakePeerGroup("garden_tires", "sensor.tire_fl", "sensor.tire_fr", "sensor.tire_rl", "sensor.tire_rr");
+        var removedMember = "sensor.tire_rr";
+        var survivors = new[] { "sensor.tire_fl", "sensor.tire_fr", "sensor.tire_rl" };
+
+        // Act
+        await DiscoveryPublisher.RetractGroupAsync(publish, group, [removedMember], CancellationToken.None);
+
+        // Assert — no call topic mentions any surviving member's slug (mirrors RetractAsync_OnlyRetractsPassedEntities_NotOthers)
+        foreach (var survivor in survivors)
+        {
+            var survivorFlagId = UniqueId.GroupFlagId(group.GroupId, survivor);
+            var survivorScoreId = UniqueId.GroupScoreId(group.GroupId, survivor);
+            Assert.DoesNotContain(calls, c => c.Topic.Contains(survivorFlagId));
+            Assert.DoesNotContain(calls, c => c.Topic.Contains(survivorScoreId));
+        }
+    }
+
+    [Fact]
+    public async Task RetractGroupAsync_WholeJointGroupRemoved_RetractsSingleGroupPair()
+    {
+        // Arrange — joint group entirely removed (single group-level pair, memberId null)
+        var (calls, publish) = MakeRecorder();
+        var group = MakeJointGroup("living_room_climate", "sensor.living_room_temp", "sensor.living_room_humidity", "sensor.living_room_pressure");
+
+        // Act — pass a single null entry to retract the group-level pair
+        await DiscoveryPublisher.RetractGroupAsync(publish, group, [null], CancellationToken.None);
+
+        // Assert — exactly 2 messages for the single group pair
+        Assert.Equal(2, calls.Count);
+        var flagId = UniqueId.GroupFlagId(group.GroupId);
+        var scoreId = UniqueId.GroupScoreId(group.GroupId);
+        Assert.Contains(calls, c => c.Topic == $"homeassistant/binary_sensor/{flagId}/config");
+        Assert.Contains(calls, c => c.Topic == $"homeassistant/sensor/{scoreId}/config");
+    }
+
+    [Fact]
+    public async Task RetractGroupAsync_AllPublishes_UseEmptyPayloadAndRetainTrue()
+    {
+        // Arrange
+        var (calls, publish) = MakeRecorder();
+        var group = MakePeerGroup("garden_tires", "sensor.tire_fl", "sensor.tire_fr", "sensor.tire_rl", "sensor.tire_rr");
+
+        // Act
+        await DiscoveryPublisher.RetractGroupAsync(publish, group, ["sensor.tire_rr"], CancellationToken.None);
+
+        // Assert — empty payload + retain true across all group retraction calls
+        Assert.All(calls, c => Assert.Equal(string.Empty, c.Payload));
+        Assert.All(calls, c => Assert.True(c.Retain));
+    }
+
+    [Fact]
+    public async Task RetractGroupAsync_EmptyRemovedList_PublishesNothing()
+    {
+        // Arrange
+        var (calls, publish) = MakeRecorder();
+        var group = MakePeerGroup("garden_tires", "sensor.tire_fl", "sensor.tire_fr", "sensor.tire_rl");
+
+        // Act
+        await DiscoveryPublisher.RetractGroupAsync(publish, group, [], CancellationToken.None);
+
+        // Assert
+        Assert.Empty(calls);
     }
 }
