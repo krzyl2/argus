@@ -26,7 +26,7 @@ Requirements for this milestone. Each maps to exactly one roadmap phase.
 - [x] **ALGO-01**: Operator selects detector sensitivity via a Low/Med/High preset for the new group detectors, mapping to underlying parameters without exposing raw values by default
 - [x] **ALGO-02**: An Advanced toggle reveals and lets the operator override the raw underlying parameters behind a preset
 - [x] **ALGO-03**: Each selectable algorithm shows a "best for…" description explaining its intended use case in the chooser
-- [ ] **ALGO-04**: A guided "what are you monitoring?" chooser pre-selects a sensible algorithm AND visibly shows/explains its pick, always allowing one-click override
+- [x] **ALGO-04**: A guided "what are you monitoring?" chooser pre-selects a sensible algorithm AND visibly shows/explains its pick, always allowing one-click override
 
 ### Sensor Search & Browse (SRCH)
 
@@ -86,7 +86,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ALGO-01 | Phase 8 | Complete |
 | ALGO-02 | Phase 8 | Complete |
 | ALGO-03 | Phase 8 | Complete |
-| ALGO-04 | Phase 8 | Pending |
+| ALGO-04 | Phase 8 | Complete |
 | SRCH-01 | Phase 8 | Complete |
 | SRCH-02 | Phase 8 | Complete |
 | SRCH-03 | Phase 8 | Complete |

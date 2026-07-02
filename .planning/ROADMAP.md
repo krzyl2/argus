@@ -72,7 +72,7 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 - [x] **Phase 5: Group Detection Core (Proto + Python Detectors)** - Peer-divergence and joint-multivariate scoring work correctly in isolation, verified without any .NET or UI involvement (completed 2026-07-02)
 - [x] **Phase 6: Batch Group Pipeline** - Operators define groups in config and see real, time-aligned group anomalies published to MQTT/HA without orphaning entities (completed 2026-07-02)
 - [x] **Phase 7: SPA Scaffolding** - The configuration UI is rebuilt as a Preact+Vite SPA that loads and functions correctly under real HA Ingress, with all v3.0 capabilities intact (completed 2026-07-02)
-- [ ] **Phase 8: Group Config UI + Algorithm Chooser** - Operators author groups, choose algorithms via presets/guided chooser, and see ranked per-feature attribution for joint-multivariate anomalies
+- [x] **Phase 8: Group Config UI + Algorithm Chooser** - Operators author groups, choose algorithms via presets/guided chooser, and see ranked per-feature attribution for joint-multivariate anomalies (completed 2026-07-02)
 
 ## Phase Details
 
@@ -146,12 +146,12 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
   3. Operator can find sensors by searching friendly_name (not just entity_id) and by browsing a list categorized by HA area/domain
   4. The group-config UI suggests area-scoped candidate groups for operator approval (never auto-groups), and joint-multivariate anomalies display a ranked per-feature/per-member contribution rather than a flat boolean
 
-**Plans**: 3/4 plans executed
+**Plans**: 4/4 plans complete
 
   - [x] 08-01-PLAN.md — Python param-wiring: peer_divergence from_params + multivariate contamination/n_estimators + registry/servicer request.params threading (Wave 1)
   - [x] 08-02-PLAN.md — .NET backend: 4 endpoints (groups/save/catalog/status), DetectorCatalog, GroupStatusCache + joint-branch populate + sort fix, HA area/entity registry enrichment (Wave 1)
   - [x] 08-03-PLAN.md — SPA foundation: group routes/state/types/validation, group list + editor + member picker, friendly_name search + area/domain browse (Wave 2)
-  - [ ] 08-04-PLAN.md — SPA chooser + attribution: guided flow + presets + Advanced override, ranked attribution panel, area suggestions, live-HA human-verify (Wave 3)
+  - [x] 08-04-PLAN.md — SPA chooser + attribution: guided flow + presets + Advanced override, ranked attribution panel, area suggestions, live-HA human-verify (Wave 3)
 
 **UI hint**: yes
 
@@ -171,4 +171,4 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 | 5. Group Detection Core (Proto + Python Detectors) | v4.0 | 4/4 | Complete    | 2026-07-02 |
 | 6. Batch Group Pipeline | v4.0 | 4/4 | Complete    | 2026-07-02 |
 | 7. SPA Scaffolding | v4.0 | 3/3 | Complete    | 2026-07-02 |
-| 8. Group Config UI + Algorithm Chooser | v4.0 | 3/4 | In Progress|  |
+| 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete   | 2026-07-02 |

@@ -5,15 +5,15 @@ milestone_name: Group & Multivariate Anomaly Detection + UX
 current_phase: 08
 current_phase_name: Group Config UI + Algorithm Chooser
 status: executing
-stopped_at: Completed 08-03-PLAN.md -- group authoring SPA + search/browse
-last_updated: "2026-07-02T19:37:24.026Z"
+stopped_at: 08-04-PLAN.md Tasks 1-2 complete; Task 3 (checkpoint:human-verify, live-HA Ingress round-trip) awaiting operator execution
+last_updated: "2026-07-02T22:15:00.000Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 08 execution started
+last_activity_desc: Phase 08 Plan 04 (algorithm chooser, attribution, area suggestions) automated tasks complete, paused at human-verify checkpoint
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 19
-  completed_plans: 14
+  completed_plans: 15
   percent: 0
 ---
 
@@ -170,10 +170,13 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase 08-03]: GET /api/sensors now serializes areaName/domain -- HaSensorEntry carried these since 08-02 but Program.cs never put them in the JSON, so SRCH-02 area grouping had no data to render
 - [Phase 08-03]: MemberPicker renders its own lightweight checkbox rows instead of wrapping SensorListRow, since SensorListRow's detector-disclosure UI does not apply to member selection
 - [Phase 08-03]: deleteGroup composes on the same saveGroup POST path (full-list-replace minus one group) rather than a dedicated delete endpoint
+- [Phase 08-04]: state/groupEditor.ts's chooser state machine (chooserMode/selectedDetector/guidedRecommended) kept independent from state/groups.ts's draftDetector/draftParams — AlgorithmChooser is the single sync point (one useEffect), keeping the state machine unit-testable without duplicating the persisted draft shape
+- [Phase 08-04]: draftPresetLabel + pendingPrefillMembers added as new signals in state/groups.ts — UI-only bookkeeping for the "customized" indicator and the SRCH-03 approve-only pre-fill handoff, never sent to the server
+- [Phase 08-04]: AttributionPanel polls at a fixed 60s interval and swallows poll errors into last-known-state rendering (soft, best-effort display) rather than an error banner
 
 ### Blockers
 
-- None
+- 08-04 Task 3: checkpoint:human-verify (live-HA Ingress round-trip for the new group/algorithm-chooser/attribution UI) awaiting operator execution — see 08-04-SUMMARY.md "Pending Human Checkpoint"
 
 ## Performance Metrics
 
@@ -205,12 +208,13 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 08 P01 | 6min | 2 tasks | 7 files |
 | Phase 08 P02 | 10min | 3 tasks | 20 files |
 | Phase 08 P03 | 15min | 3 tasks | 22 files |
+| Phase 08 P04 | 35min | 2 tasks | 17 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T19:37:24.018Z
-**Stopped at:** Completed 08-03-PLAN.md -- group authoring SPA + search/browse
-**Resume file:** None
+**Last session:** 2026-07-02T22:15:00.000Z
+**Stopped at:** 08-04-PLAN.md Tasks 1-2 complete (algorithm chooser, attribution, area suggestions); Task 3 checkpoint:human-verify pending
+**Resume file:** .planning/phases/08-group-config-ui-algorithm-chooser/08-04-SUMMARY.md
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
 - Resume point: Live-HA verification per 01-02-SUMMARY.md "Pending Live-HA Verification" section, then Phase 2 planning.
@@ -223,5 +227,5 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 Phase: 08 (Group Config UI + Algorithm Chooser) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-07-02 — Phase 08 execution started
+Status: Paused at Task 3 human-verify checkpoint (live-HA Ingress round-trip) — Tasks 1-2 complete
+Last activity: 2026-07-02 — 08-04 automated tasks (algorithm chooser, attribution, area suggestions) complete
