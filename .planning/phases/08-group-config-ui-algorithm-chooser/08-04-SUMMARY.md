@@ -146,3 +146,7 @@ Live-HA deployment + verification per the "Pending Human Checkpoint" section abo
 ---
 *Phase: 08-group-config-ui-algorithm-chooser*
 *Completed: 2026-07-02*
+
+## Self-Check: PASSED
+
+All 12 created/referenced files verified present on disk; all 3 commit hashes (e6e9e90, 2afbb2b, bc5c21f) verified in git log.
