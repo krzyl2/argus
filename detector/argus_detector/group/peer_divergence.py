@@ -59,15 +59,17 @@ def modified_zscore(row: np.ndarray) -> np.ndarray:
 def score_group(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Score a (n_timestamps, n_members) matrix with per-timestamp robust z-scores.
 
+    WR-03: the minimum-member floor (GRP-04) is enforced exclusively by
+    PeerDivergenceDetector.score_batch() BEFORE this function is called —
+    the only production caller. This function does not re-check the floor
+    to avoid a second, divergence-prone copy of the `_MIN_MEMBERS` check.
+    Callers invoking score_group() directly (e.g. tests) are responsible
+    for enforcing the floor themselves; passing n_members < _MIN_MEMBERS
+    is outside this function's contract.
+
     Returns:
         (scores, flags) both shape (n_timestamps, n_members).
-        If n_members < _MIN_MEMBERS, returns NaN-filled arrays (GRP-04 floor).
     """
-    n_timestamps, n_members = matrix.shape
-    if n_members < _MIN_MEMBERS:
-        nan = np.full((n_timestamps, n_members), np.nan)
-        return nan, nan.astype(bool)  # NaN cast to bool is undefined; caller must check score NaN first
-
     scores = np.apply_along_axis(modified_zscore, axis=1, arr=matrix)
     flags = np.abs(scores) > _THRESHOLD
     return scores, flags
