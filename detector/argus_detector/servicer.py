@@ -224,12 +224,15 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
         # RESEARCH V5 / T-05-09: validate all Series have identical value-array
         # length BEFORE constructing the numpy matrix — ragged input must not
         # reach np.array() where it would silently misbehave or crash deep in
-        # numpy/PyOD.
+        # numpy/PyOD. WR-01: an empty series list must also be rejected here —
+        # `lengths` would otherwise be an empty set (len(lengths) == 0), which
+        # slips past the `len(lengths) > 1` check and later crashes inside
+        # np.array()/zip() as an uncontrolled ValueError instead of aborting.
         lengths = {len(s.values) for s in request.series}
-        if len(lengths) > 1:
+        if not request.series or len(lengths) > 1:
             context.abort(
                 grpc.StatusCode.INVALID_ARGUMENT,
-                f"ragged series: mismatched value-array lengths {sorted(lengths)}",
+                "empty series list" if not request.series else f"ragged series: mismatched value-array lengths {sorted(lengths)}",
             )
             return None
 
@@ -335,11 +338,12 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
             return None
 
         # RESEARCH V5 / T-05-09: same ragged-input guard as ScoreGroupBatch.
+        # WR-01: also reject an empty series list (see ScoreGroupBatch comment).
         lengths = {len(s.values) for s in request.series}
-        if len(lengths) > 1:
+        if not request.series or len(lengths) > 1:
             context.abort(
                 grpc.StatusCode.INVALID_ARGUMENT,
-                f"ragged series: mismatched value-array lengths {sorted(lengths)}",
+                "empty series list" if not request.series else f"ragged series: mismatched value-array lengths {sorted(lengths)}",
             )
             return None
 

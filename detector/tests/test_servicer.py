@@ -469,6 +469,20 @@ class TestScoreGroupBatchGuards:
         assert ctx.abort_code == grpc.StatusCode.INVALID_ARGUMENT
         assert result is None
 
+    def test_empty_series_aborts_invalid_argument(self, servicer):
+        """WR-01: empty series list must abort INVALID_ARGUMENT, not raise
+        an uncontrolled ValueError from the empty-matrix unpack."""
+        svc, _, _ = servicer
+        request = argus_pb2.GroupScoreRequest(
+            group_id="g1", detector="peer_divergence", series=[]
+        )
+        ctx = _FakeContext()
+        result = svc.ScoreGroupBatch(request, ctx)
+        assert ctx.aborted
+        import grpc
+        assert ctx.abort_code == grpc.StatusCode.INVALID_ARGUMENT
+        assert result is None
+
 
 class TestFitGroupPersistence:
     """FitGroup persistence semantics: joint persists a loadable bundle,
@@ -507,4 +521,17 @@ class TestFitGroupPersistence:
         ctx = _FakeContext()
         result = svc.FitGroup(request, ctx)
         assert ctx.aborted
+        assert result is None
+
+    def test_fit_group_empty_series_aborts_invalid_argument(self, servicer):
+        """WR-01: empty series list must abort INVALID_ARGUMENT in FitGroup too."""
+        svc, _, _ = servicer
+        request = argus_pb2.FitGroupRequest(
+            group_id="g1", detector="peer_divergence", series=[]
+        )
+        ctx = _FakeContext()
+        result = svc.FitGroup(request, ctx)
+        assert ctx.aborted
+        import grpc
+        assert ctx.abort_code == grpc.StatusCode.INVALID_ARGUMENT
         assert result is None
