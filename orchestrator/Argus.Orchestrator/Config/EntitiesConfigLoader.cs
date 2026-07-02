@@ -116,6 +116,18 @@ public class EntitiesConfigLoader
                 continue;
             }
 
+            // WR-01: reject duplicate member ids — BuildGroupMatrix.ToDictionary would otherwise
+            // throw ArgumentException on the first duplicate key, crashing the group's batch cycle
+            // (caught upstream, but with a misleading "duplicate key" error instead of a clear
+            // config diagnostic). Degrade-not-crash: skip the group here with a clear message.
+            var distinctMemberCount = group.Members.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            if (distinctMemberCount != group.Members.Count)
+            {
+                logger.LogWarning(LogEvents.GroupRejected,
+                    "Group '{GroupId}' has duplicate member ids — skipped", group.GroupId);
+                continue;
+            }
+
             var isPeerDivergence = string.Equals(group.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase);
             var isJoint = string.Equals(group.Mode, "joint", StringComparison.OrdinalIgnoreCase);
 
