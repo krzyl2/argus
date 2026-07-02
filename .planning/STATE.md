@@ -4,16 +4,16 @@ milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
 current_phase: 05
 current_phase_name: Group Detection Core (Proto + Python Detectors
-status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-07-02T12:12:31.001Z"
+status: verifying
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-07-02T12:21:43.605Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 05 execution started
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -140,6 +140,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase 05-01]: Reused existing Verdict message for per_member and group_verdict fields in GroupScoreResponse — Plan explicitly avoids a parallel score message
 - [Phase 05]: 0.7979 meanAD-fallback constant documented as Iglewicz-Hoaglin statistics convention in code comment (RESEARCH A2 resolved as Claude's discretion)
 - [Phase 05]: Below-floor no-verdict kept representationally distinct from MAD=0 all-normal case per RESEARCH Pitfall 4
+- [Phase ?]: [Phase 05-03]: Extended joint-anomaly test fixture from RESEARCH.md's 5 rows to 10 (same correlated pattern) - PCA/COPOD produced divide-by-zero/near-tie on the tiny original fixture; production code unchanged, copied verbatim from RESEARCH.md
 
 ### Blockers
 
@@ -163,11 +164,12 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 04 P04 | 6m | 2 tasks | 2 files |
 | Phase 05 P01 | 6min | 2 tasks | 2 files |
 | Phase 05 P02 | 6m | 2 tasks | 3 files |
+| Phase 05 P03 | 12min | 3 tasks | 5 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T12:11:59.625Z
-**Stopped at:** Completed 05-01-PLAN.md
+**Last session:** 2026-07-02T12:21:43.596Z
+**Stopped at:** Completed 05-03-PLAN.md
 **Resume file:** None
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
@@ -180,6 +182,6 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 ## Current Position
 
 Phase: 05 (Group Detection Core (Proto + Python Detectors)) — EXECUTING
-Plan: 3 of 4
-Status: Ready to execute
+Plan: 4 of 4
+Status: Phase complete — ready for verification
 Last activity: 2026-07-02 — Phase 05 execution started

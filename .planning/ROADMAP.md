@@ -88,11 +88,11 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
   3. The proto contract carries a real 2D matrix (not a loop of univariate calls) for group scoring, so genuine joint anomalies that no single feature would trigger are still caught
   4. Group models Fit/Save/Load using group_id + detector + version as the key, and this never collides with an existing per-entity model key
 
-**Plans**: 2/4 plans executed
+**Plans**: 3/4 plans executed
 
   - [x] 05-01-PLAN.md — Proto contract: Series/GroupScore/FitGroup messages + RPCs, Python regen (Wave 1)
   - [x] 05-02-PLAN.md — Peer-divergence detector: robust modified z-score, floor, MAD=0 guard (Wave 1)
-  - [ ] 05-03-PLAN.md — Joint-multivariate detector (RobustScaler+PyOD) + group model persistence (Wave 1)
+  - [x] 05-03-PLAN.md — Joint-multivariate detector (RobustScaler+PyOD) + group model persistence (Wave 1)
   - [ ] 05-04-PLAN.md — Servicer + registry wiring: FitGroup/ScoreGroupBatch handlers + validation (Wave 3)
 
 ### Phase 6: Batch Group Pipeline
@@ -152,7 +152,7 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 | 2. Live Sensor Discovery + Entity Selection UI | v3.0 | 3/3 | Complete | 2026-07-01 |
 | 3. Config Read/Write + Detector Assignment + Reload | v3.0 | 3/3 | Complete | 2026-07-01 |
 | 4. Validation, CI Packaging + Documentation | v3.0 | 4/4 | Complete | 2026-07-01 |
-| 5. Group Detection Core (Proto + Python Detectors) | v4.0 | 2/4 | In Progress|  |
+| 5. Group Detection Core (Proto + Python Detectors) | v4.0 | 3/4 | In Progress|  |
 | 6. Batch Group Pipeline | v4.0 | 0/TBD | Not started | - |
 | 7. SPA Scaffolding | v4.0 | 0/TBD | Not started | - |
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 0/TBD | Not started | - |
