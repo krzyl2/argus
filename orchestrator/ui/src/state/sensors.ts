@@ -56,10 +56,16 @@ function getOrInitEdit(entityId: string, isTracked: boolean): EntityEditState {
   };
 }
 
+// Monotonic request sequence — guards against out-of-order/racing loadSensors
+// responses (e.g. rapid filter changes) overwriting newer state with a stale one.
+let loadSensorsSeq = 0;
+
 export async function loadSensors(q: string): Promise<void> {
+  const seq = ++loadSensorsSeq;
   loading.value = true;
   try {
     const res = await apiGet<{ entries: SensorEntry[] }>(`api/sensors?q=${encodeURIComponent(q)}`);
+    if (seq !== loadSensorsSeq) return; // stale response — a newer request is in flight/done
     sensors.value = res.entries;
     const edits = { ...entityEdits.value };
     for (const entry of res.entries) {
@@ -69,7 +75,7 @@ export async function loadSensors(q: string): Promise<void> {
     }
     entityEdits.value = edits;
   } finally {
-    loading.value = false;
+    if (seq === loadSensorsSeq) loading.value = false;
   }
 }
 
