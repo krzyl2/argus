@@ -80,3 +80,31 @@ class TestProtoCodegen:
         from argus_detector.proto import argus_pb2
         assert hasattr(argus_pb2, "FitRequest"), "FitRequest not found"
         assert hasattr(argus_pb2, "FitResponse"), "FitResponse not found"
+
+    def test_group_messages_exist(self):
+        """New group messages (Phase 5) must exist after regeneration."""
+        from argus_detector.proto import argus_pb2
+        assert hasattr(argus_pb2, "Series"), "Series not found"
+        assert hasattr(argus_pb2, "FeatureContribution"), "FeatureContribution not found"
+        assert hasattr(argus_pb2, "GroupScoreRequest"), "GroupScoreRequest not found"
+        assert hasattr(argus_pb2, "GroupScoreResponse"), "GroupScoreResponse not found"
+        assert hasattr(argus_pb2, "FitGroupRequest"), "FitGroupRequest not found"
+        assert hasattr(argus_pb2, "FitGroupResponse"), "FitGroupResponse not found"
+
+    def test_series_roundtrips_member_id_and_values(self):
+        """Series must round-trip member_id and a repeated double values list
+        (proves field numbers were preserved and repeated-double works)."""
+        from argus_detector.proto import argus_pb2
+        s = argus_pb2.Series(member_id="sensor.outdoor_temp", values=[1.0, 2.5, 3.75])
+        assert s.member_id == "sensor.outdoor_temp"
+        assert list(s.values) == [1.0, 2.5, 3.75]
+
+    def test_detector_service_stub_exposes_group_rpcs(self):
+        """DetectorServiceStub instances must expose ScoreGroupBatch and FitGroup
+        callables (verifies the RPC stubs regenerated)."""
+        import grpc
+        from argus_detector.proto import argus_pb2_grpc
+        channel = grpc.insecure_channel("localhost:1")
+        stub = argus_pb2_grpc.DetectorServiceStub(channel)
+        assert callable(getattr(stub, "ScoreGroupBatch", None)), "ScoreGroupBatch not found on stub"
+        assert callable(getattr(stub, "FitGroup", None)), "FitGroup not found on stub"
