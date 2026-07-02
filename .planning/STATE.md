@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
-current_phase: 7
+current_phase: 07
 current_phase_name: SPA Scaffolding
-status: verifying
+status: executing
 stopped_at: Completed 06-03-PLAN.md — MQTT group entity layer
-last_updated: "2026-07-02T14:15:38.779Z"
+last_updated: "2026-07-02T15:57:28.781Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 6 complete, transitioned to Phase 7
+last_activity_desc: Phase 07 execution started
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 10
-  completed_plans: 8
+  total_plans: 14
+  completed_plans: 9
   percent: 0
 ---
 
@@ -52,7 +52,7 @@ not formally signed off.
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
-**Current focus:** Phase 06 — Batch Group Pipeline
+**Current focus:** Phase 07 — SPA Scaffolding
 
 ## Phase Status (v4.0)
 
@@ -154,6 +154,8 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase ?]: [Phase 06-04]: BuildGroupMatrix shared between score and fit paths (isPeer flag branches joint-vs-peer staleness policy) - one place owns the exclusion logic
 - [Phase ?]: [Phase 06-04]: Default staleness_cap of 30 minutes applied when a group's Params omits the key or fails TimeSpan.TryParse - degrade-safely rather than throw at scoring time
 - [Phase ?]: [Phase 06-04]: MqttPublisherWorker ConfigChanged ordering locked: retract-removed-groups -> republish-entities -> republish-groups -> update _lastGroups snapshot
+- [Phase 07-01]: argus.css moved to orchestrator/ui/public/css/ as new canonical source; old wwwroot copy untracked (Vite regenerates it)
+- [Phase 07-01]: SaveRequest uses natural nested entities:[{entityId, detectors:[{name, params}]}] shape (RESEARCH Open Q2) - must match 07-02's C# DTO exactly
 
 ### Blockers
 
@@ -183,10 +185,11 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 06 P02 | 12min | 3 tasks | 6 files |
 | Phase 06 P03 | 3min | 3 tasks | 7 files |
 | Phase 06 P04 | 14min | 3 tasks | 6 files |
+| Phase 07 P01 | 25min | 2 tasks | 34 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T13:56:01.982Z
+**Last session:** 2026-07-02T15:56:53.853Z
 **Stopped at:** Completed 06-03-PLAN.md — MQTT group entity layer
 **Resume file:** None
 
@@ -199,7 +202,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Current Position
 
-Phase: 7 — SPA Scaffolding
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-02 — Phase 6 complete, transitioned to Phase 7
+Phase: 07 (SPA Scaffolding) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-07-02 — Phase 07 execution started
