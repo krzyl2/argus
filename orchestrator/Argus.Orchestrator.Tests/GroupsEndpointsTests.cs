@@ -260,6 +260,43 @@ public class GroupsEndpointsTests
     }
 
     // -----------------------------------------------------------------------
+    // WR-01: duplicate group_id detection
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Validate_DuplicateGroupId_ReturnsValidationError()
+    {
+        var registry = new FakeRegistry(MakeEntry("sensor.a"), MakeEntry("sensor.b"), MakeEntry("sensor.c"),
+            MakeEntry("sensor.d"), MakeEntry("sensor.e"), MakeEntry("sensor.f"));
+        var groups = new List<GroupSaveEntry>
+        {
+            new() { GroupId = "group.kitchen", Members = ["sensor.a", "sensor.b", "sensor.c"], Mode = "joint", Detector = "ecod" },
+            new() { GroupId = "group.kitchen", Members = ["sensor.d", "sensor.e", "sensor.f"], Mode = "joint", Detector = "ecod" },
+        };
+
+        var errors = GroupInputValidator.Validate(groups, registry);
+
+        Assert.NotEmpty(errors);
+        Assert.Contains(errors, e => e.Contains("Duplicate group ID"));
+    }
+
+    [Fact]
+    public void Validate_DistinctGroupIds_ReturnsNoErrors()
+    {
+        var registry = new FakeRegistry(MakeEntry("sensor.a"), MakeEntry("sensor.b"), MakeEntry("sensor.c"),
+            MakeEntry("sensor.d"), MakeEntry("sensor.e"), MakeEntry("sensor.f"));
+        var groups = new List<GroupSaveEntry>
+        {
+            new() { GroupId = "group.kitchen", Members = ["sensor.a", "sensor.b", "sensor.c"], Mode = "joint", Detector = "ecod" },
+            new() { GroupId = "group.living_room", Members = ["sensor.d", "sensor.e", "sensor.f"], Mode = "joint", Detector = "ecod" },
+        };
+
+        var errors = GroupInputValidator.Validate(groups, registry);
+
+        Assert.Empty(errors);
+    }
+
+    // -----------------------------------------------------------------------
     // GroupSaveRequest JSON (de)serialization — camelCase parity with types.ts
     // -----------------------------------------------------------------------
 

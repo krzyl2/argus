@@ -56,6 +56,20 @@ public static class GroupInputValidator
             .GroupBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().UnitOfMeasurement, StringComparer.OrdinalIgnoreCase);
 
+        // WR-01: reject a duplicate group_id in the submitted list instead of silently
+        // letting the second entry overwrite the first (e.g. two friendly names that
+        // slugify to the same id).
+        var duplicateGroupIds = groups
+            .Where(g => !string.IsNullOrWhiteSpace(g.GroupId))
+            .GroupBy(g => g.GroupId, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+        foreach (var duplicateId in duplicateGroupIds)
+        {
+            errors.Add($"Duplicate group ID '{duplicateId}' — group IDs must be unique.");
+        }
+
         foreach (var group in groups)
         {
             if (string.IsNullOrWhiteSpace(group.GroupId))
