@@ -14,6 +14,11 @@ Serialization:
   PyOD (MAD): joblib.dump / joblib.load
   River HST:  pickle.dump / pickle.load
   PITFALL 3 (RESEARCH.md): River to_dict() does NOT exist — use pickle only.
+  Group bundle (GroupMultivariateDetector): joblib.dump / joblib.load of the
+    {"scaler": ..., "detector": ..., "name": ...} dict. Keyed under the
+    group_ namespace slug (see group_slug()) — same versioned directory
+    layout as PyOD models, reusing the identical *entity_slug*/{detector}/v{N}
+    shape so save/load/prune/latest-pointer code paths are unchanged.
 
 Atomic latest pointer: write to .tmp file then os.rename (guaranteed atomic on POSIX;
   on Windows, pathlib.Path.replace() uses MoveFileExW which is also atomic for same-volume).
@@ -37,6 +42,16 @@ logger = logging.getLogger(__name__)
 
 MODEL_ROOT = pathlib.Path("/var/argus/models")
 _KEEP_VERSIONS = 3
+
+
+def group_slug(group_id: str) -> str:
+    """Build the group_ namespaced directory slug for a group_id.
+
+    This is the SOLE collision-avoidance mechanism between group model keys
+    and per-entity model keys (RESEARCH.md Pitfall 5) — never string-format
+    the "group_" prefix ad hoc anywhere else; always call this helper.
+    """
+    return f"group_{group_id}"
 
 
 class ModelStore:
@@ -123,6 +138,56 @@ class ModelStore:
         self._write_entity_id(d, entity_id if entity_id is not None else entity_slug)
         self._update_latest(entity_slug, detector, version)
         self._prune(entity_slug, detector)
+
+    def save_group_bundle(
+        self,
+        group_id: str,
+        detector: str,
+        version: int,
+        bundle: dict,
+    ) -> None:
+        """Persist a group multivariate model bundle (joblib format) with version sidecar.
+
+        Mirrors save_pyod exactly, but keys the versioned directory under the
+        group_ namespace slug (group_slug()) instead of a raw entity_slug —
+        the sole mechanism guaranteeing no collision with per-entity model
+        keys (RESEARCH.md Pitfall 5).
+
+        Args:
+            group_id: Group identifier (not yet namespaced with "group_").
+            detector: Detector name (e.g. "ecod").
+            version: Integer version number (monotonically increasing).
+            bundle: dict from GroupMultivariateDetector.bundle()
+                    ({"scaler": ..., "detector": ..., "name": ...}).
+        """
+        slug = group_slug(group_id)
+        d = self._model_dir(slug, detector, version)
+        d.mkdir(parents=True, exist_ok=True)
+        joblib.dump(bundle, d / "model.joblib")
+        self._write_version_json(d, slug, detector, version)
+        self._write_entity_id(d, slug)
+        self._update_latest(slug, detector, version)
+        self._prune(slug, detector)
+
+    def load_group_bundle(
+        self,
+        group_id: str,
+        detector: str,
+        version: int | None = None,
+    ) -> dict:
+        """Load a group multivariate model bundle from disk.
+
+        Args:
+            group_id: Group identifier (not yet namespaced with "group_").
+            detector: Detector name.
+            version: Specific version to load. None (default) → load latest.
+
+        Returns:
+            The persisted {"scaler": ..., "detector": ..., "name": ...} dict.
+        """
+        slug = group_slug(group_id)
+        v = version if version is not None else self._read_latest(slug, detector)
+        return joblib.load(self._model_dir(slug, detector, v) / "model.joblib")
 
     def load_pyod(
         self,
