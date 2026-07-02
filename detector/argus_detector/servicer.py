@@ -194,6 +194,177 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
             logger.exception("SaveModel failed for %s/%s", entity_id, detector)
             return argus_pb2.SaveModelResponse(ok=False, error=str(e))
 
+    def ScoreGroupBatch(self, request, context):  # noqa: N802
+        """Score a group of members for (group_id, detector).
+
+        Dispatches on request.detector alone (no separate mode enum, per
+        05-RESEARCH.md Open Question 2): "peer_divergence" -> per-member
+        Verdicts (GRP-03/04); "ecod"/"copod"/"pca"/"iforest" -> a single
+        group_verdict plus ranked FeatureContributions for attributable
+        detectors (GRP-05/06).
+
+        Design decision (05-04-PLAN.md objective): unlike ScoreBatch's
+        per-entity Verdicts (where is_anomaly=False and the orchestrator's
+        hysteresis gate decides), group Verdicts here have is_anomaly set
+        directly by the servicer — peer-divergence from the locked
+        |z| > 3.5 threshold, joint-multivariate from the PyOD detector's own
+        predict(). Phase 5 owns the final threshold for groups; there is no
+        per-entity hysteresis layer for group verdicts yet (that is
+        Phase 6+ territory for per-entity scores only).
+        """
+        if not request.group_id:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "empty group_id")
+            return None  # WR-06: after abort, gRPC ignores the return value
+
+        detector = request.detector
+        if detector not in ("peer_divergence", "ecod", "copod", "pca", "iforest"):
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, f"unknown detector: {detector!r}")
+            return None
+
+        # RESEARCH V5 / T-05-09: validate all Series have identical value-array
+        # length BEFORE constructing the numpy matrix — ragged input must not
+        # reach np.array() where it would silently misbehave or crash deep in
+        # numpy/PyOD.
+        lengths = {len(s.values) for s in request.series}
+        if len(lengths) > 1:
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                f"ragged series: mismatched value-array lengths {sorted(lengths)}",
+            )
+            return None
+
+        try:
+            group_slug = f"group_{request.group_id}"
+            # Matrix: rows = timestamps, columns = members (parallel Series.values arrays).
+            matrix = [list(col) for col in zip(*(s.values for s in request.series))]
+
+            ts = timestamp_pb2.Timestamp()
+            ts.GetCurrentTime()
+
+            if detector == "peer_divergence":
+                # Stateless — no registry state needed, construct fresh per call.
+                from argus_detector.group.peer_divergence import PeerDivergenceDetector
+                model = PeerDivergenceDetector()
+                scores, flags, error = model.score_batch(matrix)
+                if error:
+                    # GRP-04: below-floor group -> no verdict, NOT a false not-anomalous result.
+                    return argus_pb2.GroupScoreResponse(ok=True, error=error)
+
+                member_ids = [s.member_id for s in request.series]
+                # One Verdict per member, using the LAST timestamp's row (most recent score).
+                last_scores = scores[-1]
+                last_flags = flags[-1]
+                per_member = [
+                    argus_pb2.Verdict(
+                        entity_id=member_ids[i],
+                        score=wrappers_pb2.DoubleValue(value=last_scores[i]),
+                        is_anomaly=bool(last_flags[i]),  # locked |z|>3.5 threshold (see docstring)
+                        detector=detector,
+                        timestamp=ts,
+                    )
+                    for i in range(len(member_ids))
+                ]
+                return argus_pb2.GroupScoreResponse(per_member=per_member, ok=True)
+
+            # Joint-multivariate: ecod/copod/pca/iforest — fitted model required.
+            if not self._registry.has_model(group_slug, detector):
+                context.abort(
+                    grpc.StatusCode.INVALID_ARGUMENT,
+                    f"no fitted model for group {request.group_id!r}/{detector}; call FitGroup first",
+                )
+                return None
+
+            model = self._registry.get_model(group_slug, detector)
+            scores, contributions = model.score_batch(matrix)
+
+            # Single group-level verdict from the last timestamp's score;
+            # is_anomaly derived from the detector's own predict() threshold
+            # (score > threshold_ — PyOD's predict() decision rule, applied to
+            # the score already computed by score_batch() above rather than
+            # calling predict() again, which would re-invoke decision_function()
+            # and corrupt the just-extracted ECOD/COPOD attribution — RESEARCH.md
+            # Pitfall 1: self._model.O is mutated on every decision_function call).
+            group_score = scores[-1]
+            is_anomaly = bool(group_score > model._model.threshold_)
+            group_verdict = argus_pb2.Verdict(
+                entity_id=group_slug,
+                score=wrappers_pb2.DoubleValue(value=group_score),
+                is_anomaly=is_anomaly,
+                detector=detector,
+                timestamp=ts,
+            )
+
+            feature_contributions = []
+            if contributions:
+                member_ids = [s.member_id for s in request.series]
+                last_contribution = contributions[-1]
+                feature_contributions = [
+                    argus_pb2.FeatureContribution(
+                        member_id=member_ids[i],
+                        contribution=last_contribution[i],
+                    )
+                    for i in range(len(member_ids))
+                ]
+
+            return argus_pb2.GroupScoreResponse(
+                group_verdict=group_verdict,
+                contributions=feature_contributions,
+                ok=True,
+            )
+
+        except Exception as e:
+            logger.exception("unexpected error in ScoreGroupBatch for %s", request.group_id)
+            return argus_pb2.GroupScoreResponse(ok=False, error=str(e))
+
+    def FitGroup(self, request, context):  # noqa: N802
+        """Train a group model for (group_id, detector) on request.series.
+
+        peer_divergence is stateless (GRP-03/04) — FitGroup registers it
+        without training and does NOT call save_group_bundle. Joint-
+        multivariate detectors (ecod/copod/pca/iforest) fit via the registry
+        then persist a {"scaler", "detector", "name"} bundle via
+        model_store.save_group_bundle (GRP-05/06/07).
+        """
+        if not request.group_id:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "empty group_id")
+            return None  # WR-06: after abort, gRPC ignores the return value
+
+        detector = request.detector
+        if detector not in ("peer_divergence", "ecod", "copod", "pca", "iforest"):
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, f"unknown detector: {detector!r}")
+            return None
+
+        # RESEARCH V5 / T-05-09: same ragged-input guard as ScoreGroupBatch.
+        lengths = {len(s.values) for s in request.series}
+        if len(lengths) > 1:
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                f"ragged series: mismatched value-array lengths {sorted(lengths)}",
+            )
+            return None
+
+        try:
+            group_slug = f"group_{request.group_id}"
+            matrix = [list(col) for col in zip(*(s.values for s in request.series))]
+
+            if detector == "peer_divergence":
+                # Stateless — register without training, no persistence (RESEARCH.md
+                # CONTEXT.md: peer_divergence Fit/Save is a no-op registration).
+                self._registry.fit_one(group_slug, detector, matrix)
+                return argus_pb2.FitGroupResponse(ok=True)
+
+            # Joint-multivariate: fit via the registry, then persist the bundle.
+            version = self._model_store.next_version(group_slug, detector)
+            self._registry.fit_one(group_slug, detector, matrix)
+            model = self._registry.get_model(group_slug, detector)
+            self._model_store.save_group_bundle(request.group_id, detector, version, model.bundle())
+
+            return argus_pb2.FitGroupResponse(ok=True)
+
+        except Exception as e:
+            logger.exception("unexpected error in FitGroup for %s", request.group_id)
+            return argus_pb2.FitGroupResponse(ok=False, error=str(e))
+
     def LoadModel(self, request, context):  # noqa: N802
         """Load a model from disk and register it into the registry."""
         entity_id = request.entity_id
