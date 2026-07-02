@@ -179,8 +179,12 @@ public sealed class BatchSchedulerWorker : BackgroundService
         var aggFn = group.Params.TryGetValue("fn", out var fnVal) && !string.IsNullOrWhiteSpace(fnVal)
             ? fnVal
             : DefaultAggFn;
+        // WR-02: reject non-positive staleness_cap (e.g. "0", "-1.00:00:00", or a typo'd
+        // config value) — a zero/negative cap makes (utcNow - lastSeen) > stalenessCap always
+        // true, so every member is treated as stale forever, silently deadlocking group
+        // scoring (JOINT never scores, PEER never reaches the fresh-member floor).
         var stalenessCap = group.Params.TryGetValue("staleness_cap", out var capVal) &&
-                            TimeSpan.TryParse(capVal, out var parsedCap)
+                            TimeSpan.TryParse(capVal, out var parsedCap) && parsedCap > TimeSpan.Zero
             ? parsedCap
             : DefaultStalenessCap;
 
@@ -490,8 +494,9 @@ public sealed class BatchSchedulerWorker : BackgroundService
         var aggFn = group.Params.TryGetValue("fn", out var fnVal) && !string.IsNullOrWhiteSpace(fnVal)
             ? fnVal
             : DefaultAggFn;
+        // WR-02: reject non-positive staleness_cap — see RunGroupBatchAsync for rationale.
         var stalenessCap = group.Params.TryGetValue("staleness_cap", out var capVal) &&
-                            TimeSpan.TryParse(capVal, out var parsedCap)
+                            TimeSpan.TryParse(capVal, out var parsedCap) && parsedCap > TimeSpan.Zero
             ? parsedCap
             : DefaultStalenessCap;
 
