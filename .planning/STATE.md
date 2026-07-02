@@ -6,14 +6,14 @@ current_phase: 07
 current_phase_name: SPA Scaffolding
 status: executing
 stopped_at: Completed 06-03-PLAN.md — MQTT group entity layer
-last_updated: "2026-07-02T15:57:28.781Z"
+last_updated: "2026-07-02T16:11:12.061Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 07 execution started
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 14
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -156,6 +156,8 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase ?]: [Phase 06-04]: MqttPublisherWorker ConfigChanged ordering locked: retract-removed-groups -> republish-entities -> republish-groups -> update _lastGroups snapshot
 - [Phase 07-01]: argus.css moved to orchestrator/ui/public/css/ as new canonical source; old wwwroot copy untracked (Vite regenerates it)
 - [Phase 07-01]: SaveRequest uses natural nested entities:[{entityId, detectors:[{name, params}]}] shape (RESEARCH Open Q2) - must match 07-02's C# DTO exactly
+- [Phase 07-02]: SaveRequest.Include/Exclude are raw strings (not arrays) — matches types.ts exactly, SPA sends raw textarea content
+- [Phase 07-02]: DetectorDefaults extracted as standalone testable static class rather than inlined in Program.cs endpoint
 
 ### Blockers
 
@@ -186,10 +188,11 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 06 P03 | 3min | 3 tasks | 7 files |
 | Phase 06 P04 | 14min | 3 tasks | 6 files |
 | Phase 07 P01 | 25min | 2 tasks | 34 files |
+| Phase 07 P02 | 35min | 2 tasks | 11 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T15:56:53.853Z
+**Last session:** 2026-07-02T16:08:00.109Z
 **Stopped at:** Completed 06-03-PLAN.md — MQTT group entity layer
 **Resume file:** None
 
@@ -203,6 +206,6 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 ## Current Position
 
 Phase: 07 (SPA Scaffolding) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-02 — Phase 07 execution started

@@ -38,7 +38,7 @@ Requirements for this milestone. Each maps to exactly one roadmap phase.
 
 - [ ] **UI-01**: The configuration UI is rebuilt as a light SPA (Preact + Vite), built at Docker build-time and shipped as static assets — no Node in the runtime image
 - [x] **UI-02**: The SPA loads and functions correctly under HA Ingress's dynamic base path (verified via "Open Web UI", never direct port), using hash routing or runtime base-path templating
-- [ ] **UI-03**: All new/existing `/api/*` endpoints enforce Ingress auth under the SPA
+- [x] **UI-03**: All new/existing `/api/*` endpoints enforce Ingress auth under the SPA
 - [x] **UI-04**: Existing v3.0 config capabilities (sensor discovery/selection, per-entity detector assignment, hot-reload) remain fully functional after the SPA migration
 
 ## Future Requirements
@@ -92,7 +92,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SRCH-03 | Phase 8 | Pending |
 | UI-01 | Phase 7 | Pending |
 | UI-02 | Phase 7 | Complete |
-| UI-03 | Phase 7 | Pending |
+| UI-03 | Phase 7 | Complete |
 | UI-04 | Phase 7 | Complete |
 
 **Coverage:**
