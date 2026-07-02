@@ -5,15 +5,15 @@ milestone_name: Group & Multivariate Anomaly Detection + UX
 current_phase: 05
 current_phase_name: Group Detection Core (Proto + Python Detectors
 status: verifying
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-07-02T12:21:43.605Z"
+stopped_at: Completed 05-04-PLAN.md — Phase 05 all plans done
+last_updated: "2026-07-02T12:32:02.470Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 05 execution started
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -141,6 +141,8 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase 05]: 0.7979 meanAD-fallback constant documented as Iglewicz-Hoaglin statistics convention in code comment (RESEARCH A2 resolved as Claude's discretion)
 - [Phase 05]: Below-floor no-verdict kept representationally distinct from MAD=0 all-normal case per RESEARCH Pitfall 4
 - [Phase ?]: [Phase 05-03]: Extended joint-anomaly test fixture from RESEARCH.md's 5 rows to 10 (same correlated pattern) - PCA/COPOD produced divide-by-zero/near-tie on the tiny original fixture; production code unchanged, copied verbatim from RESEARCH.md
+- [Phase ?]: [Phase 05-04]: is_anomaly for joint-multivariate group detectors derived from score > model._model.threshold_ (not predict()) — avoids a second decision_function() call that would corrupt ECOD/COPOD's mutable self.O attribution matrix
+- [Phase ?]: [Phase 05-04]: PeerDivergenceDetector constructed fresh per ScoreGroupBatch call rather than read from registry — stateless, no fit() needed; registry entry exists only for FitGroup no-op symmetry with the stl pattern
 
 ### Blockers
 
@@ -165,11 +167,12 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 05 P01 | 6min | 2 tasks | 2 files |
 | Phase 05 P02 | 6m | 2 tasks | 3 files |
 | Phase 05 P03 | 12min | 3 tasks | 5 files |
+| Phase 05 PP04 | 8min | 3 tasks | 3 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T12:21:43.596Z
-**Stopped at:** Completed 05-03-PLAN.md
+**Last session:** 2026-07-02T12:32:02.461Z
+**Stopped at:** Completed 05-04-PLAN.md — Phase 05 all plans done
 **Resume file:** None
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
