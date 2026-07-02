@@ -35,8 +35,15 @@ public sealed class BatchSchedulerWorker : BackgroundService
     private readonly IBatchDetectorClient _detectorClient;
     private readonly IStatePublisher _statePublisher;
     private readonly ILiveEntitiesConfig _liveConfig;
+    private readonly IGroupInfluxDataSource _groupInfluxReader;
     private readonly DetectionGateway? _gateway;
     private readonly ILogger<BatchSchedulerWorker> _logger;
+
+    // Defaults applied when a group's Params dictionary omits these keys.
+    private static readonly TimeSpan DefaultStalenessCap = TimeSpan.FromMinutes(30);
+    private const string DefaultEvery = "5m";
+    private const string DefaultAggFn = "mean";
+    private const int PeerMinFreshMembers = 3;
 
     /// <summary>
     /// Test constructor — no DetectionGateway health gate (gate is skipped when gateway is null).
@@ -47,6 +54,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
         IBatchDetectorClient detectorClient,
         IStatePublisher statePublisher,
         ILiveEntitiesConfig liveConfig,
+        IGroupInfluxDataSource groupInfluxReader,
         ILogger<BatchSchedulerWorker> logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -54,6 +62,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
         _detectorClient = detectorClient ?? throw new ArgumentNullException(nameof(detectorClient));
         _statePublisher = statePublisher ?? throw new ArgumentNullException(nameof(statePublisher));
         _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
+        _groupInfluxReader = groupInfluxReader ?? throw new ArgumentNullException(nameof(groupInfluxReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -66,9 +75,10 @@ public sealed class BatchSchedulerWorker : BackgroundService
         IBatchDetectorClient detectorClient,
         IStatePublisher statePublisher,
         ILiveEntitiesConfig liveConfig,
+        IGroupInfluxDataSource groupInfluxReader,
         DetectionGateway gateway,
         ILogger<BatchSchedulerWorker> logger)
-        : this(settings, influxReader, detectorClient, statePublisher, liveConfig, logger)
+        : this(settings, influxReader, detectorClient, statePublisher, liveConfig, groupInfluxReader, logger)
     {
         _gateway = gateway;
     }
@@ -142,6 +152,206 @@ public sealed class BatchSchedulerWorker : BackgroundService
                 }
             }
         }
+
+        // CFG-04: read live config per-cycle so a Swap before the next tick picks up new groups
+        foreach (var group in _liveConfig.Get().Groups)
+        {
+            try
+            {
+                await RunGroupBatchAsync(group, ct);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(LogEvents.GroupSchedulerError, ex,
+                    "Group batch failed for {GroupId}", group.GroupId);
+            }
+        }
+    }
+
+    // ─── Group batch loop (GRP-02/GRP-08) ───────────────────────────────────
+
+    private async Task RunGroupBatchAsync(GroupConfig group, CancellationToken ct)
+    {
+        var every = group.Params.TryGetValue("every", out var everyVal) && !string.IsNullOrWhiteSpace(everyVal)
+            ? everyVal
+            : DefaultEvery;
+        var aggFn = group.Params.TryGetValue("fn", out var fnVal) && !string.IsNullOrWhiteSpace(fnVal)
+            ? fnVal
+            : DefaultAggFn;
+        var stalenessCap = group.Params.TryGetValue("staleness_cap", out var capVal) &&
+                            TimeSpan.TryParse(capVal, out var parsedCap)
+            ? parsedCap
+            : DefaultStalenessCap;
+
+        var data = await _groupInfluxReader.QueryGroupAsync(group.Members, every, aggFn, stalenessCap, ct);
+
+        var isPeer = string.Equals(group.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase);
+        var memberSeries = BuildGroupMatrix(
+            group, data, DateTime.UtcNow, stalenessCap, isPeer, out var skipWholeGroup);
+
+        if (skipWholeGroup)
+        {
+            _logger.LogWarning(LogEvents.GroupSkippedStale,
+                "Group {GroupId} skipped this cycle — staleness cap breach", group.GroupId);
+            return;
+        }
+
+        if (memberSeries.Count == 0)
+        {
+            _logger.LogWarning(LogEvents.GroupNoData,
+                "Group {GroupId} has no scoreable data this cycle", group.GroupId);
+            return;
+        }
+
+        var request = BuildGroupScoreRequest(group, memberSeries);
+        var response = await _detectorClient.ScoreGroupBatchAsync(request, ct);
+
+        if (!response.Ok)
+        {
+            _logger.LogError(LogEvents.GroupSchedulerError,
+                "ScoreGroupBatch returned ok=false for {GroupId}: {Error}", group.GroupId, response.Error);
+            return;
+        }
+
+        if (isPeer)
+        {
+            foreach (var v in response.PerMember)
+            {
+                await _statePublisher.PublishGroupScoreAsync(group.GroupId, v.EntityId, v.Score ?? 0.0, ct);
+                await _statePublisher.PublishGroupFlagAsync(group.GroupId, v.EntityId, v.IsAnomaly, ct);
+            }
+
+            _logger.LogInformation(LogEvents.GroupScored,
+                "Scored group {GroupId} ({Mode}): {Count} member verdicts",
+                group.GroupId, group.Mode, response.PerMember.Count);
+        }
+        else
+        {
+            var v = response.GroupVerdict;
+            await _statePublisher.PublishGroupScoreAsync(group.GroupId, null, v.Score ?? 0.0, ct);
+            await _statePublisher.PublishGroupFlagAsync(group.GroupId, null, v.IsAnomaly, ct);
+
+            // Contributions are carried through the RPC response for future HA surfacing (GRP-09,
+            // scheduled for Phase 8) — logged here at info level only, no MQTT publish this phase.
+            if (response.Contributions.Count > 0)
+            {
+                var top = response.Contributions[0];
+                _logger.LogInformation(LogEvents.GroupScored,
+                    "Scored group {GroupId} ({Mode}): score={Score} anomaly={Anomaly} topContributor={Member}",
+                    group.GroupId, group.Mode, v.Score, v.IsAnomaly, top.MemberId);
+            }
+            else
+            {
+                _logger.LogInformation(LogEvents.GroupScored,
+                    "Scored group {GroupId} ({Mode}): score={Score} anomaly={Anomaly}",
+                    group.GroupId, group.Mode, v.Score, v.IsAnomaly);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies the wall-clock staleness_cap exclusion policy and the null-cell (rectangular-matrix)
+    /// guard to a group's aligned data, producing a per-member value list ready for the group RPC.
+    ///
+    /// JOINT: any member breaching the staleness cap skips the whole group this cycle (fixed feature
+    /// vector — a joint model's fitted dimensionality can't tolerate a dropped column).
+    /// PEER: stale members are dropped from the active set; if fewer than the minimum floor of fresh
+    /// members remain, the group is skipped this cycle instead of being scored short-handed.
+    /// Null-valued cells (missing pivot data — a genuine gap, never forward-filled) are excluded
+    /// row-by-row so the matrix passed to the detector stays rectangular.
+    /// </summary>
+    private static Dictionary<string, List<double>> BuildGroupMatrix(
+        GroupConfig group,
+        GroupAlignedData data,
+        DateTime utcNow,
+        TimeSpan stalenessCap,
+        bool isPeer,
+        out bool skipWholeGroup)
+    {
+        var staleMembers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var member in group.Members)
+        {
+            var isStale = !data.LastSeenUtc.TryGetValue(member, out var lastSeen) ||
+                          (utcNow - lastSeen) > stalenessCap;
+            if (isStale) staleMembers.Add(member);
+        }
+
+        if (!isPeer && staleMembers.Count > 0)
+        {
+            skipWholeGroup = true;
+            return new Dictionary<string, List<double>>();
+        }
+
+        var activeMembers = group.Members.Where(m => !staleMembers.Contains(m)).ToList();
+
+        if (isPeer && activeMembers.Count < PeerMinFreshMembers)
+        {
+            skipWholeGroup = true;
+            return new Dictionary<string, List<double>>();
+        }
+
+        var memberSeries = activeMembers.ToDictionary(m => m, _ => new List<double>(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in data.Rows)
+        {
+            // Rectangular guard: exclude the row if any active member's cell is a genuine gap (null).
+            var hasGap = activeMembers.Any(m =>
+                !row.MemberValues.TryGetValue(m, out var v) || v is null);
+            if (hasGap) continue;
+
+            foreach (var m in activeMembers)
+                memberSeries[m].Add(row.MemberValues[m]!.Value);
+        }
+
+        skipWholeGroup = false;
+        return memberSeries;
+    }
+
+    private static GroupScoreRequest BuildGroupScoreRequest(
+        GroupConfig group,
+        IReadOnlyDictionary<string, List<double>> memberSeries)
+    {
+        var request = new GroupScoreRequest
+        {
+            GroupId = group.GroupId,
+            Detector = group.Detector,
+        };
+
+        foreach (var (key, value) in group.Params)
+            request.Params[key] = value;
+
+        foreach (var (memberId, values) in memberSeries)
+        {
+            var series = new Series { MemberId = memberId };
+            series.Values.AddRange(values);
+            request.Series.Add(series);
+        }
+
+        return request;
+    }
+
+    private static FitGroupRequest BuildFitGroupRequest(
+        GroupConfig group,
+        IReadOnlyDictionary<string, List<double>> memberSeries)
+    {
+        var request = new FitGroupRequest
+        {
+            GroupId = group.GroupId,
+            Detector = group.Detector,
+        };
+
+        foreach (var (key, value) in group.Params)
+            request.Params[key] = value;
+
+        foreach (var (memberId, values) in memberSeries)
+        {
+            var series = new Series { MemberId = memberId };
+            series.Values.AddRange(values);
+            request.Series.Add(series);
+        }
+
+        return request;
     }
 
     private async Task RunEntityBatchAsync(string entityId, DetectorConfig detectorCfg, CancellationToken ct)
@@ -250,7 +460,62 @@ public sealed class BatchSchedulerWorker : BackgroundService
             }
         }
 
+        // CFG-04: read live config per-cycle so nightly fit uses the current group set.
+        // peer_divergence is stateless (Phase 5: PeerDivergenceDetector has no fit()) — never Fit it.
+        foreach (var group in _liveConfig.Get().Groups)
+        {
+            if (string.Equals(group.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
+            {
+                await RunGroupFitAsync(group, ct);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(LogEvents.GroupSchedulerError, ex,
+                    "Group nightly fit failed for {GroupId}", group.GroupId);
+            }
+        }
+
         _logger.LogInformation(LogEvents.NightlyFitCompleted, "Nightly fit completed");
+    }
+
+    private async Task RunGroupFitAsync(GroupConfig group, CancellationToken ct)
+    {
+        var every = group.Params.TryGetValue("every", out var everyVal) && !string.IsNullOrWhiteSpace(everyVal)
+            ? everyVal
+            : DefaultEvery;
+        var aggFn = group.Params.TryGetValue("fn", out var fnVal) && !string.IsNullOrWhiteSpace(fnVal)
+            ? fnVal
+            : DefaultAggFn;
+        var stalenessCap = group.Params.TryGetValue("staleness_cap", out var capVal) &&
+                            TimeSpan.TryParse(capVal, out var parsedCap)
+            ? parsedCap
+            : DefaultStalenessCap;
+
+        var data = await _groupInfluxReader.QueryGroupAsync(group.Members, every, aggFn, stalenessCap, ct);
+
+        // Joint fit: any stale member excludes the whole group's rows this cycle (fixed feature vector).
+        var memberSeries = BuildGroupMatrix(
+            group, data, DateTime.UtcNow, stalenessCap, isPeer: false, out var skipWholeGroup);
+
+        if (skipWholeGroup || memberSeries.Count == 0 || memberSeries.Values.All(v => v.Count == 0))
+        {
+            _logger.LogWarning(LogEvents.GroupNoData,
+                "Group {GroupId} nightly fit skipped — no scoreable data", group.GroupId);
+            return;
+        }
+
+        var request = BuildFitGroupRequest(group, memberSeries);
+        var response = await _detectorClient.FitGroupAsync(request, ct);
+
+        if (!response.Ok)
+        {
+            _logger.LogError(LogEvents.GroupSchedulerError,
+                "FitGroup returned ok=false for {GroupId}: {Error}", group.GroupId, response.Error);
+        }
     }
 
     private static FitRequest BuildFitRequest(

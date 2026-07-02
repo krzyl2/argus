@@ -70,4 +70,10 @@ public static class LogEvents
     public static readonly EventId ModelSaved              = new(5009, nameof(ModelSaved));
     public static readonly EventId ModelLoaded             = new(5010, nameof(ModelLoaded));
     public static readonly EventId ModelVersionMismatch    = new(5011, nameof(ModelVersionMismatch));
+
+    // Group batch scheduler (GRP-02/GRP-08, Phase 6)
+    public static readonly EventId GroupScored             = new(5012, nameof(GroupScored));
+    public static readonly EventId GroupSkippedStale        = new(5013, nameof(GroupSkippedStale));
+    public static readonly EventId GroupSchedulerError      = new(5014, nameof(GroupSchedulerError));
+    public static readonly EventId GroupNoData              = new(5015, nameof(GroupNoData));
 }
