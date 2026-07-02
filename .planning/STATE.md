@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
-current_phase: 05
-current_phase_name: Group Detection Core (Proto + Python Detectors
+current_phase: 6
+current_phase_name: Batch Group Pipeline
 status: verifying
 stopped_at: Completed 05-04-PLAN.md — Phase 05 all plans done
-last_updated: "2026-07-02T12:32:02.470Z"
+last_updated: "2026-07-02T12:49:25.162Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 05 execution started
+last_activity_desc: Phase 5 complete, transitioned to Phase 6
 progress:
   total_phases: 4
   completed_phases: 0
@@ -184,7 +184,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Current Position
 
-Phase: 05 (Group Detection Core (Proto + Python Detectors)) — EXECUTING
-Plan: 4 of 4
+Phase: 6 — Batch Group Pipeline
+Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-07-02 — Phase 05 execution started
+Last activity: 2026-07-02 — Phase 5 complete, transitioned to Phase 6
