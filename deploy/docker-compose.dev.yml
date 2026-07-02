@@ -55,7 +55,7 @@ services:
       ARGUS_DETECTOR_ENDPOINT: http://detector:50051
       ARGUS_MQTT_HOST: mosquitto
       ARGUS_MQTT_PORT: "1883"
-      ARGUS_ENTITIES_PATH: /app/entities.yaml
+      ARGUS_ENTITIES_PATH: /data/entities.yaml
       ARGUS_TLS_CA: ""
       ARGUS_TLS_CERT: ""
       ARGUS_TLS_KEY: ""
@@ -63,12 +63,13 @@ services:
       # not loopback, would otherwise 403). NEVER enable outside local dev.
       ARGUS_DEV_TRUST_ALL_REQUESTS: "true"
     volumes:
-      # Seed entity config from the repo (add-on generates this via config-gen; dev provides it).
-      - ../entities.yaml:/app/entities.yaml:ro
-      - orchestrator-data:/data
+      # Writable /data bind mount: UI saves (temp-then-rename) + lock file persist to the host.
+      # Seeded with dev-data/entities.yaml (entities: []); the add-on generates this via config-gen.
+      # Same-dir rename works because it's a directory mount, not a single-file mount (which can't
+      # be atomically replaced). deploy/dev-data/ is gitignored.
+      - ./dev-data:/data
     ports:
       - "8099:8099"
 
 volumes:
   detector-models:
-  orchestrator-data:

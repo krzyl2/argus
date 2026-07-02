@@ -26,3 +26,6 @@ deploy/certs/*.srl
 # Local dev secrets (never commit — use deploy/.env.example as the template)
 deploy/.env
 .env
+
+# Dev compose mutable data (entities.yaml written by the UI, models, lock file)
+deploy/dev-data/
