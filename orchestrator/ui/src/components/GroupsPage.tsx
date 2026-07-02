@@ -4,6 +4,7 @@ import { groups, loadGroups } from '../state/groups';
 import { query as sensorQuery, sensors, loadSensors } from '../state/sensors';
 import { GroupList } from './GroupList';
 import { GroupEditorForm } from './GroupEditorForm';
+import { AreaSuggestionBanner } from './AreaSuggestionBanner';
 
 // Top-level page for the /groups* family — routes internally between GroupList
 // (#/groups) and GroupEditorForm (#/groups/new, #/groups/:id) based on the
@@ -32,6 +33,7 @@ export function GroupsPage() {
           combinations.
         </p>
       </div>
+      <AreaSuggestionBanner sensors={sensors.value} groups={groups.value} />
       <p>
         <a class="argus-btn argus-btn--primary" href="#/groups/new">
           Create group

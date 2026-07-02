@@ -30,11 +30,18 @@ export const draftParams = signal<Record<string, string>>({});
 // "Med, customized" label and is never sent to the server.
 export const draftPresetLabel = signal<string | null>(null);
 
+// SRCH-03: entity ids to pre-fill the next /groups/new draft with, set by
+// AreaSuggestionBanner's "Review" action just before navigating. Consumed (and cleared)
+// by resetDraft on the next /groups/new mount — never auto-saved, operator still reviews
+// and explicitly saves (AreaSuggestionBanner never calls saveGroup itself).
+export const pendingPrefillMembers = signal<string[] | null>(null);
+
 /** Resets all draft signals to their empty/default state (entering /groups/new). */
 export function resetDraft(): void {
   draftGroupId.value = '';
   draftFriendlyName.value = '';
-  draftMembers.value = [];
+  draftMembers.value = pendingPrefillMembers.value ?? [];
+  pendingPrefillMembers.value = null;
   draftMode.value = 'peer_divergence';
   draftDetector.value = null;
   draftParams.value = {};
