@@ -6,14 +6,14 @@ current_phase: 05
 current_phase_name: Group Detection Core (Proto + Python Detectors
 status: executing
 stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-07-02T12:08:10.241Z"
+last_updated: "2026-07-02T12:12:31.001Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 05 execution started
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -138,6 +138,8 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase ?]: Validate-before-Swap: EntitiesConfigLoader.Load runs Validate() before Swap; bad config cannot crash live pipeline
 - [Phase 05-01]: Dispatch peer-divergence vs joint-multivariate mode server-side purely on the detector string field, no separate mode enum — Matches 05-RESEARCH.md Open Question 2 recommendation and existing ScoreBatchRequest.detector convention
 - [Phase 05-01]: Reused existing Verdict message for per_member and group_verdict fields in GroupScoreResponse — Plan explicitly avoids a parallel score message
+- [Phase 05]: 0.7979 meanAD-fallback constant documented as Iglewicz-Hoaglin statistics convention in code comment (RESEARCH A2 resolved as Claude's discretion)
+- [Phase 05]: Below-floor no-verdict kept representationally distinct from MAD=0 all-normal case per RESEARCH Pitfall 4
 
 ### Blockers
 
@@ -160,10 +162,11 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 03 P03-03 | 8m43s | 2 tasks | 7 files |
 | Phase 04 P04 | 6m | 2 tasks | 2 files |
 | Phase 05 P01 | 6min | 2 tasks | 2 files |
+| Phase 05 P02 | 6m | 2 tasks | 3 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T12:08:10.233Z
+**Last session:** 2026-07-02T12:11:59.625Z
 **Stopped at:** Completed 05-01-PLAN.md
 **Resume file:** None
 
@@ -177,6 +180,6 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 ## Current Position
 
 Phase: 05 (Group Detection Core (Proto + Python Detectors)) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-07-02 — Phase 05 execution started
