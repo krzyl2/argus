@@ -38,6 +38,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
     private readonly IGroupInfluxDataSource _groupInfluxReader;
     private readonly DetectionGateway? _gateway;
     private readonly ILogger<BatchSchedulerWorker> _logger;
+    private readonly IGroupStatusCache? _groupStatusCache;
 
     // Defaults applied when a group's Params dictionary omits these keys.
     private static readonly TimeSpan DefaultStalenessCap = TimeSpan.FromMinutes(30);
@@ -55,7 +56,8 @@ public sealed class BatchSchedulerWorker : BackgroundService
         IStatePublisher statePublisher,
         ILiveEntitiesConfig liveConfig,
         IGroupInfluxDataSource groupInfluxReader,
-        ILogger<BatchSchedulerWorker> logger)
+        ILogger<BatchSchedulerWorker> logger,
+        IGroupStatusCache? groupStatusCache = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _influxReader = influxReader ?? throw new ArgumentNullException(nameof(influxReader));
@@ -64,6 +66,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
         _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
         _groupInfluxReader = groupInfluxReader ?? throw new ArgumentNullException(nameof(groupInfluxReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _groupStatusCache = groupStatusCache;
     }
 
     /// <summary>
@@ -77,8 +80,9 @@ public sealed class BatchSchedulerWorker : BackgroundService
         ILiveEntitiesConfig liveConfig,
         IGroupInfluxDataSource groupInfluxReader,
         DetectionGateway gateway,
-        ILogger<BatchSchedulerWorker> logger)
-        : this(settings, influxReader, detectorClient, statePublisher, liveConfig, groupInfluxReader, logger)
+        ILogger<BatchSchedulerWorker> logger,
+        IGroupStatusCache? groupStatusCache = null)
+        : this(settings, influxReader, detectorClient, statePublisher, liveConfig, groupInfluxReader, logger, groupStatusCache)
     {
         _gateway = gateway;
     }
@@ -236,11 +240,24 @@ public sealed class BatchSchedulerWorker : BackgroundService
             await _statePublisher.PublishGroupScoreAsync(group.GroupId, null, v.Score ?? 0.0, ct);
             await _statePublisher.PublishGroupFlagAsync(group.GroupId, null, v.IsAnomaly, ct);
 
-            // Contributions are carried through the RPC response for future HA surfacing (GRP-09,
-            // scheduled for Phase 8) — logged here at info level only, no MQTT publish this phase.
-            if (response.Contributions.Count > 0)
+            // RESEARCH Pitfall 4: response.Contributions is emitted in request.series member
+            // order, NOT ranked by magnitude — sort descending before using/caching it so
+            // "top contributor" and GET /api/groups/{id}/status are both honestly ranked.
+            var sorted = response.Contributions.OrderByDescending(c => c.Contribution).ToList();
+
+            _groupStatusCache?.Set(new GroupStatusEntry(
+                group.GroupId,
+                v.Score,
+                v.IsAnomaly,
+                group.Detector,
+                DateTimeOffset.UtcNow,
+                sorted.Select(c => new FeatureContributionDto(c.MemberId, c.Contribution)).ToList()));
+
+            // Contributions are carried through the RPC response for HA surfacing (GRP-09) —
+            // logged here at info level only, no MQTT publish this phase.
+            if (sorted.Count > 0)
             {
-                var top = response.Contributions[0];
+                var top = sorted[0];
                 _logger.LogInformation(LogEvents.GroupScored,
                     "Scored group {GroupId} ({Mode}): score={Score} anomaly={Anomaly} topContributor={Member}",
                     group.GroupId, group.Mode, v.Score, v.IsAnomaly, top.MemberId);

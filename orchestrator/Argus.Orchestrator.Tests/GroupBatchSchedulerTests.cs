@@ -146,7 +146,8 @@ public class GroupBatchSchedulerTests
         EntitiesConfig cfg,
         FakeGroupInfluxDataSource groupInflux,
         FakeGroupDetectorClient detector,
-        FakeStatePublisher publisher)
+        FakeStatePublisher publisher,
+        IGroupStatusCache? groupStatusCache = null)
         => new(
             DefaultSettings(),
             new FakeInfluxDbReader(),
@@ -154,7 +155,8 @@ public class GroupBatchSchedulerTests
             publisher,
             MakeLive(cfg),
             groupInflux,
-            NullLogger<BatchSchedulerWorker>.Instance);
+            NullLogger<BatchSchedulerWorker>.Instance,
+            groupStatusCache);
 
     // ─── Tests ───────────────────────────────────────────────────────────────
 
@@ -296,6 +298,126 @@ public class GroupBatchSchedulerTests
         var flagCall = Assert.Single(publisher.GroupFlagCalls);
         Assert.Equal(group.GroupId, flagCall.GroupId);
         Assert.Null(flagCall.MemberId);
+    }
+
+    [Fact]
+    public async Task JointGroup_ContributionsOutOfOrder_CacheStoresSortedDescending()
+    {
+        // RESEARCH Pitfall 4: response.Contributions arrives in member-index order, not ranked.
+        var members = new[] { "sensor.a", "sensor.b", "sensor.c" };
+        var group = MakeJointGroup(members);
+        var utcNow = DateTime.UtcNow;
+        var data = FreshData(members, 3, utcNow);
+
+        var response = new GroupScoreResponse
+        {
+            Ok = true,
+            GroupVerdict = new Verdict { Score = 0.9, IsAnomaly = true },
+        };
+        response.Contributions.Add(new FeatureContribution { MemberId = "sensor.a", Contribution = 0.1 });
+        response.Contributions.Add(new FeatureContribution { MemberId = "sensor.b", Contribution = 0.7 });
+        response.Contributions.Add(new FeatureContribution { MemberId = "sensor.c", Contribution = 0.4 });
+
+        var groupInflux = new FakeGroupInfluxDataSource { Data = data };
+        var detector = new FakeGroupDetectorClient { ScoreGroupResponse = response };
+        var publisher = new FakeStatePublisher();
+        var cfg = new EntitiesConfig { Groups = [group] };
+        var cache = new GroupStatusCache();
+
+        var worker = MakeWorker(cfg, groupInflux, detector, publisher, cache);
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        var entry = cache.Get(group.GroupId);
+        Assert.NotNull(entry);
+        Assert.Equal(group.GroupId, entry!.GroupId);
+        Assert.Equal(0.9, entry.Score);
+        Assert.True(entry.IsAnomaly);
+        Assert.Equal(group.Detector, entry.Detector);
+        Assert.Equal(
+            new[] { "sensor.b", "sensor.c", "sensor.a" },
+            entry.Contributions.Select(c => c.MemberId).ToArray());
+        Assert.Equal(
+            new[] { 0.7, 0.4, 0.1 },
+            entry.Contributions.Select(c => c.Contribution).ToArray());
+    }
+
+    [Fact]
+    public async Task JointGroup_NoContributions_CacheStoresEmptyList()
+    {
+        // pca/iforest never produce attribution — cache must store an empty list, never fabricate.
+        var members = new[] { "sensor.a", "sensor.b", "sensor.c" };
+        var group = MakeJointGroup(members);
+        var utcNow = DateTime.UtcNow;
+        var data = FreshData(members, 3, utcNow);
+
+        var response = new GroupScoreResponse
+        {
+            Ok = true,
+            GroupVerdict = new Verdict { Score = 0.2, IsAnomaly = false },
+        };
+
+        var groupInflux = new FakeGroupInfluxDataSource { Data = data };
+        var detector = new FakeGroupDetectorClient { ScoreGroupResponse = response };
+        var publisher = new FakeStatePublisher();
+        var cfg = new EntitiesConfig { Groups = [group] };
+        var cache = new GroupStatusCache();
+
+        var worker = MakeWorker(cfg, groupInflux, detector, publisher, cache);
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        var entry = cache.Get(group.GroupId);
+        Assert.NotNull(entry);
+        Assert.Empty(entry!.Contributions);
+    }
+
+    [Fact]
+    public async Task PeerGroup_DoesNotPopulateGroupStatusCache()
+    {
+        // GRP-09 attribution is joint-mode-only; the peer branch has no single "last verdict".
+        var members = new[] { "sensor.a", "sensor.b", "sensor.c" };
+        var group = MakePeerGroup(members);
+        var utcNow = DateTime.UtcNow;
+        var data = FreshData(members, 3, utcNow);
+
+        var response = new GroupScoreResponse { Ok = true };
+        foreach (var m in members)
+            response.PerMember.Add(new Verdict { EntityId = m, Score = 0.4, IsAnomaly = false });
+
+        var groupInflux = new FakeGroupInfluxDataSource { Data = data };
+        var detector = new FakeGroupDetectorClient { ScoreGroupResponse = response };
+        var publisher = new FakeStatePublisher();
+        var cfg = new EntitiesConfig { Groups = [group] };
+        var cache = new GroupStatusCache();
+
+        var worker = MakeWorker(cfg, groupInflux, detector, publisher, cache);
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        Assert.Null(cache.Get(group.GroupId));
+    }
+
+    [Fact]
+    public async Task JointGroup_NullGroupStatusCache_DoesNotThrow()
+    {
+        // Optional trailing ctor param defaults to null (D-06-01 precedent) — must not NRE.
+        var members = new[] { "sensor.a", "sensor.b", "sensor.c" };
+        var group = MakeJointGroup(members);
+        var utcNow = DateTime.UtcNow;
+        var data = FreshData(members, 3, utcNow);
+
+        var response = new GroupScoreResponse
+        {
+            Ok = true,
+            GroupVerdict = new Verdict { Score = 0.9, IsAnomaly = true },
+        };
+
+        var groupInflux = new FakeGroupInfluxDataSource { Data = data };
+        var detector = new FakeGroupDetectorClient { ScoreGroupResponse = response };
+        var publisher = new FakeStatePublisher();
+        var cfg = new EntitiesConfig { Groups = [group] };
+
+        var worker = MakeWorker(cfg, groupInflux, detector, publisher, groupStatusCache: null);
+
+        await worker.RunBatchForTestAsync(CancellationToken.None);
     }
 
     [Fact]

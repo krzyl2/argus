@@ -87,6 +87,11 @@ builder.Services.AddSingleton<ArgusHealthSignals>();
 // Written by NetDaemonHaEventSource on every HA connect; read by Wave 2 HTTP handlers.
 builder.Services.AddSingleton<IHaSensorRegistry, HaSensorRegistry>();
 
+// Register group status cache singleton (GRP-09/08-02): last joint-mode verdict + sorted
+// contributions, written by BatchSchedulerWorker's joint branch, read by
+// GET /api/groups/{id}/status.
+builder.Services.AddSingleton<IGroupStatusCache, GroupStatusCache>();
+
 // Register HA event source (NetDaemon.Client WebSocket subscription — STRM-01/STRM-02)
 // ArgusHealthSignals + IHaSensorRegistry are resolved automatically from DI.
 builder.Services.AddSingleton<IHaEventSource, NetDaemonHaEventSource>();
@@ -161,7 +166,8 @@ if (!string.IsNullOrWhiteSpace(connectionSettings.InfluxUrl))
         sp.GetRequiredService<ILiveEntitiesConfig>(),
         sp.GetRequiredService<IGroupInfluxDataSource>(),
         sp.GetRequiredService<DetectionGateway>(),
-        sp.GetRequiredService<ILogger<BatchSchedulerWorker>>()));
+        sp.GetRequiredService<ILogger<BatchSchedulerWorker>>(),
+        sp.GetRequiredService<IGroupStatusCache>()));
 }
 else
 {
