@@ -12,7 +12,7 @@ Anomalies on v1 environmental sensors appear in HA as live binary_sensor + score
 
 **Shipped:** v1.0 streaming + batch detection; v2.0 HA add-on (multi-arch GHCR image, Supervisor MQTT creds, health entity, HA WebSocket via Supervisor proxy — live-verified 2026-06-30); **v3.0 Ingress Configuration UI** (add-on 2.0.9 — sensor discovery + selection, per-entity detector/parameter assignment, hot-reload without restart, MQTT retraction — live bring-up 2026-07-02). Releases are built locally (buildx → GHCR), not CI.
 
-## Next Milestone: v4.0 Group & Multivariate Anomaly Detection + UX
+## Current Milestone: v4.0 Group & Multivariate Anomaly Detection + UX
 
 **Goal:** Analyze groups of sensors, not just single ones, and make algorithm selection user-friendly. This expands Argus from single-sensor environmental monitoring toward a general relational anomaly platform.
 
@@ -20,9 +20,13 @@ Anomalies on v1 environmental sensors appear in HA as live binary_sensor + score
 - **Group detection, both modes:** peer-divergence (which member diverges from its group — e.g. one tire pressure rising unlike the others) AND joint multivariate (values jointly abnormal — e.g. room humidity → leak).
 - **Batch-first** (InfluxDB resampling for time-alignment; InfluxDB confirmed available); streaming groups later.
 - **More algorithms** + user-friendly chooser: readable parameter presets (Sensitivity Low/Med/High) with Advanced toggle; "best for…" descriptions per algorithm.
-- **Search by friendly name** (today only entity_id); modern, readable UI (approach — htmx+CSS vs light SPA — decided in v4.0 planning).
+- **Search by friendly name** (today only entity_id); modern, readable UI via a light SPA.
 
 Model already has `EntityConfig.Groups`/`Covariates` placeholders (parsed-and-ignored today, D-09); proto is univariate and needs a multi-series extension.
+
+**Milestone decisions (override locked v3.0 constraints — intentional):**
+- **UI stack:** light SPA replaces the v3.0 server-rendered htmx approach. Introduces a Node build step; the add-on image grows and the air-gapped / no-CDN / no-Node-build guarantee from v3.0 STACK.md is dropped. Chosen for UI flexibility on the algorithm chooser + friendly-name search.
+- **Group latency:** the Core Value "< 2 s" target is single-sensor only; group detection needs a separate, looser latency target (groups wait for member alignment).
 
 ---
 
@@ -113,6 +117,7 @@ Model already has `EntityConfig.Groups`/`Covariates` placeholders (parsed-and-ig
 | Local buildx→GHCR release (not CI) | Operator builds+pushes locally; version==image tag | ✓ Good — v3.0 releases shipped this way |
 | Orchestrator on aspnet base (v3.0) | Web SDK app needs Microsoft.AspNetCore.App, not plain runtime | ✓ Good — fixed 2.0.7 (both add-on + standalone Dockerfiles) |
 | Empty include patterns select nothing, not all (v3.0) | Checkbox-driven selection; empty=all flooded HA with ~400 entities | ✓ Good — fixed 2.0.9, GlobExpander semantics changed |
+| Light SPA for UI (v4.0) | Server-rendered htmx too limiting for algorithm chooser + friendly-name search UX | ⚠ Overrides v3.0 air-gapped/no-Node-build STACK.md decision; adds build step + image size |
 
 ## Evolution
 
@@ -132,4 +137,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-02 — after v3.0 (Ingress Configuration UI) milestone; v4.0 (Group & Multivariate Detection + UX) planned*
+*Last updated: 2026-07-02 — v4.0 (Group & Multivariate Detection + UX) milestone started; UI = light SPA*

@@ -1,19 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.0
-milestone_name: Ingress Configuration UI
-current_phase: 0
-status: Awaiting next milestone
-stopped_at: Phase 3 executed (gap closure done); live-HA verification deferred (03-UAT.md)
-last_updated: "2026-07-02T10:00:57.009Z"
+milestone: v4.0
+milestone_name: Group & Multivariate Anomaly Detection + UX
+status: planning
+last_updated: "2026-07-02T10:09:55.057Z"
 last_activity: 2026-07-02
-last_activity_desc: Milestone v3.0 completed and archived
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 12
-  completed_plans: 13
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: Argus
@@ -172,7 +169,7 @@ v1.0 + v2.0 archived under `.planning/milestones/` and `.planning/archive/`.
 
 ## Current Position
 
-Phase: Milestone v3.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-02 — Milestone v3.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-07-02 — Milestone v4.0 started
