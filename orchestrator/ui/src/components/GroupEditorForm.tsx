@@ -13,6 +13,8 @@ import {
   saveGroup,
 } from '../state/groups';
 import { MemberPicker, useMemberPickerValidation } from './MemberPicker';
+import { AlgorithmChooser } from './AlgorithmChooser';
+import { AttributionPanel } from './AttributionPanel';
 import { SaveBar } from './SaveBar';
 import { GroupSaveResultBanner } from './GroupSaveResultBanner';
 import { FieldValidationError } from './FieldValidationError';
@@ -116,9 +118,13 @@ export function GroupEditorForm({ groupId, sensors }: GroupEditorFormProps) {
         onToggleMember={toggleMember}
       />
 
-      {/* AlgorithmChooser mount point — filled by Plan 08-04. */}
-      <div id="algorithm-chooser-slot" />
+      <p class="argus-heading">Choose algorithm</p>
+      <div id="algorithm-chooser-slot">
+        <AlgorithmChooser existingDetector={groupId ? draftDetector.value : null} />
+      </div>
       <FieldValidationError message={noAlgorithmError ?? undefined} />
+
+      {groupId && <AttributionPanel groupId={groupId} />}
 
       <SaveBar saving={saving} disabled={saving || hasErrors} onSave={saveGroup} />
 

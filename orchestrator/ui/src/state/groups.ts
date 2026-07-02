@@ -24,6 +24,11 @@ export const draftMembers = signal<string[]>([]);
 export const draftMode = signal<GroupMode>('peer_divergence');
 export const draftDetector = signal<GroupDetectorName | null>(null);
 export const draftParams = signal<Record<string, string>>({});
+// Tracks which preset label (Low/Med/High) is the active baseline for the "customized"
+// indicator (ALGO-01/02) — null until a preset is picked. Params expanded from a preset
+// stay self-contained in draftParams; this signal is UI-only bookkeeping for the
+// "Med, customized" label and is never sent to the server.
+export const draftPresetLabel = signal<string | null>(null);
 
 /** Resets all draft signals to their empty/default state (entering /groups/new). */
 export function resetDraft(): void {
@@ -33,6 +38,7 @@ export function resetDraft(): void {
   draftMode.value = 'peer_divergence';
   draftDetector.value = null;
   draftParams.value = {};
+  draftPresetLabel.value = null;
 }
 
 /** Loads an existing group into the draft signals (entering /groups/:id). */
@@ -43,6 +49,10 @@ export function loadDraftFromGroup(group: GroupConfig): void {
   draftMode.value = group.mode;
   draftDetector.value = group.detector;
   draftParams.value = { ...group.params };
+  // Existing groups' saved params are self-contained (no preset label round-trips through
+  // the backend) — the chooser starts with no preset baseline; AlgorithmChooser derives one
+  // via SensitivityPresetPicker's initial-preset-matching so the label isn't always empty.
+  draftPresetLabel.value = null;
 }
 
 // Monotonic request sequence — guards against out-of-order/racing loadGroups
