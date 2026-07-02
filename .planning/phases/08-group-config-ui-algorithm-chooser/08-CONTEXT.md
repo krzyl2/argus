@@ -32,6 +32,18 @@ Covers requirements: GRP-09, ALGO-01, ALGO-02, ALGO-03, ALGO-04, SRCH-01, SRCH-0
 - Browse (SRCH-02): sensor list is grouped/collapsible by HA area (fallback to domain when no area).
 - Suggestions (SRCH-03): "N sensors share area X — group them?" surfaced as an operator-approved proposal that pre-fills the group editor; NEVER auto-groups (Out-of-Scope: automatic dynamic group discovery).
 
+### Python Detector Param-Wiring (ALGO-01/02 — added after research)
+- **In scope (operator-confirmed):** the Python group detectors currently read NO tunable params (peer_divergence threshold is a hardcoded `_THRESHOLD=3.5`; `GroupMultivariateDetector.__init__` takes only the algorithm name; `servicer` never passes `request.params` for group detectors). Without wiring, Low/Med/High presets would be cosmetic. Phase 8 therefore ADDS Python-side param-wiring so presets genuinely change detection:
+  - `peer_divergence`: accept a `from_params`-style threshold (Low/Med/High → e.g. stricter/looser modified-z cutoff), replacing the hardcoded constant as the default.
+  - `GroupMultivariateDetector`: accept the params that actually move the published continuous score where the detector supports it; be HONEST where a detector is parameter-free (ECOD/COPOD's only knob is `contamination`, which shifts the binary threshold, NOT the continuous decision_function score that MQTT publishes — preset copy must say so).
+  - `servicer.py`: pass `request.params` into the group detector factory (mirror the existing per-entity `PyODDetector.from_params()` precedent).
+- The catalog's preset→param mapping must correspond to params the detector actually honors after this wiring. Preset copy is precise about parameter-free detectors.
+
+### Open-Question Resolutions (research)
+- Area resolution: entity-only `area_id` + domain fallback for v1; device_registry-inherited-area join is a documented fast-follow (many entities have null own area_id, inheriting from their device) — noted, not implemented this phase.
+- `FeatureContribution` ranking/sort happens in the .NET `GroupStatusCache` (server-side), so the SPA's "already ranked" contract holds.
+- HA `config/area_registry/list` / `config/entity_registry/list` field shapes are LOW-confidence (not fully documented) — treat as a live-HA verification item; implement defensively.
+
 ### Attribution Display (GRP-09)
 - Data source: the orchestrator retains each group's last verdict + `FeatureContribution` list in memory (analogous to the existing health signals cache), exposed via `GET /api/groups/{id}/status`.
 - Presentation: a ranked per-feature/per-member contribution (sorted list / bar) instead of a flat boolean. Attribution is only available for detectors that produce it (ECOD/COPOD — from Phase 5); PCA/IForest return null contributions → show a "no per-feature attribution for this detector" message, not a fake ranking.
