@@ -6,6 +6,7 @@ namespace Argus.Orchestrator.Config;
 public class EntitiesConfig
 {
     public List<EntityConfig> Entities { get; set; } = new();
+    public List<GroupConfig> Groups { get; set; } = new();
 }
 
 public class EntityConfig
@@ -13,12 +14,31 @@ public class EntityConfig
     public string EntityId { get; set; } = string.Empty;
     public string FriendlyName { get; set; } = string.Empty;
     public List<DetectorConfig> Detectors { get; set; } = new();
+}
 
-    /// <summary>Parsed but ignored in Phase 1 — see EntitiesConfigLoader for warning.</summary>
-    public object? Covariates { get; set; }
+/// <summary>
+/// Operator-declared group of sensor members for group/multivariate anomaly detection (GRP-01).
+/// Deserialized from the top-level `groups:` key in entities.yaml.
+/// </summary>
+public class GroupConfig
+{
+    public string GroupId { get; set; } = string.Empty;
+    public string FriendlyName { get; set; } = string.Empty;
+    public List<string> Members { get; set; } = new();
 
-    /// <summary>Parsed but ignored in Phase 1 — see EntitiesConfigLoader for warning.</summary>
-    public object? Groups { get; set; }
+    /// <summary>"peer_divergence" | "joint"</summary>
+    public string Mode { get; set; } = string.Empty;
+
+    /// <summary>"peer_divergence" | "ecod" | "copod" | "pca" | "iforest"</summary>
+    public string Detector { get; set; } = string.Empty;
+    public Dictionary<string, string> Params { get; set; } = new();
+
+    /// <summary>
+    /// Populated at config-load time from IHaSensorRegistry — NOT deserialized from YAML.
+    /// Consumed by EntitiesConfigLoader.ValidateGroups for the peer-divergence shared-unit check.
+    /// </summary>
+    [YamlDotNet.Serialization.YamlIgnore]
+    public Dictionary<string, string?> ResolvedUnits { get; set; } = new();
 }
 
 public class DetectorConfig
