@@ -5,15 +5,15 @@ milestone_name: Group & Multivariate Anomaly Detection + UX
 current_phase: 06
 current_phase_name: Batch Group Pipeline
 status: executing
-stopped_at: Completed 06-01-PLAN.md — Group config schema + validation
-last_updated: "2026-07-02T13:40:16.459Z"
+stopped_at: Completed 06-03-PLAN.md — MQTT group entity layer
+last_updated: "2026-07-02T13:48:00.261Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 06 execution started
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 10
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -149,6 +149,8 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase 06-02]: GroupInfluxReader is a new class reusing the existing IInfluxQueryApi seam, keeping InfluxDbReader untouched
 - [Phase 06-02]: Reader surfaces LastSeenUtc + null cells only; staleness_cap exclusion policy deferred to Plan 06-04
 - [Phase 06-02]: Rule 3: stubbed ScoreGroupBatchAsync/FitGroupAsync in BatchSchedulerWorkerTests.FakeBatchDetectorClient to keep test project compiling
+- [Phase ?]: [Phase 06-03]: Peer/joint discovery dispatch via string.Equals(group.Mode, peer_divergence, OrdinalIgnoreCase) — matches existing server-side dispatch convention
+- [Phase ?]: [Phase 06-03]: RetractGroupAsync takes IEnumerable<string?> removedMembers — single null entry retracts joint group pair, non-null entries retract specific peer members
 
 ### Blockers
 
@@ -176,11 +178,12 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 05 PP04 | 8min | 3 tasks | 3 files |
 | Phase 06 P01 | 6min | 3 tasks | 4 files |
 | Phase 06 P02 | 12min | 3 tasks | 6 files |
+| Phase 06 P03 | 3min | 3 tasks | 7 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T13:35:02.108Z
-**Stopped at:** Completed 06-01-PLAN.md — Group config schema + validation
+**Last session:** 2026-07-02T13:48:00.253Z
+**Stopped at:** Completed 06-03-PLAN.md — MQTT group entity layer
 **Resume file:** None
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
@@ -193,6 +196,6 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 ## Current Position
 
 Phase: 06 (Batch Group Pipeline) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-07-02 — Phase 06 execution started

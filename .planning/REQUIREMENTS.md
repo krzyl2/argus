@@ -18,7 +18,7 @@ Requirements for this milestone. Each maps to exactly one roadmap phase.
 - [x] **GRP-05**: Joint-multivariate detection flags a jointly-abnormal value vector across a group, emitting a single group-level binary_sensor + score, using a PyOD multivariate detector (PCA/ECOD/COPOD/IForest)
 - [x] **GRP-06**: Joint-multivariate features are per-feature scaled/normalized before fitting so mixed units (e.g. hPa vs %RH) do not dominate the joint score; the scaler is persisted with the model
 - [x] **GRP-07**: Group models follow the existing Fit/Save/Load lifecycle, keyed by group_id + detector + version, without colliding with per-entity model keys
-- [ ] **GRP-08**: Group anomaly entities are published and retracted via MQTT discovery on group creation/membership change without orphaning stale HA entities
+- [x] **GRP-08**: Group anomaly entities are published and retracted via MQTT discovery on group creation/membership change without orphaning stale HA entities
 - [ ] **GRP-09**: Joint-multivariate detection attributes which member/feature drove the anomaly (per-feature reconstruction error), surfaced as a ranked contribution, not a flat boolean
 
 ### Algorithm Library & Chooser (ALGO)
@@ -81,7 +81,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | GRP-05 | Phase 5 | Complete |
 | GRP-06 | Phase 5 | Complete |
 | GRP-07 | Phase 5 | Complete |
-| GRP-08 | Phase 6 | Pending |
+| GRP-08 | Phase 6 | Complete |
 | GRP-09 | Phase 8 | Pending |
 | ALGO-01 | Phase 8 | Pending |
 | ALGO-02 | Phase 8 | Pending |
