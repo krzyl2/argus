@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
-current_phase: 07
-current_phase_name: SPA Scaffolding
+current_phase: 8
+current_phase_name: Group Config UI + Algorithm Chooser
 status: verifying
 stopped_at: Completed 06-03-PLAN.md — MQTT group entity layer
-last_updated: "2026-07-02T16:19:56.868Z"
+last_updated: "2026-07-02T16:43:38.940Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 07 execution started
+last_activity_desc: Phase 7 complete, transitioned to Phase 8
 progress:
   total_phases: 4
   completed_phases: 0
@@ -209,7 +209,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Current Position
 
-Phase: 07 (SPA Scaffolding) — EXECUTING
-Plan: 3 of 3
+Phase: 8 — Group Config UI + Algorithm Chooser
+Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-07-02 — Phase 07 execution started
+Last activity: 2026-07-02 — Phase 7 complete, transitioned to Phase 8
