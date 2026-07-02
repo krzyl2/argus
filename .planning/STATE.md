@@ -2,14 +2,18 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
-status: planning
-last_updated: "2026-07-02T10:09:55.057Z"
+current_phase: 05
+current_phase_name: Group Detection Core (Proto + Python Detectors
+status: executing
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-07-02T12:08:10.241Z"
 last_activity: 2026-07-02
+last_activity_desc: Phase 05 execution started
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 5
+  completed_plans: 1
   percent: 0
 ---
 
@@ -48,7 +52,7 @@ not formally signed off.
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
-**Current focus:** Phase 5 — Group Detection Core (Proto + Python Detectors)
+**Current focus:** Phase 05 — Group Detection Core (Proto + Python Detectors)
 
 ## Phase Status (v4.0)
 
@@ -132,6 +136,8 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase ?]: BuildDetectorEntry is public static on EntityPickerPage for direct test access and reuse by /api/detectors/new-entry
 - [Phase ?]: DetectorFieldParser extracted as internal static — directly testable, accepts IEnumerable<KVP> for offline tests
 - [Phase ?]: Validate-before-Swap: EntitiesConfigLoader.Load runs Validate() before Swap; bad config cannot crash live pipeline
+- [Phase 05-01]: Dispatch peer-divergence vs joint-multivariate mode server-side purely on the detector string field, no separate mode enum — Matches 05-RESEARCH.md Open Question 2 recommendation and existing ScoreBatchRequest.detector convention
+- [Phase 05-01]: Reused existing Verdict message for per_member and group_verdict fields in GroupScoreResponse — Plan explicitly avoids a parallel score message
 
 ### Blockers
 
@@ -153,11 +159,12 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 03 P03-02 | 9m10s | 3 tasks | 8 files |
 | Phase 03 P03-03 | 8m43s | 2 tasks | 7 files |
 | Phase 04 P04 | 6m | 2 tasks | 2 files |
+| Phase 05 P01 | 6min | 2 tasks | 2 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-01T11:08:33.865Z
-**Stopped at:** Phase 3 executed (gap closure done); live-HA verification deferred (03-UAT.md)
+**Last session:** 2026-07-02T12:08:10.233Z
+**Stopped at:** Completed 05-01-PLAN.md
 **Resume file:** None
 
 - Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
@@ -169,7 +176,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Current Position
 
-Phase: 5 of 8 (Group Detection Core — Proto + Python Detectors)
-Plan: TBD — not yet planned
-Status: Roadmap created, ready to plan Phase 5
-Last activity: 2026-07-02 — v4.0 ROADMAP.md created (Phases 5-8, 20/20 requirements mapped)
+Phase: 05 (Group Detection Core (Proto + Python Detectors)) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-07-02 — Phase 05 execution started

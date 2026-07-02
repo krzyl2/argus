@@ -13,11 +13,11 @@ Requirements for this milestone. Each maps to exactly one roadmap phase.
 
 - [ ] **GRP-01**: Operator can define a named group of sensor members explicitly in config (no auto-discovery), keyed by a stable operator-assigned group_id
 - [ ] **GRP-02**: Group members' history is time-aligned onto a common grid before scoring (InfluxDB `aggregateWindow`+`pivot`, server-side in .NET), with a staleness cap on forward-filled gaps
-- [ ] **GRP-03**: Peer-divergence detection flags WHICH member diverges from the group consensus, emitting a per-member binary_sensor + score (mirrors the v1–v3 per-entity output contract), using a robust (median/MAD) statistic
+- [x] **GRP-03**: Peer-divergence detection flags WHICH member diverges from the group consensus, emitting a per-member binary_sensor + score (mirrors the v1–v3 per-entity output contract), using a robust (median/MAD) statistic
 - [ ] **GRP-04**: Peer-divergence enforces a minimum-member-count floor and degrades safely (does not emit meaningless verdicts) for groups below it
-- [ ] **GRP-05**: Joint-multivariate detection flags a jointly-abnormal value vector across a group, emitting a single group-level binary_sensor + score, using a PyOD multivariate detector (PCA/ECOD/COPOD/IForest)
+- [x] **GRP-05**: Joint-multivariate detection flags a jointly-abnormal value vector across a group, emitting a single group-level binary_sensor + score, using a PyOD multivariate detector (PCA/ECOD/COPOD/IForest)
 - [ ] **GRP-06**: Joint-multivariate features are per-feature scaled/normalized before fitting so mixed units (e.g. hPa vs %RH) do not dominate the joint score; the scaler is persisted with the model
-- [ ] **GRP-07**: Group models follow the existing Fit/Save/Load lifecycle, keyed by group_id + detector + version, without colliding with per-entity model keys
+- [x] **GRP-07**: Group models follow the existing Fit/Save/Load lifecycle, keyed by group_id + detector + version, without colliding with per-entity model keys
 - [ ] **GRP-08**: Group anomaly entities are published and retracted via MQTT discovery on group creation/membership change without orphaning stale HA entities
 - [ ] **GRP-09**: Joint-multivariate detection attributes which member/feature drove the anomaly (per-feature reconstruction error), surfaced as a ranked contribution, not a flat boolean
 
@@ -76,11 +76,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 |-------------|-------|--------|
 | GRP-01 | Phase 6 | Pending |
 | GRP-02 | Phase 6 | Pending |
-| GRP-03 | Phase 5 | Pending |
+| GRP-03 | Phase 5 | Complete |
 | GRP-04 | Phase 5 | Pending |
-| GRP-05 | Phase 5 | Pending |
+| GRP-05 | Phase 5 | Complete |
 | GRP-06 | Phase 5 | Pending |
-| GRP-07 | Phase 5 | Pending |
+| GRP-07 | Phase 5 | Complete |
 | GRP-08 | Phase 6 | Pending |
 | GRP-09 | Phase 8 | Pending |
 | ALGO-01 | Phase 8 | Pending |
@@ -96,6 +96,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | UI-04 | Phase 7 | Pending |
 
 **Coverage:**
+
 - v4.0 requirements: 20 total
 - Mapped to phases: 20 (Phase 5: 5, Phase 6: 3, Phase 7: 4, Phase 8: 8)
 - Unmapped: 0 ✓
