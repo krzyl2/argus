@@ -283,6 +283,17 @@ public sealed class BatchSchedulerWorker : BackgroundService
                     group.GroupId, group.Mode, v.Score, v.IsAnomaly);
             }
         }
+        else if (!string.IsNullOrEmpty(response.Error))
+        {
+            // WR-01: GRP-04 below-floor classic peer_divergence responses carry neither
+            // PerMember entries nor a GroupVerdict (Ok=true, Error set) — without this
+            // branch the cycle produced no log output at all, contradicting the project's
+            // "fail loud" convention and removing the only per-cycle "why isn't my group
+            // scoring" signal an operator had.
+            _logger.LogInformation(LogEvents.GroupScored,
+                "Group {GroupId} ({Mode}) produced no verdict this cycle: {Error}",
+                group.GroupId, group.Mode, response.Error);
+        }
     }
 
     /// <summary>
