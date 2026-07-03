@@ -386,13 +386,15 @@ class TestScoreGroupBatchPeerDivergence:
 
 
 class TestScoreGroupBatchFloor:
-    """GRP-04: below-floor (<3 members) peer group returns no verdict, never a
-    false not-anomalous result."""
+    """GRP-04: below-floor (<3 members, and NOT exactly 2 — GRP-11 routes
+    exactly-2-member peer_divergence to the new pairwise-delta path, see
+    TestScoreGroupBatchPairwiseDelta below) peer group returns no verdict,
+    never a false not-anomalous result."""
 
     def test_below_floor_returns_no_verdict(self, servicer):
         svc, _, _ = servicer
         request = argus_pb2.GroupScoreRequest(
-            group_id="g1", detector="peer_divergence", series=_PEER_SERIES[:2]
+            group_id="g1", detector="peer_divergence", series=_PEER_SERIES[:1]
         )
         ctx = _FakeContext()
         response = svc.ScoreGroupBatch(request, ctx)

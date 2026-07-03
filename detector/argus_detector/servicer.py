@@ -244,6 +244,41 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
             ts = timestamp_pb2.Timestamp()
             ts.GetCurrentTime()
 
+            if detector == "peer_divergence" and len(request.series) == 2:
+                # GRP-11: 2-member pairwise-delta path. Mirrors the joint-mode
+                # has_model -> abort -> get_model -> score_batch -> is_anomaly
+                # idiom below exactly; delta cannot attribute to either member
+                # (same degeneracy as the classic N=2 case), so per_member and
+                # contributions are deliberately left empty — never fabricate.
+                if not self._registry.has_model(group_slug, detector):
+                    context.abort(
+                        grpc.StatusCode.INVALID_ARGUMENT,
+                        f"no fitted model for group {request.group_id!r}/{detector}; call FitGroup first",
+                    )
+                    return None
+
+                from argus_detector.group.pairwise_delta import PairwiseDeltaDetector
+                model = self._registry.get_model(group_slug, detector)
+                delta = PairwiseDeltaDetector.compute_delta(
+                    request.series[0].values, request.series[1].values
+                )
+                scores = model.score_batch(delta)
+                group_score = scores[-1]
+                is_anomaly = model.is_anomaly(group_score)
+                group_verdict = argus_pb2.Verdict(
+                    entity_id=group_slug,
+                    score=wrappers_pb2.DoubleValue(value=group_score),
+                    is_anomaly=is_anomaly,
+                    detector=detector,
+                    timestamp=ts,
+                )
+                return argus_pb2.GroupScoreResponse(
+                    group_verdict=group_verdict,
+                    per_member=[],
+                    contributions=[],
+                    ok=True,
+                )
+
             if detector == "peer_divergence":
                 # Stateless — no registry state needed, construct fresh per call.
                 # request.params threads the threshold knob (ALGO-01/02);
@@ -355,6 +390,24 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
         try:
             group_slug = f"group_{request.group_id}"
             matrix = [list(col) for col in zip(*(s.values for s in request.series))]
+
+            if detector == "peer_divergence" and len(request.series) == 2:
+                # GRP-11: 2-member pairwise-delta path IS stateful (wraps
+                # PyODDetector, which requires fit() before score_batch()) —
+                # unlike the classic N>=3 no-op below. Persist via save_pyod
+                # (not save_group_bundle — single derived feature, no scaler).
+                from argus_detector.group.pairwise_delta import PairwiseDeltaDetector
+                delta = PairwiseDeltaDetector.compute_delta(
+                    request.series[0].values, request.series[1].values
+                )
+                model = PairwiseDeltaDetector.from_params(dict(request.params))
+                model.fit(delta)
+                self._registry.register(group_slug, detector, model)
+                version = self._model_store.next_version(group_slug, detector)
+                self._model_store.save_pyod(
+                    group_slug, detector, version, model, entity_id=group_slug
+                )
+                return argus_pb2.FitGroupResponse(ok=True)
 
             if detector == "peer_divergence":
                 # Stateless — register without training, no persistence (RESEARCH.md
