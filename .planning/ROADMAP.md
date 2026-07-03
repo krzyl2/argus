@@ -73,7 +73,7 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 - [x] **Phase 6: Batch Group Pipeline** - Operators define groups in config and see real, time-aligned group anomalies published to MQTT/HA without orphaning entities (completed 2026-07-02)
 - [x] **Phase 7: SPA Scaffolding** - The configuration UI is rebuilt as a Preact+Vite SPA that loads and functions correctly under real HA Ingress, with all v3.0 capabilities intact (completed 2026-07-02)
 - [x] **Phase 8: Group Config UI + Algorithm Chooser** - Operators author groups, choose algorithms via presets/guided chooser, and see ranked per-feature attribution for joint-multivariate anomalies (completed 2026-07-02)
-- [ ] **Phase 9: 2-Member Groups + Algorithm Guidance Correction** - Operators can create valid 2-member groups in both joint and peer-divergence modes, and the guided chooser's default recommendations match what the algorithms actually do well
+- [x] **Phase 9: 2-Member Groups + Algorithm Guidance Correction** - Operators can create valid 2-member groups in both joint and peer-divergence modes, and the guided chooser's default recommendations match what the algorithms actually do well (completed 2026-07-03)
 
 ## Phase Details
 
@@ -193,7 +193,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 **Goal:** Operators can create valid anomaly-detection groups with exactly 2 members (e.g. two front-tire pressures, two boiler-room temperature sensors), and the guided algorithm chooser recommends detectors that are empirically well-suited to the operator's stated intent instead of a naive default.
 **Requirements**: GRP-10, GRP-11, GRP-12, ALGO-05, ALGO-06
 **Depends on:** Phase 8
-**Plans:** 1/3 plans executed
+**Plans:** 3/3 plans complete
 
 **Context (research done 2026-07-03, see STATE.md decisions log for full detail):**
 
@@ -215,5 +215,5 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 Plans:
 
 - [x] 09-01-PLAN.md — Half A: lower config-validation member floor to 2 (both modes), guided "together"→copod, rewrite DetectorCatalog BestFor copy
-- [ ] 09-02-PLAN.md — Half B (Python): PairwiseDeltaDetector + PyODDetector.is_anomaly() + servicer len==2 branching for 2-member peer_divergence
-- [ ] 09-03-PLAN.md — Half B (C#): count/response-shape-aware BatchSchedulerWorker + UsesPerMemberEntities helper in DiscoveryPublisher/MqttPublisherWorker (Pitfalls 1-5)
+- [x] 09-02-PLAN.md — Half B (Python): PairwiseDeltaDetector + PyODDetector.is_anomaly() + servicer len==2 branching for 2-member peer_divergence
+- [x] 09-03-PLAN.md — Half B (C#): count/response-shape-aware BatchSchedulerWorker + UsesPerMemberEntities helper in DiscoveryPublisher/MqttPublisherWorker (Pitfalls 1-5)

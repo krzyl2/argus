@@ -21,7 +21,7 @@ Requirements for this milestone. Each maps to exactly one roadmap phase.
 - [x] **GRP-08**: Group anomaly entities are published and retracted via MQTT discovery on group creation/membership change without orphaning stale HA entities
 - [x] **GRP-09**: Joint-multivariate detection attributes which member/feature drove the anomaly (per-feature reconstruction error), surfaced as a ranked contribution, not a flat boolean
 - [x] **GRP-10** (Phase 9): Joint-mode groups accept exactly 2 members (config-validation floor lowered 3→2)
-- [ ] **GRP-11** (Phase 9): 2-member `peer_divergence` groups score via a pairwise-delta path (existing single-entity PyOD MAD detector on member_a − member_b), publishing one group-level entity pair
+- [x] **GRP-11** (Phase 9): 2-member `peer_divergence` groups score via a pairwise-delta path (existing single-entity PyOD MAD detector on member_a − member_b), publishing one group-level entity pair
 - [x] **GRP-12** (Phase 9): Client, server, and runtime membership floors are consistent with the mode-dependent membership rules (2 for both modes at the config layer; routed internally by member count)
 
 ### Algorithm Library & Chooser (ALGO)
