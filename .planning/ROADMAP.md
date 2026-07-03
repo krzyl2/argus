@@ -172,3 +172,16 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 | 6. Batch Group Pipeline | v4.0 | 4/4 | Complete    | 2026-07-02 |
 | 7. SPA Scaffolding | v4.0 | 3/3 | Complete    | 2026-07-02 |
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete   | 2026-07-02 |
+
+## Backlog
+
+### Phase 999.1: Algorithm tester/simulator in group config UI (BACKLOG)
+
+**Goal:** [Captured for future planning] During group creation/editing, let the operator simulate/preview how different group detectors (peer_divergence, ecod, copod, pca, iforest) would score the actual selected sensors' historical data, to validate the algorithm choice before saving — rather than relying solely on the guided chooser's static recommendation.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The guided "what are you monitoring?" flow recommends a detector by static rule, but the same investigation found the recommendation can be empirically wrong for some patterns (see Phase 9 — joint-mode 2-member floor + guided-default correction). A tester/simulator would let operators catch this kind of mismatch themselves against their own sensor history instead of discovering it live.
