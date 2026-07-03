@@ -191,9 +191,9 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 ### Phase 9: 2-Member Groups + Algorithm Guidance Correction
 
 **Goal:** Operators can create valid anomaly-detection groups with exactly 2 members (e.g. two front-tire pressures, two boiler-room temperature sensors), and the guided algorithm chooser recommends detectors that are empirically well-suited to the operator's stated intent instead of a naive default.
-**Requirements**: TBD (derive during /gsd-discuss-phase or /gsd-plan-phase — see Context below)
+**Requirements**: GRP-10, GRP-11, GRP-12, ALGO-05, ALGO-06
 **Depends on:** Phase 8
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 **Context (research done 2026-07-03, see STATE.md decisions log for full detail):**
 
@@ -214,4 +214,6 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 9 to break down)
+- [ ] 09-01-PLAN.md — Half A: lower config-validation member floor to 2 (both modes), guided "together"→copod, rewrite DetectorCatalog BestFor copy
+- [ ] 09-02-PLAN.md — Half B (Python): PairwiseDeltaDetector + PyODDetector.is_anomaly() + servicer len==2 branching for 2-member peer_divergence
+- [ ] 09-03-PLAN.md — Half B (C#): count/response-shape-aware BatchSchedulerWorker + UsesPerMemberEntities helper in DiscoveryPublisher/MqttPublisherWorker (Pitfalls 1-5)
