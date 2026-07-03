@@ -236,7 +236,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
             return;
         }
 
-        if (isPeer)
+        if (response.PerMember.Count > 0)
         {
             foreach (var v in response.PerMember)
             {
@@ -248,7 +248,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
                 "Scored group {GroupId} ({Mode}): {Count} member verdicts",
                 group.GroupId, group.Mode, response.PerMember.Count);
         }
-        else
+        else if (response.GroupVerdict != null)
         {
             var v = response.GroupVerdict;
             await _statePublisher.PublishGroupScoreAsync(group.GroupId, null, v.Score ?? 0.0, ct);
@@ -312,7 +312,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
             if (isStale) staleMembers.Add(member);
         }
 
-        if (!isPeer && staleMembers.Count > 0)
+        if ((!isPeer || group.Members.Count < 3) && staleMembers.Count > 0)
         {
             skipWholeGroup = true;
             return new Dictionary<string, List<double>>();
@@ -320,7 +320,13 @@ public sealed class BatchSchedulerWorker : BackgroundService
 
         var activeMembers = group.Members.Where(m => !staleMembers.Contains(m)).ToList();
 
-        if (isPeer && activeMembers.Count < PeerMinFreshMembers)
+        // Gated on group.Members.Count >= 3: for a 2-member peer group, activeMembers.Count can
+        // never reach PeerMinFreshMembers (3) even with zero staleness, so this floor check must
+        // stay scoped to N>=3 peer groups — the same "unreachable for N==2" contract
+        // PeerDivergenceDetector's own internal floor has (Rule 1 fix vs. plan text: the first
+        // guard above only fires when staleMembers.Count > 0, so a fully-fresh 2-member group
+        // must not also be caught here).
+        if (isPeer && group.Members.Count >= 3 && activeMembers.Count < PeerMinFreshMembers)
         {
             skipWholeGroup = true;
             return new Dictionary<string, List<double>>();
@@ -496,12 +502,10 @@ public sealed class BatchSchedulerWorker : BackgroundService
         }
 
         // CFG-04: read live config per-cycle so nightly fit uses the current group set.
-        // peer_divergence is stateless (Phase 5: PeerDivergenceDetector has no fit()) — never Fit it.
+        // RunGroupFitAsync is called for every group; Python's FitGroup decides fit semantics
+        // by member count (no-op for N>=3 peer_divergence, actual fit for 2-member pairwise-delta).
         foreach (var group in _liveConfig.Get().Groups)
         {
-            if (string.Equals(group.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase))
-                continue;
-
             try
             {
                 await RunGroupFitAsync(group, ct);
