@@ -19,4 +19,9 @@ else
     bashio::log.info "Remote mode: skipping local detector health poll."
 fi
 
-exec dotnet /opt/argus/orchestrator/Argus.Orchestrator.dll
+# CWD must be the publish dir so ASP.NET's ContentRootPath (Directory.GetCurrentDirectory())
+# resolves WebRootPath to ./wwwroot — otherwise UseStaticFiles/MapFallbackToFile 404 on
+# everything (only surfaces via real Supervisor Ingress; deploy/Dockerfile.orchestrator's
+# WORKDIR /app hid this in the docker-compose dev smoke test).
+cd /opt/argus/orchestrator || bashio::exit.nok "orchestrator publish dir missing"
+exec dotnet Argus.Orchestrator.dll
