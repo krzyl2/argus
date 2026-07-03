@@ -421,8 +421,11 @@ public class GroupBatchSchedulerTests
     }
 
     [Fact]
-    public async Task RunNightlyFit_JointGroupFitCalled_PeerGroupNeverFit()
+    public async Task RunNightlyFit_JointAndPeerGroups_BothFitCalled()
     {
+        // Pitfall 5: peer_divergence is no longer unconditionally skipped in nightly fit —
+        // RunGroupFitAsync is called for every group; Python's FitGroup decides fit semantics
+        // by member count (no-op for N>=3 peer, actual fit for 2-member pairwise-delta).
         var peerMembers = new[] { "sensor.a", "sensor.b", "sensor.c" };
         var jointMembers = new[] { "sensor.d", "sensor.e", "sensor.f" };
         var peerGroup = MakePeerGroup(peerMembers);
@@ -442,7 +445,70 @@ public class GroupBatchSchedulerTests
         var worker = MakeWorker(cfg, groupInflux, detector, publisher);
         await worker.RunNightlyFitForTestAsync(CancellationToken.None);
 
-        Assert.Equal(1, detector.FitGroupCallCount);
+        Assert.Equal(2, detector.FitGroupCallCount);
+    }
+
+    [Fact]
+    public async Task TwoMemberPeerGroup_OneMemberStale_ScoreGroupNotCalled()
+    {
+        // Pitfall 1: a 2-member peer_divergence group cannot drop-stale-then-require-floor
+        // (the floor of 3 is unreachable at N=2) — it must use the skip-whole-group-on-any-
+        // staleness policy joint mode already uses, since a pairwise delta needs both members.
+        var members = new[] { "sensor.a", "sensor.b" };
+        var group = MakePeerGroup(members);
+        var utcNow = DateTime.UtcNow;
+
+        var data = FreshData(members, 3, utcNow);
+        var lastSeen = new Dictionary<string, DateTime>(data.LastSeenUtc) { ["sensor.b"] = utcNow.AddHours(-1) };
+        var staleData = data with { LastSeenUtc = lastSeen };
+
+        var groupInflux = new FakeGroupInfluxDataSource { Data = staleData };
+        var detector = new FakeGroupDetectorClient();
+        var publisher = new FakeStatePublisher();
+        var cfg = new EntitiesConfig { Groups = [group] };
+
+        var worker = MakeWorker(cfg, groupInflux, detector, publisher);
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        Assert.Equal(0, detector.ScoreGroupCallCount);
+        Assert.Empty(publisher.GroupScoreCalls);
+        Assert.Empty(publisher.GroupFlagCalls);
+    }
+
+    [Fact]
+    public async Task TwoMemberPeerGroup_GroupVerdictResponse_PublishesOneScoreAndFlagWithNullMemberId()
+    {
+        // Pitfall 2: a 2-member peer_divergence group's response has GroupVerdict set and
+        // PerMember empty (a pairwise delta has one relationship verdict, no per-member
+        // attribution — Rule 9) — publish routing must key on response shape, not group.Mode.
+        var members = new[] { "sensor.a", "sensor.b" };
+        var group = MakePeerGroup(members);
+        var utcNow = DateTime.UtcNow;
+        var data = FreshData(members, 3, utcNow);
+
+        var response = new GroupScoreResponse
+        {
+            Ok = true,
+            GroupVerdict = new Verdict { Score = 0.8, IsAnomaly = true },
+        };
+
+        var groupInflux = new FakeGroupInfluxDataSource { Data = data };
+        var detector = new FakeGroupDetectorClient { ScoreGroupResponse = response };
+        var publisher = new FakeStatePublisher();
+        var cfg = new EntitiesConfig { Groups = [group] };
+
+        var worker = MakeWorker(cfg, groupInflux, detector, publisher);
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        Assert.Equal(1, detector.ScoreGroupCallCount);
+
+        var scoreCall = Assert.Single(publisher.GroupScoreCalls);
+        Assert.Equal(group.GroupId, scoreCall.GroupId);
+        Assert.Null(scoreCall.MemberId);
+
+        var flagCall = Assert.Single(publisher.GroupFlagCalls);
+        Assert.Equal(group.GroupId, flagCall.GroupId);
+        Assert.Null(flagCall.MemberId);
     }
 
     [Fact]

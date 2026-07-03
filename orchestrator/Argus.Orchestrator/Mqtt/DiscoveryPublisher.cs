@@ -227,6 +227,14 @@ public class DiscoveryPublisher
         => string.Equals(group.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Count-aware entity-shape predicate (Pitfall 3): a 2-member peer_divergence group's pairwise-
+    /// delta score is a single derived value with no per-member attribution, so it must get ONE
+    /// group-level entity pair (memberId=null), not two per-member entities. internal so
+    /// MqttPublisherWorker can reuse it as the single source of truth (Pitfall 4).
+    /// </summary>
+    internal static bool UsesPerMemberEntities(GroupConfig group) => IsPeerDivergence(group) && group.Members.Count >= 3;
+
+    /// <summary>
     /// Builds the group binary_sensor discovery JSON payload (GRP-08).
     /// peer_divergence (memberId set): per-member flag. joint (memberId null): single group-level flag.
     /// All group entities share ONE HA device (identifiers = argus_group_{groupSlug}) — never per-member.
@@ -235,7 +243,7 @@ public class DiscoveryPublisher
     {
         var groupSlug = UniqueId.Slug(group.GroupId);
         var uniqueId = UniqueId.GroupFlagId(group.GroupId, memberId);
-        var isPeer = IsPeerDivergence(group);
+        var isPeer = UsesPerMemberEntities(group);
         var name = isPeer
             ? $"{group.FriendlyName} {memberId} anomalia"
             : $"{group.FriendlyName} anomalia";
@@ -276,7 +284,7 @@ public class DiscoveryPublisher
     {
         var groupSlug = UniqueId.Slug(group.GroupId);
         var uniqueId = UniqueId.GroupScoreId(group.GroupId, memberId);
-        var isPeer = IsPeerDivergence(group);
+        var isPeer = UsesPerMemberEntities(group);
         var name = isPeer
             ? $"{group.FriendlyName} {memberId} anomalia score"
             : $"{group.FriendlyName} anomalia score";
@@ -328,7 +336,7 @@ public class DiscoveryPublisher
         GroupConfig group,
         CancellationToken ct)
     {
-        var memberIds = IsPeerDivergence(group)
+        var memberIds = UsesPerMemberEntities(group)
             ? group.Members.Cast<string?>()
             : [null];
 
