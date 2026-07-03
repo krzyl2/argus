@@ -301,4 +301,124 @@ public class MqttRetractionTests
         // Assert
         Assert.Empty(calls);
     }
+
+    // ─── ComputeRetractionEntities: shape-transition decision logic (CR-02) ──
+    // Pure logic — no MQTT I/O — covering the 2/3+-member boundary crossing
+    // that the original member-list-only diff could not express.
+
+    [Fact]
+    public void ComputeRetractionEntities_PeerGroupShrinks3To2_RetractsAllOldMembers()
+    {
+        // Arrange — peer group crosses the 3+ -> 2 boundary (shape: per-member -> group-level)
+        var oldGroup = MakePeerGroup("pipes", "sensor.a", "sensor.b", "sensor.c");
+        var newGroup = MakePeerGroup("pipes", "sensor.a", "sensor.b");
+
+        // Act
+        var result = DiscoveryPublisher.ComputeRetractionEntities(oldGroup, newGroup);
+
+        // Assert — entire OLD (per-member) shape retracted, not just the dropped member
+        Assert.NotNull(result);
+        Assert.Equal(["sensor.a", "sensor.b", "sensor.c"], result!.ToList());
+    }
+
+    [Fact]
+    public void ComputeRetractionEntities_PeerGroupGrows2To3_RetractsOldGroupLevelEntity()
+    {
+        // Arrange — peer group crosses the 2 -> 3+ boundary (shape: group-level -> per-member)
+        var oldGroup = MakePeerGroup("pipes", "sensor.a", "sensor.b");
+        var newGroup = MakePeerGroup("pipes", "sensor.a", "sensor.b", "sensor.c");
+
+        // Act
+        var result = DiscoveryPublisher.ComputeRetractionEntities(oldGroup, newGroup);
+
+        // Assert — the single OLD group-level entity (memberId=null) is retracted
+        Assert.NotNull(result);
+        Assert.Equal([null], result!.ToList());
+    }
+
+    [Fact]
+    public void ComputeRetractionEntities_PeerGroupSameShape_RetractsOnlyRemovedMember()
+    {
+        // Arrange — 4 -> 3 members, shape unchanged (still per-member, both >= 3)
+        var oldGroup = MakePeerGroup("garden_tires", "sensor.tire_fl", "sensor.tire_fr", "sensor.tire_rl", "sensor.tire_rr");
+        var newGroup = MakePeerGroup("garden_tires", "sensor.tire_fl", "sensor.tire_fr", "sensor.tire_rl");
+
+        // Act
+        var result = DiscoveryPublisher.ComputeRetractionEntities(oldGroup, newGroup);
+
+        // Assert — only the dropped member, not the whole shape
+        Assert.NotNull(result);
+        Assert.Equal(["sensor.tire_rr"], result!.ToList());
+    }
+
+    [Fact]
+    public void ComputeRetractionEntities_PeerGroupSameShapeNoChange_ReturnsNull()
+    {
+        // Arrange — same 3+ members, nothing removed
+        var oldGroup = MakePeerGroup("pipes", "sensor.a", "sensor.b", "sensor.c");
+        var newGroup = MakePeerGroup("pipes", "sensor.a", "sensor.b", "sensor.c");
+
+        // Act
+        var result = DiscoveryPublisher.ComputeRetractionEntities(oldGroup, newGroup);
+
+        // Assert — nothing to retract
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ComputeRetractionEntities_JointGroupMemberChange_ReturnsNull()
+    {
+        // Arrange — joint groups have no per-member entities to diff
+        var oldGroup = MakeJointGroup("climate", "sensor.temp", "sensor.humidity");
+        var newGroup = MakeJointGroup("climate", "sensor.temp", "sensor.humidity", "sensor.pressure");
+
+        // Act
+        var result = DiscoveryPublisher.ComputeRetractionEntities(oldGroup, newGroup);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ComputeRetractionEntities_WholeGroupRemoved_PeerShape_RetractsAllMembers()
+    {
+        // Arrange — group_id removed entirely (newGroup null), peer shape with 3+ members
+        var oldGroup = MakePeerGroup("pipes", "sensor.a", "sensor.b", "sensor.c");
+
+        // Act
+        var result = DiscoveryPublisher.ComputeRetractionEntities(oldGroup, null);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(["sensor.a", "sensor.b", "sensor.c"], result!.ToList());
+    }
+
+    [Fact]
+    public void ComputeRetractionEntities_WholeGroupRemoved_JointShape_RetractsGroupLevelEntity()
+    {
+        // Arrange — group_id removed entirely (newGroup null), joint (group-level) shape
+        var oldGroup = MakeJointGroup("climate", "sensor.temp", "sensor.humidity");
+
+        // Act
+        var result = DiscoveryPublisher.ComputeRetractionEntities(oldGroup, null);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal([null], result!.ToList());
+    }
+
+    [Fact]
+    public void ComputeRetractionEntities_WholeGroupRemoved_2MemberPeerShape_RetractsGroupLevelEntity()
+    {
+        // Arrange — 2-member peer_divergence group removed entirely: uses group-level
+        // shape (UsesPerMemberEntities is false for exactly 2 members), same as joint.
+        var oldGroup = MakePeerGroup("pipes", "sensor.a", "sensor.b");
+
+        // Act
+        var result = DiscoveryPublisher.ComputeRetractionEntities(oldGroup, null);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal([null], result!.ToList());
+    }
 }

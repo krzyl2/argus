@@ -90,41 +90,14 @@ public sealed class MqttPublisherWorker : BackgroundService
 
                         foreach (var oldGroup in _lastGroups)
                         {
-                            if (newGroupsById.TryGetValue(oldGroup.GroupId, out var newGroup))
-                            {
-                                var oldIsPeer = DiscoveryPublisher.UsesPerMemberEntities(oldGroup);
-                                var newIsPeer = DiscoveryPublisher.UsesPerMemberEntities(newGroup);
-
-                                if (oldIsPeer != newIsPeer)
-                                {
-                                    // CR-02: entity shape changed (a peer_divergence group
-                                    // crossed the 2/3+-member boundary) — a member-list diff
-                                    // cannot express this. Retract the OLD entity set entirely;
-                                    // the new shape's entities are (re)published fresh below.
-                                    IEnumerable<string?> oldEntities = oldIsPeer
-                                        ? oldGroup.Members.Cast<string?>()
-                                        : [null];
-                                    await DiscoveryPublisher.RetractGroupAsync(_mqtt, oldGroup, oldEntities, _stoppingToken);
-                                }
-                                else if (oldIsPeer)
-                                {
-                                    var removed = oldGroup.Members
-                                        .Except(newGroup.Members, StringComparer.OrdinalIgnoreCase)
-                                        .ToList();
-                                    if (removed.Count > 0)
-                                        await DiscoveryPublisher.RetractGroupAsync(_mqtt, oldGroup, removed, _stoppingToken);
-                                }
-                                // else: joint groups (and same-shape peer groups) — no per-member diff needed.
-                            }
-                            else
-                            {
-                                // Whole group_id removed — retract all of it.
-                                var isPeer = DiscoveryPublisher.UsesPerMemberEntities(oldGroup);
-                                IEnumerable<string?> removedAll = isPeer
-                                    ? oldGroup.Members.Cast<string?>()
-                                    : [null];
-                                await DiscoveryPublisher.RetractGroupAsync(_mqtt, oldGroup, removedAll, _stoppingToken);
-                            }
+                            // CR-02: decision logic (what to retract) lives in the pure,
+                            // unit-testable DiscoveryPublisher.ComputeRetractionEntities —
+                            // handles both the member-list diff and the shape-transition
+                            // (2/3+-member boundary) case; this loop only performs the I/O.
+                            newGroupsById.TryGetValue(oldGroup.GroupId, out var newGroup);
+                            var toRetract = DiscoveryPublisher.ComputeRetractionEntities(oldGroup, newGroup);
+                            if (toRetract is not null)
+                                await DiscoveryPublisher.RetractGroupAsync(_mqtt, oldGroup, toRetract, _stoppingToken);
                         }
 
                         var entities = _liveConfig.Get().Entities;

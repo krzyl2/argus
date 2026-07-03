@@ -235,6 +235,43 @@ public class DiscoveryPublisher
     internal static bool UsesPerMemberEntities(GroupConfig group) => IsPeerDivergence(group) && group.Members.Count >= 3;
 
     /// <summary>
+    /// Computes which member ids (or a single null entry for the whole group) must be retracted
+    /// from oldGroup's discovery entities on a ConfigChanged transition to newGroup (CR-02).
+    /// newGroup null means the group_id was removed entirely. Pure decision logic — no MQTT I/O —
+    /// so the shape-transition diff is unit-testable without a live broker. Returns null when
+    /// nothing needs retracting (same shape, no members removed).
+    /// </summary>
+    internal static IEnumerable<string?>? ComputeRetractionEntities(GroupConfig oldGroup, GroupConfig? newGroup)
+    {
+        if (newGroup is null)
+        {
+            return UsesPerMemberEntities(oldGroup) ? oldGroup.Members.Cast<string?>() : [null];
+        }
+
+        var oldIsPeer = UsesPerMemberEntities(oldGroup);
+        var newIsPeer = UsesPerMemberEntities(newGroup);
+
+        if (oldIsPeer != newIsPeer)
+        {
+            // Entity shape changed (e.g. a peer_divergence group crossed the 2/3-member
+            // boundary) — retract the OLD entity set entirely; the new shape's entities are
+            // (re)published fresh by the caller.
+            return oldIsPeer ? oldGroup.Members.Cast<string?>() : [null];
+        }
+
+        if (oldIsPeer)
+        {
+            var removed = oldGroup.Members
+                .Except(newGroup.Members, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return removed.Count > 0 ? removed.Cast<string?>() : null;
+        }
+
+        // Joint groups (and same-shape peer groups) — no per-member diff needed.
+        return null;
+    }
+
+    /// <summary>
     /// Builds the group binary_sensor discovery JSON payload (GRP-08).
     /// peer_divergence (memberId set): per-member flag. joint (memberId null): single group-level flag.
     /// All group entities share ONE HA device (identifiers = argus_group_{groupSlug}) — never per-member.

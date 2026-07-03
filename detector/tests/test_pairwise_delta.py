@@ -188,6 +188,51 @@ class TestServicerPairwiseDeltaRouting:
         assert "call FitGroup first" in ctx.abort_details
         assert result is None
 
+    def test_score_with_stale_classic_registration_self_heals_instead_of_crashing(self, servicer):
+        """CR-01 regression: a group that shrinks from 3+ members to exactly 2
+        must not crash when scored before the next 2-member FitGroup runs.
+
+        Repro: a classic N>=3 peer_divergence FitGroup registers a stateless
+        PeerDivergenceDetector under (group_slug, "peer_divergence") — the SAME
+        key the 2-member PairwiseDeltaDetector path uses. If the operator then
+        shrinks the group to 2 members (a supported, tested config transition)
+        and a batch tick scores before the next nightly FitGroup overwrites the
+        key, ScoreGroupBatch must abort cleanly with "call FitGroup first"
+        instead of raising an unhandled ValueError from
+        PeerDivergenceDetector.score_batch attempting `x.shape` unpack on a 1-D
+        delta array.
+        """
+        svc, registry, _ = servicer
+        three_member_series = [
+            _make_series("tire_fl", _MEMBER_A),
+            _make_series("tire_fr", _MEMBER_B),
+            _make_series("tire_rl", _MEMBER_B),
+        ]
+        fit_request = argus_pb2.FitGroupRequest(
+            group_id="shrinking", detector="peer_divergence", series=three_member_series
+        )
+        fit_ctx = _FakeContext()
+        fit_response = svc.FitGroup(fit_request, fit_ctx)
+        assert fit_response.ok is True
+        # Classic path registers a stateless PeerDivergenceDetector at the same
+        # key the 2-member path will look up next.
+        from argus_detector.group.peer_divergence import PeerDivergenceDetector
+        assert isinstance(registry.get_model("group_shrinking", "peer_divergence"), PeerDivergenceDetector)
+
+        # Group is shrunk to 2 members (same group_id); a batch tick scores
+        # before any 2-member FitGroup has run for this group.
+        score_request = argus_pb2.GroupScoreRequest(
+            group_id="shrinking", detector="peer_divergence", series=_TWO_MEMBER_SERIES
+        )
+        score_ctx = _FakeContext()
+        result = svc.ScoreGroupBatch(score_request, score_ctx)
+
+        import grpc
+        assert score_ctx.aborted
+        assert score_ctx.abort_code == grpc.StatusCode.INVALID_ARGUMENT
+        assert "call FitGroup first" in score_ctx.abort_details
+        assert result is None
+
     def test_fit_then_score_returns_group_verdict_with_empty_per_member(self, servicer):
         svc, registry, _ = servicer
         fit_request = argus_pb2.FitGroupRequest(
