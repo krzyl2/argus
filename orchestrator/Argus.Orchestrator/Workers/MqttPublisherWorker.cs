@@ -92,14 +92,29 @@ public sealed class MqttPublisherWorker : BackgroundService
                         {
                             if (newGroupsById.TryGetValue(oldGroup.GroupId, out var newGroup))
                             {
-                                var isPeer = DiscoveryPublisher.UsesPerMemberEntities(oldGroup);
-                                if (!isPeer) continue; // joint groups (and 2-member peer groups) have no per-member diff
+                                var oldIsPeer = DiscoveryPublisher.UsesPerMemberEntities(oldGroup);
+                                var newIsPeer = DiscoveryPublisher.UsesPerMemberEntities(newGroup);
 
-                                var removed = oldGroup.Members
-                                    .Except(newGroup.Members, StringComparer.OrdinalIgnoreCase)
-                                    .ToList();
-                                if (removed.Count > 0)
-                                    await DiscoveryPublisher.RetractGroupAsync(_mqtt, oldGroup, removed, _stoppingToken);
+                                if (oldIsPeer != newIsPeer)
+                                {
+                                    // CR-02: entity shape changed (a peer_divergence group
+                                    // crossed the 2/3+-member boundary) — a member-list diff
+                                    // cannot express this. Retract the OLD entity set entirely;
+                                    // the new shape's entities are (re)published fresh below.
+                                    IEnumerable<string?> oldEntities = oldIsPeer
+                                        ? oldGroup.Members.Cast<string?>()
+                                        : [null];
+                                    await DiscoveryPublisher.RetractGroupAsync(_mqtt, oldGroup, oldEntities, _stoppingToken);
+                                }
+                                else if (oldIsPeer)
+                                {
+                                    var removed = oldGroup.Members
+                                        .Except(newGroup.Members, StringComparer.OrdinalIgnoreCase)
+                                        .ToList();
+                                    if (removed.Count > 0)
+                                        await DiscoveryPublisher.RetractGroupAsync(_mqtt, oldGroup, removed, _stoppingToken);
+                                }
+                                // else: joint groups (and same-shape peer groups) — no per-member diff needed.
                             }
                             else
                             {
