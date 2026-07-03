@@ -109,3 +109,11 @@ class PyODDetector:
     def is_fitted(self) -> bool:
         """True after fit() has been called at least once."""
         return self._fitted
+
+    def is_anomaly(self, score: float) -> bool:
+        """True if score exceeds the underlying MAD detector's fitted threshold_.
+
+        WR-02: public accessor so callers (servicer.py) do not need to reach
+        into the private `_model` attribute to apply the threshold decision.
+        """
+        return bool(score > self._model.threshold_)
