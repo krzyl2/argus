@@ -18,6 +18,10 @@ from __future__ import annotations
 import pytest
 
 from argus_detector.group.pairwise_delta import PairwiseDeltaDetector
+from argus_detector.model_store import ModelStore
+from argus_detector.proto import argus_pb2
+from argus_detector.registry import DetectorRegistry
+from argus_detector.servicer import DetectorServicer
 
 
 class TestComputeDelta:
@@ -123,3 +127,102 @@ class TestFromParams:
         det.fit(delta)
         scores = det.score_batch(delta)
         assert len(scores) == 5
+
+
+# ---------------------------------------------------------------------------
+# Servicer-level 2-member peer_divergence routing (GRP-11)
+# ---------------------------------------------------------------------------
+
+class _FakeContext:
+    """Minimal grpc.ServicerContext stub for unit tests (mirrors test_servicer.py)."""
+
+    def __init__(self):
+        self.aborted = False
+        self.abort_code = None
+        self.abort_details = None
+
+    def abort(self, code, details):
+        self.aborted = True
+        self.abort_code = code
+        self.abort_details = details
+
+    def is_active(self):
+        return not self.aborted
+
+
+def _make_series(member_id: str, values: list[float]) -> "argus_pb2.Series":
+    return argus_pb2.Series(member_id=member_id, values=values)
+
+
+# Two members tracking closely, then a step-drift at the last timestamp that
+# breaks the pair's relationship (e.g. one tire pressure sensor drifting
+# relative to the other).
+_MEMBER_A = [10.0, 10.1, 9.9, 10.05, 9.95, 10.02, 9.98, 10.1, 9.9, 25.0]
+_MEMBER_B = [10.0, 10.05, 9.95, 10.0, 10.0, 9.98, 10.02, 10.05, 9.95, 10.0]
+_TWO_MEMBER_SERIES = [
+    _make_series("tire_fl", _MEMBER_A),
+    _make_series("tire_fr", _MEMBER_B),
+]
+
+
+class TestServicerPairwiseDeltaRouting:
+    """2-member peer_divergence routes to PairwiseDeltaDetector, not the
+    classic median/MAD PeerDivergenceDetector (GRP-11)."""
+
+    @pytest.fixture()
+    def servicer(self, tmp_path):
+        registry = DetectorRegistry()
+        store = ModelStore(root=tmp_path)
+        return DetectorServicer(registry, store), registry, store
+
+    def test_score_before_fit_aborts_call_fit_group_first(self, servicer):
+        svc, _, _ = servicer
+        request = argus_pb2.GroupScoreRequest(
+            group_id="tires", detector="peer_divergence", series=_TWO_MEMBER_SERIES
+        )
+        ctx = _FakeContext()
+        result = svc.ScoreGroupBatch(request, ctx)
+        assert ctx.aborted
+        import grpc
+        assert ctx.abort_code == grpc.StatusCode.INVALID_ARGUMENT
+        assert "call FitGroup first" in ctx.abort_details
+        assert result is None
+
+    def test_fit_then_score_returns_group_verdict_with_empty_per_member(self, servicer):
+        svc, registry, _ = servicer
+        fit_request = argus_pb2.FitGroupRequest(
+            group_id="tires", detector="peer_divergence", series=_TWO_MEMBER_SERIES
+        )
+        fit_ctx = _FakeContext()
+        fit_response = svc.FitGroup(fit_request, fit_ctx)
+        assert fit_response.ok is True
+        assert registry.has_model("group_tires", "peer_divergence")
+
+        score_request = argus_pb2.GroupScoreRequest(
+            group_id="tires", detector="peer_divergence", series=_TWO_MEMBER_SERIES
+        )
+        score_ctx = _FakeContext()
+        response = svc.ScoreGroupBatch(score_request, score_ctx)
+        assert not score_ctx.aborted
+        assert response.ok is True
+        assert response.HasField("group_verdict")
+        assert response.group_verdict.entity_id == "group_tires"
+        assert response.group_verdict.detector == "peer_divergence"
+        assert response.group_verdict.is_anomaly is True  # injected step-drift
+        assert len(response.per_member) == 0
+        assert len(response.contributions) == 0
+
+    def test_fit_group_persists_via_save_pyod(self, servicer):
+        """FitGroup for a 2-member peer_divergence group persists a model.joblib
+        under the group_slug/peer_divergence key (via save_pyod, not
+        save_group_bundle — no scaler for a single derived feature)."""
+        svc, _, store = servicer
+        fit_request = argus_pb2.FitGroupRequest(
+            group_id="tires2", detector="peer_divergence", series=_TWO_MEMBER_SERIES
+        )
+        fit_ctx = _FakeContext()
+        fit_response = svc.FitGroup(fit_request, fit_ctx)
+        assert fit_response.ok is True
+
+        loaded = store.load_pyod("group_tires2", "peer_divergence")
+        assert isinstance(loaded, PairwiseDeltaDetector)
