@@ -20,9 +20,9 @@ Requirements for this milestone. Each maps to exactly one roadmap phase.
 - [x] **GRP-07**: Group models follow the existing Fit/Save/Load lifecycle, keyed by group_id + detector + version, without colliding with per-entity model keys
 - [x] **GRP-08**: Group anomaly entities are published and retracted via MQTT discovery on group creation/membership change without orphaning stale HA entities
 - [x] **GRP-09**: Joint-multivariate detection attributes which member/feature drove the anomaly (per-feature reconstruction error), surfaced as a ranked contribution, not a flat boolean
-- [ ] **GRP-10** (Phase 9): Joint-mode groups accept exactly 2 members (config-validation floor lowered 3→2)
+- [x] **GRP-10** (Phase 9): Joint-mode groups accept exactly 2 members (config-validation floor lowered 3→2)
 - [ ] **GRP-11** (Phase 9): 2-member `peer_divergence` groups score via a pairwise-delta path (existing single-entity PyOD MAD detector on member_a − member_b), publishing one group-level entity pair
-- [ ] **GRP-12** (Phase 9): Client, server, and runtime membership floors are consistent with the mode-dependent membership rules (2 for both modes at the config layer; routed internally by member count)
+- [x] **GRP-12** (Phase 9): Client, server, and runtime membership floors are consistent with the mode-dependent membership rules (2 for both modes at the config layer; routed internally by member count)
 
 ### Algorithm Library & Chooser (ALGO)
 
@@ -30,8 +30,8 @@ Requirements for this milestone. Each maps to exactly one roadmap phase.
 - [x] **ALGO-02**: An Advanced toggle reveals and lets the operator override the raw underlying parameters behind a preset
 - [x] **ALGO-03**: Each selectable algorithm shows a "best for…" description explaining its intended use case in the chooser
 - [x] **ALGO-04**: A guided "what are you monitoring?" chooser pre-selects a sensible algorithm AND visibly shows/explains its pick, always allowing one-click override
-- [ ] **ALGO-05** (Phase 9): The guided chooser's "together" answer recommends COPOD instead of ECOD (empirically fewer false positives on correlated pairs)
-- [ ] **ALGO-06** (Phase 9): `DetectorCatalog.cs` `BestFor` copy for all 5 entries accurately reflects correlation-handling and per-member attribution capability, including a 2-member `peer_divergence` no-attribution caveat
+- [x] **ALGO-05** (Phase 9): The guided chooser's "together" answer recommends COPOD instead of ECOD (empirically fewer false positives on correlated pairs)
+- [x] **ALGO-06** (Phase 9): `DetectorCatalog.cs` `BestFor` copy for all 5 entries accurately reflects correlation-handling and per-member attribution capability, including a 2-member `peer_divergence` no-attribution caveat
 
 ### Sensor Search & Browse (SRCH)
 

@@ -6,14 +6,14 @@ current_phase: 9
 current_phase_name: 2-Member Groups + Algorithm Guidance Correction
 status: executing
 stopped_at: "Phase 9 planning complete: 3 plans (09-01 mechanical, 09-02 Python pairwise-delta, 09-03 C# wiring), all Wave 1 (parallel), plan-checker VERIFICATION PASSED. Ready for /gsd-execute-phase 9."
-last_updated: "2026-07-03T09:29:15.152Z"
+last_updated: "2026-07-03T09:38:07.234Z"
 last_activity: 2026-07-03
 last_activity_desc: Phase 9 execution started
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 22
-  completed_plans: 15
+  completed_plans: 16
   percent: 0
 ---
 
@@ -173,6 +173,8 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - [Phase 08-04]: state/groupEditor.ts's chooser state machine (chooserMode/selectedDetector/guidedRecommended) kept independent from state/groups.ts's draftDetector/draftParams — AlgorithmChooser is the single sync point (one useEffect), keeping the state machine unit-testable without duplicating the persisted draft shape
 - [Phase 08-04]: draftPresetLabel + pendingPrefillMembers added as new signals in state/groups.ts — UI-only bookkeeping for the "customized" indicator and the SRCH-03 approve-only pre-fill handoff, never sent to the server
 - [Phase 08-04]: AttributionPanel polls at a fixed 60s interval and swallows poll errors into last-known-state rendering (soft, best-effort display) rather than an error banner
+- [Phase ?]: [Phase 09-01] Config-validation member floor lowered to 2 for BOTH joint and peer_divergence modes (uniform, no mode branching) — required to unblock 2-member peer_divergence groups routed to the pairwise-delta path in Plan 09-02/09-03
+- [Phase ?]: [Phase 09-01] Guided chooser together answer -> copod (was ecod); DetectorCatalog BestFor copy rewritten per empirical PyOD false-positive findings, flagged as draft pending operator sign-off
 
 ### Blockers
 
@@ -213,10 +215,11 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 | Phase 08 P02 | 10min | 3 tasks | 20 files |
 | Phase 08 P03 | 15min | 3 tasks | 22 files |
 | Phase 08 P04 | 35min | 2 tasks | 17 files |
+| Phase 09 P01 | 12min | 2 tasks | 7 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-02T22:15:00.000Z
+**Last session:** 2026-07-03T09:35:26.382Z
 **Stopped at:** 08-04-PLAN.md Tasks 1-2 complete (algorithm chooser, attribution, area suggestions); Task 3 checkpoint:human-verify pending
 **Resume file:** .planning/phases/08-group-config-ui-algorithm-chooser/08-04-SUMMARY.md
 
@@ -230,6 +233,6 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 ## Current Position
 
 Phase: 9 (2-Member Groups + Algorithm Guidance Correction) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 9
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-07-03 — Phase 9 execution started
