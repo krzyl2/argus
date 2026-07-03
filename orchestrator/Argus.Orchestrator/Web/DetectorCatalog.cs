@@ -40,13 +40,23 @@ public record GuidedAnswer(string Answer, string Detector);
 /// </summary>
 public static class DetectorCatalog
 {
+    // Phase 9 (ALGO-06): the BestFor copy below is a DRAFT pending operator redaction
+    // (ROADMAP scope item 4) — it corrects two prior inaccuracies found by empirical PyOD
+    // testing: (1) ECOD/PCA produced ~90% false positives on correlated-pair relationship-break
+    // scenarios that COPOD/IForest handled correctly, and (2) peer_divergence's old "know WHICH
+    // member is diverging" phrasing does not hold for a 2-member group (Plan 09-01), which
+    // reports a single pair-relationship verdict with no per-member attribution.
     public static List<DetectorCatalogEntry> All() =>
     [
         new DetectorCatalogEntry(
             Name: "peer_divergence",
-            BestFor: "Best for a group of similar sensors (e.g. tire pressures, per-room temperatures) " +
-                     "where you want to know WHICH member is diverging from the others. Sensitivity " +
-                     "directly changes how far a member must drift from its peers before it is flagged.",
+            BestFor: "Best for a group of similar sensors (e.g. tire pressures, per-room temperatures). " +
+                     "For 3+ members, flags and identifies WHICH member is diverging from the others. " +
+                     "For exactly 2 members, there is no 'others' to compare against — it instead " +
+                     "flags when the pair's own relationship breaks (e.g. two front tires that " +
+                     "normally track each other), reporting one verdict for the pair with no " +
+                     "per-member attribution. Sensitivity directly changes how far a member (or the " +
+                     "pair) must drift before it is flagged.",
             Presets:
             [
                 new DetectorPreset("Low", new Dictionary<string, string> { ["threshold"] = "4.5" }),
@@ -60,10 +70,12 @@ public static class DetectorCatalog
 
         new DetectorCatalogEntry(
             Name: "ecod",
-            BestFor: "Best for a room/area's related sensors that should move together (e.g. humidity + " +
-                     "temperature in one room) — flags when the whole vector looks jointly abnormal and " +
-                     "shows which member contributed most. Sensitivity shifts how often the anomaly flag " +
-                     "fires for a given score distribution; it does not change the anomaly score itself.",
+            BestFor: "Best for sensors that are NOT expected to move together — flags when the whole " +
+                     "value vector looks jointly abnormal and shows which member contributed most. " +
+                     "Caution: on sensors that normally move together (e.g. two correlated pressures), " +
+                     "ECOD tends to flag normal correlated movement as anomalous — prefer COPOD or " +
+                     "IForest for that case. Sensitivity shifts how often the anomaly flag fires for a " +
+                     "given score distribution; it does not change the anomaly score itself.",
             Presets:
             [
                 new DetectorPreset("Low", new Dictionary<string, string> { ["contamination"] = "0.05" }),
@@ -77,10 +89,12 @@ public static class DetectorCatalog
 
         new DetectorCatalogEntry(
             Name: "copod",
-            BestFor: "Best for a room/area's related sensors, similar to ECOD but using a copula-based " +
-                     "model — flags jointly-abnormal value vectors with per-member attribution. " +
-                     "Sensitivity shifts how often the anomaly flag fires for a given score distribution; " +
-                     "it does not change the anomaly score itself.",
+            BestFor: "Best for a group of correlated sensors that should move together (e.g. two tire " +
+                     "pressures, or humidity + temperature in one room) — handles the normal correlated " +
+                     "relationship well and flags a genuine break in it, with per-member attribution. " +
+                     "Recommended default for 'these sensors move together' groups. Sensitivity shifts " +
+                     "how often the anomaly flag fires for a given score distribution; it does not " +
+                     "change the anomaly score itself.",
             Presets:
             [
                 new DetectorPreset("Low", new Dictionary<string, string> { ["contamination"] = "0.05" }),
@@ -96,9 +110,11 @@ public static class DetectorCatalog
             Name: "pca",
             BestFor: "Best for a group of correlated sensors where anomalies show up as a break in their " +
                      "normal linear relationship (e.g. several sensors that usually track each other). " +
-                     "No per-member attribution is available for this detector. Sensitivity shifts how " +
-                     "often the anomaly flag fires for a given score distribution; it does not change the " +
-                     "anomaly score itself.",
+                     "Caution: like ECOD, PCA tends to flag normal correlated movement as anomalous on " +
+                     "tightly-correlated pairs — prefer COPOD or IForest for that case. No per-member " +
+                     "attribution is available for this detector. Sensitivity shifts how often the " +
+                     "anomaly flag fires for a given score distribution; it does not change the anomaly " +
+                     "score itself.",
             Presets:
             [
                 new DetectorPreset("Low", new Dictionary<string, string> { ["contamination"] = "0.05" }),
@@ -112,7 +128,8 @@ public static class DetectorCatalog
 
         new DetectorCatalogEntry(
             Name: "iforest",
-            BestFor: "Best for a larger group of sensors with complex, non-linear relationships. No " +
+            BestFor: "Best for a larger group of sensors with complex, non-linear relationships — also " +
+                     "handles correlated-pair relationship breaks well (similar to COPOD). No " +
                      "per-member attribution is available for this detector. `contamination` shifts how " +
                      "often the anomaly flag fires for a given score distribution (not the score itself); " +
                      "`n_estimators` (tree count) affects score stability/quality.",
@@ -132,10 +149,13 @@ public static class DetectorCatalog
     /// <summary>
     /// Guided "what are you monitoring?" answer -> recommended detector mapping (ALGO-04).
     /// UI copy/config only — never fetched from Python.
+    /// ALGO-05: "together" recommends copod (not ecod) — empirical PyOD testing found ECOD/PCA
+    /// produce ~90% false positives on correlated-pair relationship-break scenarios that COPOD
+    /// handles correctly (2/10 false-positive rate).
     /// </summary>
     public static List<GuidedAnswer> Guided() =>
     [
-        new GuidedAnswer("together", "ecod"),
+        new GuidedAnswer("together", "copod"),
         new GuidedAnswer("diverges", "peer_divergence"),
     ];
 }

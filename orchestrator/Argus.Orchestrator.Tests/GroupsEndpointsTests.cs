@@ -606,10 +606,24 @@ public class GroupsEndpointsTests
     [Fact]
     public void DetectorCatalog_Guided_MapsBothAnswers()
     {
+        // ALGO-05: "together" recommends copod, not ecod — empirical PyOD testing found ECOD
+        // produces ~90% false positives on correlated-pair relationship-break scenarios.
         var guided = DetectorCatalog.Guided();
 
-        Assert.Contains(guided, g => g.Answer == "together" && g.Detector == "ecod");
+        Assert.Contains(guided, g => g.Answer == "together" && g.Detector == "copod");
         Assert.Contains(guided, g => g.Answer == "diverges" && g.Detector == "peer_divergence");
+    }
+
+    [Fact]
+    public void DetectorCatalog_PeerDivergenceBestFor_HasTwoMemberAttributionCaveat()
+    {
+        // ALGO-06 / Open Design Question #5: a 2-member peer_divergence group reports a single
+        // pair-relationship verdict with no per-member attribution — the copy must say so, not
+        // imply "know WHICH member is diverging" applies universally.
+        var entry = DetectorCatalog.All().Single(e => e.Name == "peer_divergence");
+
+        Assert.Contains("2 members", entry.BestFor);
+        Assert.Contains("no per-member attribution", entry.BestFor);
     }
 
     // -----------------------------------------------------------------------
