@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
-current_phase: 08
-current_phase_name: Group Config UI + Algorithm Chooser
-status: executing
-stopped_at: 08-04-PLAN.md Tasks 1-2 complete; Task 3 (checkpoint:human-verify, live-HA Ingress round-trip) awaiting operator execution
-last_updated: "2026-07-02T22:15:00.000Z"
-last_activity: 2026-07-02
-last_activity_desc: Phase 08 Plan 04 (algorithm chooser, attribution, area suggestions) automated tasks complete, paused at human-verify checkpoint
+current_phase: 09
+current_phase_name: 2-Member Groups + Algorithm Guidance Correction
+status: planned
+stopped_at: "Phase 9 planning complete: 3 plans (09-01 mechanical, 09-02 Python pairwise-delta, 09-03 C# wiring), all Wave 1 (parallel), plan-checker VERIFICATION PASSED. Ready for /gsd-execute-phase 9."
+last_updated: "2026-07-03T09:20:44.000Z"
+last_activity: 2026-07-03
+last_activity_desc: Phase 9 research + pattern-mapping + planning complete (3 plans, VERIFICATION PASSED)
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 19
+  total_plans: 22
   completed_plans: 15
   percent: 0
 ---
@@ -21,10 +21,10 @@ progress:
 
 ## Current Status
 
-- Milestone: **v4.0 Group & Multivariate Anomaly Detection + UX — ROADMAP CREATED 2026-07-02** (Phases 5-8)
+- Milestone: **v4.0 Group & Multivariate Anomaly Detection + UX — in progress** (Phases 5-9; Phases 5-8 shipped 2026-07-02, Phase 9 planned 2026-07-03)
 - Previous: **v3.0 Ingress Configuration UI — SHIPPED & archived 2026-07-02** (add-on 2.0.9)
-- Next: Plan Phase 5 with `/gsd-plan-phase 5`
-- Last action: v4.0 roadmap written (4 phases, 20/20 requirements mapped, coarse granularity)
+- Next: Execute Phase 9 with `/gsd-execute-phase 9`
+- Last action: Phase 9 planned — 3 plans (09-01/02/03), all Wave 1, plan-checker VERIFICATION PASSED
 
 ## Deferred Items
 
@@ -229,7 +229,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Current Position
 
-Phase: 08 (Group Config UI + Algorithm Chooser) — EXECUTING
-Plan: 4 of 4
-Status: Paused at Task 3 human-verify checkpoint (live-HA Ingress round-trip) — Tasks 1-2 complete
-Last activity: 2026-07-02 — 08-04 automated tasks (algorithm chooser, attribution, area suggestions) complete
+Phase: 09 (2-Member Groups + Algorithm Guidance Correction) — PLANNED
+Plan: 0 of 3
+Status: Ready to execute — 3 plans created (09-01 mechanical: floor lowering + guided-default + copy; 09-02 Python pairwise-delta detector; 09-03 C# wiring for the 5 count-blind branches), all Wave 1 (parallel, zero files_modified overlap), plan-checker VERIFICATION PASSED
+Last activity: 2026-07-03 — Phase 9 research (commit 8864c0d) + pattern-mapping + planning (commit fc3a54b) complete
