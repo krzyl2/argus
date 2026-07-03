@@ -92,8 +92,8 @@ public sealed class MqttPublisherWorker : BackgroundService
                         {
                             if (newGroupsById.TryGetValue(oldGroup.GroupId, out var newGroup))
                             {
-                                var isPeer = string.Equals(oldGroup.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase);
-                                if (!isPeer) continue; // joint groups have no per-member diff
+                                var isPeer = DiscoveryPublisher.UsesPerMemberEntities(oldGroup);
+                                if (!isPeer) continue; // joint groups (and 2-member peer groups) have no per-member diff
 
                                 var removed = oldGroup.Members
                                     .Except(newGroup.Members, StringComparer.OrdinalIgnoreCase)
@@ -104,7 +104,7 @@ public sealed class MqttPublisherWorker : BackgroundService
                             else
                             {
                                 // Whole group_id removed — retract all of it.
-                                var isPeer = string.Equals(oldGroup.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase);
+                                var isPeer = DiscoveryPublisher.UsesPerMemberEntities(oldGroup);
                                 IEnumerable<string?> removedAll = isPeer
                                     ? oldGroup.Members.Cast<string?>()
                                     : [null];

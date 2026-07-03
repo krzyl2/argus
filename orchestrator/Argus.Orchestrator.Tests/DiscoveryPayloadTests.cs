@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Mqtt;
 using Xunit;
@@ -125,5 +128,79 @@ public class DiscoveryPayloadTests
     public void FriendlyName_PreservesPolishCharacters()
     {
         Assert.Equal("Zewnątrz temperatura anomalia", FriendlyName.ForAnomaly("Zewnątrz temperatura"));
+    }
+
+    // ─── Group entity shape (Pitfall 3 — UsesPerMemberEntities count-awareness) ────
+
+    private static GroupConfig MakePeerGroup(string groupId, params string[] members) => new()
+    {
+        GroupId = groupId,
+        FriendlyName = groupId,
+        Mode = "peer_divergence",
+        Detector = "peer_divergence",
+        Members = [.. members],
+    };
+
+    [Fact]
+    public async Task PublishGroupAsync_TwoMemberPeerGroup_PublishesOneGroupLevelPairNotPerMember()
+    {
+        // A 2-member peer_divergence group's pairwise-delta score is a single derived value with
+        // no per-member attribution (Rule 9: encode WHY) — it must publish ONE group-level
+        // binary_sensor + sensor pair (memberId=null), not two per-member entities.
+        var calls = new List<(string Topic, string Payload, bool Retain)>();
+        Task Publish(string topic, string payload, bool retain, CancellationToken _)
+        {
+            calls.Add((topic, payload, retain));
+            return Task.CompletedTask;
+        }
+
+        var group = MakePeerGroup("water_pressure_pair", "sensor.pressure_a", "sensor.pressure_b");
+
+        await DiscoveryPublisher.PublishGroupAsync(Publish, group, CancellationToken.None);
+
+        // 2 config topics total (one binary_sensor + one sensor), not 4 (per-member would be 2x2)
+        Assert.Equal(2, calls.Count);
+        var flagId = UniqueId.GroupFlagId(group.GroupId);
+        var scoreId = UniqueId.GroupScoreId(group.GroupId);
+        Assert.Contains(calls, c => c.Topic == $"homeassistant/binary_sensor/{flagId}/config");
+        Assert.Contains(calls, c => c.Topic == $"homeassistant/sensor/{scoreId}/config");
+    }
+
+    [Fact]
+    public void BuildGroupBinarySensorConfig_TwoMemberPeerGroup_UsesNullMemberScoping()
+    {
+        var group = MakePeerGroup("water_pressure_pair", "sensor.pressure_a", "sensor.pressure_b");
+
+        var json = DiscoveryPublisher.BuildGroupBinarySensorConfig(group, memberId: null);
+        var doc = JsonDocument.Parse(json);
+
+        var uniqueId = doc.RootElement.GetProperty("unique_id").GetString();
+        Assert.Equal(UniqueId.GroupFlagId(group.GroupId), uniqueId);
+    }
+
+    [Fact]
+    public async Task PublishGroupAsync_ThreeMemberPeerGroup_StillPublishesPerMemberPairs()
+    {
+        // N>=3 classic peer_divergence behavior is unchanged — one pair per member.
+        var calls = new List<(string Topic, string Payload, bool Retain)>();
+        Task Publish(string topic, string payload, bool retain, CancellationToken _)
+        {
+            calls.Add((topic, payload, retain));
+            return Task.CompletedTask;
+        }
+
+        var group = MakePeerGroup("garden_tires", "sensor.tire_fl", "sensor.tire_fr", "sensor.tire_rl");
+
+        await DiscoveryPublisher.PublishGroupAsync(Publish, group, CancellationToken.None);
+
+        // 3 members x 2 topics each = 6
+        Assert.Equal(6, calls.Count);
+        foreach (var member in new[] { "sensor.tire_fl", "sensor.tire_fr", "sensor.tire_rl" })
+        {
+            var flagId = UniqueId.GroupFlagId(group.GroupId, member);
+            var scoreId = UniqueId.GroupScoreId(group.GroupId, member);
+            Assert.Contains(calls, c => c.Topic == $"homeassistant/binary_sensor/{flagId}/config");
+            Assert.Contains(calls, c => c.Topic == $"homeassistant/sensor/{scoreId}/config");
+        }
     }
 }
