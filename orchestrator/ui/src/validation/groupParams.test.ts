@@ -3,7 +3,7 @@ import { validateGroupMembers, validateUnitConsistency } from './groupParams';
 import type { SensorEntry } from '../api/types';
 
 // Encodes INTENT: client validation must block save exactly where the server
-// (GroupInputValidator.cs) blocks it — floor=3, peer-mode unit consistency.
+// (GroupInputValidator.cs) blocks it — floor=2, peer-mode unit consistency.
 
 function makeSensor(overrides: Partial<SensorEntry>): SensorEntry {
   return {
@@ -19,12 +19,18 @@ function makeSensor(overrides: Partial<SensorEntry>): SensorEntry {
 }
 
 describe('validateGroupMembers', () => {
-  it('rejects fewer than 3 members', () => {
-    expect(validateGroupMembers(['a', 'b'])).toBe('A group needs at least 3 members.');
+  it('rejects fewer than 2 members', () => {
+    expect(validateGroupMembers(['a'])).toBe('A group needs at least 2 members.');
   });
 
-  it('rejects exactly 2 members', () => {
-    expect(validateGroupMembers(['a', 'b'])).not.toBeNull();
+  it('rejects an empty member list', () => {
+    expect(validateGroupMembers([])).toBe('A group needs at least 2 members.');
+  });
+
+  // A 2-member group is now a valid paired comparison (joint pairing or peer_divergence
+  // pairwise-delta) — GRP-10/GRP-12, not just "one below the old floor of 3".
+  it('accepts exactly 2 members', () => {
+    expect(validateGroupMembers(['a', 'b'])).toBeNull();
   });
 
   it('accepts exactly 3 members', () => {

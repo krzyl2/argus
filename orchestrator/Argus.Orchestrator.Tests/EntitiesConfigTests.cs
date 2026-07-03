@@ -167,12 +167,13 @@ groups:
     [Fact]
     public void Load_GroupBelowFloor_IsPrunedAndWarns_DoesNotThrow()
     {
+        // Floor is now 2 (GRP-10/GRP-12) — a 1-member group is the below-floor case.
         var yaml = @"
 entities: []
 groups:
   - group_id: too_small
     friendly_name: Too small
-    members: [sensor.a, sensor.b]
+    members: [sensor.a]
     mode: joint
     detector: pca
 ";
@@ -184,6 +185,56 @@ groups:
 
         Assert.Empty(config.Groups);
         Assert.Contains(messages, m => m.Contains("too_small") || m.Contains("minimum"));
+    }
+
+    [Fact]
+    public void Load_TwoMemberJointGroup_Survives()
+    {
+        // GRP-10: a 2-member joint group is now a valid paired comparison, not below-floor.
+        var yaml = @"
+entities: []
+groups:
+  - group_id: two_member_joint
+    friendly_name: Two member joint
+    members: [sensor.a, sensor.b]
+    mode: joint
+    detector: pca
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, _) = CreateCapturingLogger();
+
+        var config = EntitiesConfigLoader.Load(path, logger);
+
+        Assert.Single(config.Groups);
+        Assert.Equal("two_member_joint", config.Groups[0].GroupId);
+    }
+
+    [Fact]
+    public void Load_TwoMemberPeerDivergenceGroup_SameUnits_Survives()
+    {
+        // GRP-11/GRP-12: a 2-member peer_divergence group must survive config-load validation
+        // so it can route to the pairwise-delta path (Plan 09-02/09-03).
+        var yaml = @"
+entities: []
+groups:
+  - group_id: two_member_peer
+    friendly_name: Two member peer
+    members: [sensor.a, sensor.b]
+    mode: peer_divergence
+    detector: peer_divergence
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, _) = CreateCapturingLogger();
+        var registry = new FakeHaSensorRegistry(new Dictionary<string, string?>
+        {
+            ["sensor.a"] = "°C",
+            ["sensor.b"] = "°C",
+        });
+
+        var config = EntitiesConfigLoader.Load(path, logger, registry);
+
+        Assert.Single(config.Groups);
+        Assert.Equal("two_member_peer", config.Groups[0].GroupId);
     }
 
     [Fact]
@@ -248,7 +299,7 @@ groups:
     detector: pca
   - group_id: invalid_group
     friendly_name: Invalid
-    members: [sensor.x, sensor.y]
+    members: [sensor.x]
     mode: joint
     detector: pca
 ";

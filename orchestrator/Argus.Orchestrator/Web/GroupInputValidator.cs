@@ -4,7 +4,7 @@ namespace Argus.Orchestrator.Web;
 
 /// <summary>
 /// Server-side input validator for POST /api/groups/save. Mirrors
-/// EntitiesConfigLoader.ValidateGroups (floor of 3 members, peer-divergence unit consistency)
+/// EntitiesConfigLoader.ValidateGroups (floor of 2 members, peer-divergence unit consistency)
 /// so a bad save request is rejected before any write reaches disk — the client-side
 /// validation in orchestrator/ui/src/validation/groupParams.ts is UX-only; this is the
 /// authoritative boundary (same "client is UX-only, server is authority" split as
@@ -18,7 +18,7 @@ public static class GroupInputValidator
     /// <summary>Upper bound on group size — DoS guard (T-08-04), no legitimate group needs more.</summary>
     public const int MaxMembers = 100;
 
-    private const int MinMembers = 3;
+    private const int MinMembers = 2;
 
     /// <summary>Joint-multivariate detector names — the only detectors valid for Mode="joint".</summary>
     public static readonly IReadOnlySet<string> JointDetectors =

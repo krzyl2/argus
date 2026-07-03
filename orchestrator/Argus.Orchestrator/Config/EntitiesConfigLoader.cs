@@ -108,10 +108,10 @@ public class EntitiesConfigLoader
                 continue;
             }
 
-            if (group.Members is null || group.Members.Count < 3)
+            if (group.Members is null || group.Members.Count < 2)
             {
                 logger.LogWarning(LogEvents.GroupRejected,
-                    "Group '{GroupId}' has {MemberCount} member(s), below the minimum of 3 — skipped",
+                    "Group '{GroupId}' has {MemberCount} member(s), below the minimum of 2 — skipped",
                     group.GroupId, group.Members?.Count ?? 0);
                 continue;
             }

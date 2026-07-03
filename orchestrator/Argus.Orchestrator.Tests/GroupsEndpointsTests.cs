@@ -95,10 +95,11 @@ public class GroupsEndpointsTests
     [Fact]
     public void Validate_GroupBelowFloor_ReturnsValidationError()
     {
-        var registry = new FakeRegistry(MakeEntry("sensor.a"), MakeEntry("sensor.b"));
+        // Floor is now 2 (GRP-10/GRP-12) — a 1-member group is the below-floor case.
+        var registry = new FakeRegistry(MakeEntry("sensor.a"));
         var groups = new List<GroupSaveEntry>
         {
-            new() { GroupId = "group.a", Members = ["sensor.a", "sensor.b"], Mode = "joint", Detector = "ecod" },
+            new() { GroupId = "group.a", Members = ["sensor.a"], Mode = "joint", Detector = "ecod" },
         };
 
         var errors = GroupInputValidator.Validate(groups, registry);
@@ -113,6 +114,38 @@ public class GroupsEndpointsTests
         var groups = new List<GroupSaveEntry>
         {
             new() { GroupId = "group.a", Members = ["sensor.a", "sensor.b", "sensor.c"], Mode = "joint", Detector = "ecod" },
+        };
+
+        var errors = GroupInputValidator.Validate(groups, registry);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validate_TwoMemberJointGroup_ReturnsNoErrors()
+    {
+        // GRP-10: a 2-member joint group is now a valid paired comparison, not below-floor.
+        var registry = new FakeRegistry(MakeEntry("sensor.a"), MakeEntry("sensor.b"));
+        var groups = new List<GroupSaveEntry>
+        {
+            new() { GroupId = "group.a", Members = ["sensor.a", "sensor.b"], Mode = "joint", Detector = "ecod" },
+        };
+
+        var errors = GroupInputValidator.Validate(groups, registry);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validate_TwoMemberPeerDivergenceGroup_SameUnits_ReturnsNoErrors()
+    {
+        // GRP-11/GRP-12: a 2-member peer_divergence group must pass save-time validation so it
+        // can route to the pairwise-delta path (Plan 09-02/09-03) — the floor-of-2 applies to
+        // both modes uniformly (Assumption A1).
+        var registry = new FakeRegistry(MakeEntry("sensor.a", "°C"), MakeEntry("sensor.b", "°C"));
+        var groups = new List<GroupSaveEntry>
+        {
+            new() { GroupId = "group.a", Members = ["sensor.a", "sensor.b"], Mode = "peer_divergence", Detector = "peer_divergence" },
         };
 
         var errors = GroupInputValidator.Validate(groups, registry);

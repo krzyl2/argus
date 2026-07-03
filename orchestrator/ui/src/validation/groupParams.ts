@@ -5,13 +5,13 @@
 
 import type { GroupMode, SensorEntry } from '../api/types';
 
-const MIN_MEMBERS = 3;
+const MIN_MEMBERS = 2;
 
-const MSG_BELOW_FLOOR = 'A group needs at least 3 members.';
+const MSG_BELOW_FLOOR = 'A group needs at least 2 members.';
 
 /**
  * Validates the member-count floor (EntitiesConfigLoader.ValidateGroups / GroupInputValidator
- * MinMembers=3). Returns null when the floor is met.
+ * MinMembers=2). Returns null when the floor is met.
  */
 export function validateGroupMembers(members: string[]): string | null {
   if (members.length < MIN_MEMBERS) {
