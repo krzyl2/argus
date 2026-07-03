@@ -250,6 +250,8 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
                 # idiom below exactly; delta cannot attribute to either member
                 # (same degeneracy as the classic N=2 case), so per_member and
                 # contributions are deliberately left empty — never fabricate.
+                from argus_detector.group.pairwise_delta import PairwiseDeltaDetector
+
                 if not self._registry.has_model(group_slug, detector):
                     context.abort(
                         grpc.StatusCode.INVALID_ARGUMENT,
@@ -257,8 +259,22 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
                     )
                     return None
 
-                from argus_detector.group.pairwise_delta import PairwiseDeltaDetector
                 model = self._registry.get_model(group_slug, detector)
+                if not isinstance(model, PairwiseDeltaDetector):
+                    # CR-01: classic N>=3 peer_divergence registers a
+                    # PeerDivergenceDetector under the SAME (group_slug,
+                    # "peer_divergence") key. If a group shrinks 3+ -> 2
+                    # members after a classic nightly fit but before the next
+                    # 2-member FitGroup runs, the stale entry would otherwise
+                    # reach score_batch() below and raise a type-confusion
+                    # exception (swallowed into ok=False). Abort with the same
+                    # "call FitGroup first" message instead — self-heals on
+                    # the next FitGroup, which always overwrites via register().
+                    context.abort(
+                        grpc.StatusCode.INVALID_ARGUMENT,
+                        f"no fitted 2-member model for group {request.group_id!r}/{detector}; call FitGroup first",
+                    )
+                    return None
                 delta = PairwiseDeltaDetector.compute_delta(
                     request.series[0].values, request.series[1].values
                 )
