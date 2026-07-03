@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
-current_phase: 09
+current_phase: 9
 current_phase_name: 2-Member Groups + Algorithm Guidance Correction
-status: planned
+status: executing
 stopped_at: "Phase 9 planning complete: 3 plans (09-01 mechanical, 09-02 Python pairwise-delta, 09-03 C# wiring), all Wave 1 (parallel), plan-checker VERIFICATION PASSED. Ready for /gsd-execute-phase 9."
-last_updated: "2026-07-03T09:20:44.000Z"
+last_updated: "2026-07-03T09:29:15.152Z"
 last_activity: 2026-07-03
-last_activity_desc: Phase 9 research + pattern-mapping + planning complete (3 plans, VERIFICATION PASSED)
+last_activity_desc: Phase 9 execution started
 progress:
-  total_phases: 4
+  total_phases: 6
   completed_phases: 0
   total_plans: 22
   completed_plans: 15
@@ -52,7 +52,7 @@ not formally signed off.
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
-**Current focus:** Phase 08 — Group Config UI + Algorithm Chooser
+**Current focus:** Phase 9 — 2-Member Groups + Algorithm Guidance Correction
 
 ## Phase Status (v4.0)
 
@@ -229,7 +229,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Current Position
 
-Phase: 09 (2-Member Groups + Algorithm Guidance Correction) — PLANNED
-Plan: 0 of 3
-Status: Ready to execute — 3 plans created (09-01 mechanical: floor lowering + guided-default + copy; 09-02 Python pairwise-delta detector; 09-03 C# wiring for the 5 count-blind branches), all Wave 1 (parallel, zero files_modified overlap), plan-checker VERIFICATION PASSED
-Last activity: 2026-07-03 — Phase 9 research (commit 8864c0d) + pattern-mapping + planning (commit fc3a54b) complete
+Phase: 9 (2-Member Groups + Algorithm Guidance Correction) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 9
+Last activity: 2026-07-03 — Phase 9 execution started
