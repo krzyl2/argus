@@ -418,7 +418,13 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
                 )
                 model = PairwiseDeltaDetector.from_params(dict(request.params))
                 model.fit(delta)
-                self._registry.register(group_slug, detector, model)
+                # WR-02: fit happens above, outside any lock (mirrors fit_one's
+                # train-outside-lock idiom); swap_model takes the per-entity
+                # lock for just the atomic write, so a concurrent ScoreGroupBatch
+                # reading via get_model() is synchronized per the registry's
+                # documented concurrency contract (MDL-04) — register() only
+                # takes the coarse dict-resize lock.
+                self._registry.swap_model(group_slug, detector, model)
                 version = self._model_store.next_version(group_slug, detector)
                 self._model_store.save_pyod(
                     group_slug, detector, version, model, entity_id=group_slug

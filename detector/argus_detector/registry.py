@@ -250,6 +250,27 @@ class DetectorRegistry:
         with self._lock:
             self._detectors[key] = model_obj
 
+    def swap_model(self, entity_id: str, detector: str, model_obj: object) -> None:
+        """Atomically swap in an already-fitted model, under the per-entity lock (WR-02).
+
+        Unlike register() (self._lock only — dict-resize guard), this takes the
+        same per-(entity_id, detector) _entity_lock that fit_one()/get_model()
+        use, so a concurrent get_model() reader is properly synchronized against
+        this writer per the class's documented concurrency contract (MDL-04).
+        Intended for live-RPC call sites (e.g. FitGroup's 2-member pairwise-delta
+        path) that already train the model outside any lock and only need the
+        final atomic swap — register() remains for the LoadModel/bulk-load path.
+
+        Args:
+            entity_id: HA entity ID (or slug — caller normalises).
+            detector: Detector name.
+            model_obj: Fitted model instance.
+        """
+        key = (entity_id, detector)
+        lock = self._entity_lock(key)
+        with lock:
+            self._detectors[key] = model_obj
+
     def _create_detector(
         self, detector: str, params: dict[str, str] | None = None
     ) -> object:
