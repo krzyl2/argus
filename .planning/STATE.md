@@ -178,6 +178,10 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 - 08-04 Task 3: checkpoint:human-verify (live-HA Ingress round-trip for the new group/algorithm-chooser/attribution UI) awaiting operator execution — see 08-04-SUMMARY.md "Pending Human Checkpoint"
 
+### Roadmap Evolution
+
+- Phase 9 added: 2-Member Groups + Algorithm Guidance Correction — lower the joint-mode member floor to 2, add a pairwise-delta path (existing single-entity MAD detector on member_a − member_b) for 2-member peer_divergence, switch the guided chooser's "together" default from ecod to copod, and rewrite DetectorCatalog.cs BestFor copy. Raised 2026-07-03 during live verification of Phase 8, from two operator use cases (2 front-tire pressures; 2-sensor water pressure+temperature pair) plus empirical PyOD testing that found the existing "together" guidance produces ~90% false positives on correlated-pair relationship-break scenarios. See Phase 9 section in ROADMAP.md for full research context.
+
 ## Performance Metrics
 
 | Metric | Target | Current |

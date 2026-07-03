@@ -5,7 +5,7 @@
 - ✅ **v1.0 Foundations + Batch & Model Lifecycle** — Phases 1-2 (shipped 2026-06-10)
 - ✅ **v2.0 Home Assistant Add-on** — Phases 1-4 (shipped 2026-06-30)
 - ✅ **v3.0 Ingress Configuration UI** — Phases 1-4 (shipped 2026-07-02)
-- 🚧 **v4.0 Group & Multivariate Anomaly Detection + UX** — Phases 5-8 (in progress)
+- 🚧 **v4.0 Group & Multivariate Anomaly Detection + UX** — Phases 5-9 (in progress)
 
 ## Phases
 
@@ -73,6 +73,7 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 - [x] **Phase 6: Batch Group Pipeline** - Operators define groups in config and see real, time-aligned group anomalies published to MQTT/HA without orphaning entities (completed 2026-07-02)
 - [x] **Phase 7: SPA Scaffolding** - The configuration UI is rebuilt as a Preact+Vite SPA that loads and functions correctly under real HA Ingress, with all v3.0 capabilities intact (completed 2026-07-02)
 - [x] **Phase 8: Group Config UI + Algorithm Chooser** - Operators author groups, choose algorithms via presets/guided chooser, and see ranked per-feature attribution for joint-multivariate anomalies (completed 2026-07-02)
+- [ ] **Phase 9: 2-Member Groups + Algorithm Guidance Correction** - Operators can create valid 2-member groups in both joint and peer-divergence modes, and the guided chooser's default recommendations match what the algorithms actually do well
 
 ## Phase Details
 
@@ -182,6 +183,35 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 **Plans:** 0 plans
 
 Plans:
+
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
 Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The guided "what are you monitoring?" flow recommends a detector by static rule, but the same investigation found the recommendation can be empirically wrong for some patterns (see Phase 9 — joint-mode 2-member floor + guided-default correction). A tester/simulator would let operators catch this kind of mismatch themselves against their own sensor history instead of discovering it live.
+
+### Phase 9: 2-Member Groups + Algorithm Guidance Correction
+
+**Goal:** Operators can create valid anomaly-detection groups with exactly 2 members (e.g. two front-tire pressures, two boiler-room temperature sensors), and the guided algorithm chooser recommends detectors that are empirically well-suited to the operator's stated intent instead of a naive default.
+**Requirements**: TBD (derive during /gsd-discuss-phase or /gsd-plan-phase — see Context below)
+**Depends on:** Phase 8
+**Plans:** 0 plans
+
+**Context (research done 2026-07-03, see STATE.md decisions log for full detail):**
+
+- `peer_divergence`'s median/MAD cross-sectional statistic is mathematically degenerate at exactly 2 members (both points are equidistant from the median — no way to identify which one diverges). Correctly enforced today via a hard floor of 3 in three places: `orchestrator/ui/src/validation/groupParams.ts`, `orchestrator/Argus.Orchestrator/Web/GroupInputValidator.cs`, `orchestrator/Argus.Orchestrator/Config/EntitiesConfigLoader.cs`. This floor stays at 3 for the classic N-member case.
+- `joint` mode (ecod/copod/pca/iforest, `detector/argus_detector/group/multivariate_detector.py`) has NO such statistical requirement — empirically verified (PyOD 3.6.0 installed locally) that all 4 detectors fit/score correctly on 2-feature matrices at realistic batch sizes (200 rows). The floor of 3 is applied uniformly today and incorrectly blocks legitimate 2-member joint groups (e.g. water pressure + water temperature, where the operator wants "did this pair jointly diverge" not "which one diverged"). **Decision: lower the joint-mode floor to 2** across all three enforcement points above.
+- New capability needed for the 2-member `peer_divergence` case specifically: compute the pairwise difference (member_a − member_b) as a time series and score it with the EXISTING single-entity PyOD MAD detector (`detector/argus_detector/pyod_detector.py`, production-proven since v1.0) — reusing proven univariate anomaly detection on a meaningful derived signal rather than inventing new group math. Empirically verified this session: normal delta noise scores well under threshold, an injected sensor-drift fault scores far above it. Needs a design pass on how this composes with the existing `ScoreGroupBatch`/`FitGroup` RPC contract and `ModelStore` persistence — may be a new detector-adjacent code path rather than a mode enum value.
+- Guided-chooser gap found via empirical testing (10 random seeds, synthetic correlated-pair fixture mimicking water pressure+temperature): the current guided default for "together" (`DetectorCatalog.Guided()` in `orchestrator/Argus.Orchestrator/Web/DetectorCatalog.cs`) recommends ECOD, which produced false positives ~90% of the time on a normal temperature-correlated pressure drop (ECOD scores each dimension's tail probability independently, ignoring cross-feature correlation). PCA showed the same failure mode (~90%) because PyOD's PCA score includes distance along the principal/well-explained axis, so it flags novel-but-on-relationship values. COPOD (2/10 false positives) and IForest (0/10) correctly distinguished a genuine relationship-break from a normal correlated joint change; COPOD additionally preserves per-member attribution that IForest lacks. **Decision: change the "together" guided default from ecod to copod.**
+- Draft `BestFor` copy for all 5 `DetectorCatalog.cs` entries was written this session — operator will personally edit/redact final wording before it ships; treat as a starting draft, not final text.
+- Related backlog item filed as Phase 999.1 (algorithm tester/simulator) — out of scope for Phase 9, do not fold in.
+
+**Scope:**
+
+1. Lower the joint-mode member floor from 3 to 2 across all three enforcement points, keeping `peer_divergence`'s floor at 3 for the N-member case.
+2. Add the pairwise-delta (existing single-entity MAD detector on member_a − member_b) path for `peer_divergence` with exactly 2 members.
+3. Change `DetectorCatalog.Guided()`'s "together" mapping from ecod to copod.
+4. Update `DetectorCatalog.cs` `BestFor` copy for all 5 catalog entries, calling out which algorithms suit correlation-relationship groups vs independent-value groups, and which support per-member attribution.
+5. Keep client (`groupParams.ts`) and server (`GroupInputValidator.cs`) validation messages in sync with the mode-dependent floor.
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 9 to break down)
