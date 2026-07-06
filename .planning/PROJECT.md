@@ -10,23 +10,16 @@ Anomalies on v1 environmental sensors appear in HA as live binary_sensor + score
 
 ## Current State
 
-**Shipped:** v1.0 streaming + batch detection; v2.0 HA add-on (multi-arch GHCR image, Supervisor MQTT creds, health entity, HA WebSocket via Supervisor proxy — live-verified 2026-06-30); **v3.0 Ingress Configuration UI** (add-on 2.0.9 — sensor discovery + selection, per-entity detector/parameter assignment, hot-reload without restart, MQTT retraction — live bring-up 2026-07-02). Releases are built locally (buildx → GHCR), not CI.
+**Shipped:** v1.0 streaming + batch detection; v2.0 HA add-on (multi-arch GHCR image, Supervisor MQTT creds, health entity, HA WebSocket via Supervisor proxy — live-verified 2026-06-30); v3.0 Ingress Configuration UI (add-on 2.0.9 — sensor discovery + selection, per-entity detector/parameter assignment, hot-reload without restart, MQTT retraction — live bring-up 2026-07-02); **v4.0 Group & Multivariate Anomaly Detection + UX** (group detection both modes, Preact+Vite SPA with guided algorithm chooser, 2-member group support — shipped 2026-07-06). Releases are built locally (buildx → GHCR), not CI.
 
-## Current Milestone: v4.0 Group & Multivariate Anomaly Detection + UX
+**Open at v4.0 close:** live-HA UI verification for the SPA (Phases 07/08 `human_needed`) + 10 Phase 08 UAT scenarios deferred pending a planned UI rebuild (Phase 999.1). Backend detection paths verified (Phases 05/06/09 passed). See STATE.md Deferred Items.
 
-**Goal:** Analyze groups of sensors, not just single ones, and make algorithm selection user-friendly. This expands Argus from single-sensor environmental monitoring toward a general relational anomaly platform.
+## Next Milestone: TBD
 
-**Target features:**
-- **Group detection, both modes:** peer-divergence (which member diverges from its group — e.g. one tire pressure rising unlike the others) AND joint multivariate (values jointly abnormal — e.g. room humidity → leak).
-- **Batch-first** (InfluxDB resampling for time-alignment; InfluxDB confirmed available); streaming groups later.
-- **More algorithms** + user-friendly chooser: readable parameter presets (Sensitivity Low/Med/High) with Advanced toggle; "best for…" descriptions per algorithm.
-- **Search by friendly name** (today only entity_id); modern, readable UI via a light SPA.
-
-Model already has `EntityConfig.Groups`/`Covariates` placeholders (parsed-and-ignored today, D-09); proto is univariate and needs a multi-series extension.
-
-**Milestone decisions (override locked v3.0 constraints — intentional):**
-- **UI stack:** light SPA replaces the v3.0 server-rendered htmx approach. Introduces a Node build step; the add-on image grows and the air-gapped / no-CDN / no-Node-build guarantee from v3.0 STACK.md is dropped. Chosen for UI flexibility on the algorithm chooser + friendly-name search.
-- **Group latency:** the Core Value "< 2 s" target is single-sensor only; group detection needs a separate, looser latency target (groups wait for member alignment).
+No milestone active. Run `/gsd-new-milestone` to scope the next one. Candidate directions surfaced during v4.0:
+- **UI rebuild** — the SPA shipped functionally but the operator intends to redesign it; live-HA UI sign-off is deferred until then.
+- **Phase 999.1 (backlog)** — algorithm tester/simulator: preview how each detector would score the operator's actual sensor history before saving a group.
+- **Streaming groups (STRM-01/02)** — deferred from v4.0; group detection on the live streaming path once the batch model is proven in production.
 
 ---
 
@@ -60,21 +53,23 @@ Model already has `EntityConfig.Groups`/`Covariates` placeholders (parsed-and-ig
 - ✓ Restart resilience: components restart independently without losing model state or orphaning HA entities — v1.0
 - ✓ Installable HA add-on (single container, Supervisor auth, multi-arch) — v2.0
 - ✓ Ingress config UI: discover/select sensors, assign detectors+params, hot-reload without restart — v3.0
+- ✓ Group detection — peer-divergence: flag the member diverging from its group's collective behavior; attribute WHICH member — v4.0 (GRP-03/04); 2-member pairwise-delta path added v4.0 (GRP-11)
+- ✓ Group detection — joint multivariate: flag jointly-abnormal value vectors across a group, with ranked per-feature attribution — v4.0 (GRP-05/06/09); 2-member joint groups supported (GRP-10)
+- ✓ Batch groups via InfluxDB resampling (time-alignment on a common grid) — v4.0 (GRP-01/02/08)
+- ✓ Expanded algorithm library with a user-friendly chooser (readable presets + "best for" descriptions, guided flow) — v4.0 (ALGO-01..06); "together" default corrected ecod→copod after empirical testing
+- ✓ Sensor search by friendly name + categorized area/domain browse + area-scoped suggestions — v4.0 (SRCH-01/02/03)
+- ✓ Config UI rebuilt as a light Preact+Vite SPA (built at Docker build-time, no Node in runtime) — v4.0 (UI-01..04); live-HA UI sign-off deferred pending planned redesign
 
-### Active (v4.0)
+### Active (next milestone — TBD)
 
-- [ ] Group detection — peer-divergence: flag the member diverging from its group's collective behavior; attribute WHICH member
-- [ ] Group detection — joint multivariate: flag jointly-abnormal value vectors across a group
-- [ ] Batch groups via InfluxDB resampling (time-alignment on a common grid)
-- [ ] Expanded algorithm library with a user-friendly chooser (readable presets + "best for" descriptions)
-- [ ] Sensor search by friendly name (today only entity_id) + categorized long list
-- [ ] Modern, readable UI (approach decided in v4.0 planning)
+- [ ] UI redesign — the v4.0 SPA is functional but the operator intends to rebuild it; complete deferred live-HA UI verification as part of that work
+- [ ] Algorithm tester/simulator in group config UI (Phase 999.1 backlog) — preview detector scores against real sensor history before saving
 
 ### Deferred (not yet scheduled)
 
 - [ ] Two-host deployment: orchestrator on edge host, detector on GPU host (Phase 3 GPU — never executed)
 - [ ] mTLS on gRPC link between hosts (code path exists; two-host deployment never validated live)
-- [ ] Streaming groups (window + last-value-carried-forward) — after batch groups prove the model
+- [ ] Streaming groups (window + last-value-carried-forward) — after batch groups prove the model (STRM-01/02)
 
 ### Out of Scope
 
@@ -117,7 +112,11 @@ Model already has `EntityConfig.Groups`/`Covariates` placeholders (parsed-and-ig
 | Local buildx→GHCR release (not CI) | Operator builds+pushes locally; version==image tag | ✓ Good — v3.0 releases shipped this way |
 | Orchestrator on aspnet base (v3.0) | Web SDK app needs Microsoft.AspNetCore.App, not plain runtime | ✓ Good — fixed 2.0.7 (both add-on + standalone Dockerfiles) |
 | Empty include patterns select nothing, not all (v3.0) | Checkbox-driven selection; empty=all flooded HA with ~400 entities | ✓ Good — fixed 2.0.9, GlobExpander semantics changed |
-| Light SPA for UI (v4.0) | Server-rendered htmx too limiting for algorithm chooser + friendly-name search UX | ⚠ Overrides v3.0 air-gapped/no-Node-build STACK.md decision; adds build step + image size |
+| Light SPA for UI (v4.0) | Server-rendered htmx too limiting for algorithm chooser + friendly-name search UX | ⚠ Revisit — shipped functionally (Preact+Vite, built at Docker build-time, no runtime Node), but operator intends to redesign; live-HA UI sign-off deferred |
+| Group detection both modes (v4.0) | Peer-divergence (median/MAD) for "which member diverges"; joint-multivariate (PyOD ECOD/COPOD/PCA/IForest + RobustScaler) for "jointly abnormal" | ✓ Good — proto carries a real 2D matrix; backend verified (Phases 05/06 passed) |
+| Batch-first groups; streaming deferred (v4.0) | Time-alignment across async streams is a distinct hard problem; batch (InfluxDB aggregateWindow+pivot) proves the model first | ✓ Good — STRM-01/02 explicitly deferred |
+| 2-member joint floor + pairwise-delta peer path (v4.0 Phase 9) | 3-member floor blocked legitimate 2-member joint groups; 2-member peer_divergence is degenerate → score member_a−member_b with the proven single-entity MAD detector | ✓ Good — 11/11 verification passed |
+| Guided "together" default ecod→copod (v4.0 Phase 9) | ECOD/PCA produced ~90% false positives on correlated-pair relationship-breaks; COPOD/IForest correctly distinguished, COPOD preserves attribution | ✓ Good — empirically validated over 10 seeds |
 
 ## Evolution
 
@@ -137,4 +136,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-02 — v4.0 (Group & Multivariate Detection + UX) milestone started; UI = light SPA*
+*Last updated: 2026-07-06 after v4.0 milestone — Group & Multivariate Detection + UX shipped (Phases 5-9); UI = Preact+Vite SPA (redesign pending)*

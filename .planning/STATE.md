@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
-current_phase: 09
-current_phase_name: 2-Member Groups + Algorithm Guidance Correction
-status: verifying
+current_phase: 0
+status: Awaiting next milestone
 stopped_at: "08-04-PLAN.md Tasks 1-2 complete (algorithm chooser, attribution, area suggestions); Task 3 checkpoint:human-verify pending"
-last_updated: "2026-07-06T13:39:05.610Z"
+last_updated: "2026-07-06T14:45:04.297Z"
 last_activity: 2026-07-06
-last_activity_desc: Phase 08 complete, transitioned to Phase 09
+last_activity_desc: Milestone v4.0 completed and archived
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 22
   completed_plans: 18
   percent: 17
+current_phase_name: 2-Member Groups + Algorithm Guidance Correction
 ---
 
 # Project State: Argus
@@ -46,6 +46,20 @@ Live bring-up on 2026-07-02 informally confirmed: add-on starts, Ingress UI serv
 connects, entity save + hot-reload work. The deferred items are the formal wall-clock/propagation
 checks (sub-2s reload latency, MQTT retraction within 30s, detector pre-fill) — not blockers, but
 not formally signed off.
+
+Items acknowledged and deferred at v4.0 milestone close on 2026-07-06 (operator chose to defer the
+live-HA UI verification pending a planned UI rebuild — see Phase 999.1 backlog):
+
+| Category | Item | Status |
+|----------|------|--------|
+| verification | Phase 07 — 07-VERIFICATION.md (SPA under live Ingress) | human_needed (deferred) |
+| verification | Phase 08 — 08-VERIFICATION.md (group UI / chooser / attribution) | human_needed (deferred) |
+| uat | Phase 08 — 08-UAT.md (10 scenarios: tests 4-13) | skipped (deferred, UI rebuild pending) |
+
+Backend paths are verified independently of the UI: Phase 05 (proto + Python group detectors),
+Phase 06 (batch group pipeline), and Phase 09 (2-member groups + guidance) all closed with
+VERIFICATION `status: passed`. The deferred items are exclusively live-HA visual/interaction sign-off
+for the SPA UI, which the operator intends to rebuild — re-verify UI flows after that rebuild.
 
 ## Project Reference
 
@@ -228,11 +242,11 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Operator Next Steps
 
-- Plan Phase 5 with /gsd-plan-phase 5
+- Start the next milestone with /gsd-new-milestone
 
 ## Current Position
 
-Phase: 09 — 2-Member Groups + Algorithm Guidance Correction
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-06 — Phase 08 complete, transitioned to Phase 09
+Phase: Milestone v4.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-06 — Milestone v4.0 completed and archived

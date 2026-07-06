@@ -1,5 +1,37 @@
 # Milestones — Argus
 
+## v4.0 Group & Multivariate Anomaly Detection + UX (Shipped: 2026-07-06)
+
+**Phases completed:** 6 phases, 18 plans, 42 tasks
+
+**Key accomplishments:**
+
+- Extended argus.proto with a real 2D-matrix group contract (Series/GroupScoreRequest/GroupScoreResponse/FitGroupRequest/FitGroupResponse) and two new DetectorService RPCs (ScoreGroupBatch, FitGroup), regenerated Python stubs, and proved the wire contract with codegen tests.
+- GroupMultivariateDetector (RobustScaler + PyOD ECOD/COPOD/PCA/IForest) with joblib bundle persistence via ModelStore.save_group_bundle/load_group_bundle, keyed under a group_ namespace that never collides with per-entity model keys
+- Wired peer-divergence and joint-multivariate group detectors into the gRPC boundary via `ScoreGroupBatch`/`FitGroup` servicer handlers and extended registry factory branches, closing GRP-03..07 with ragged/empty/unknown-detector input validation at the boundary.
+- GroupConfig YAML schema with skip-and-warn config-load validation (3-member floor, peer-mode unit guard, nullable-registry cold-boot degrade) — dead per-entity Covariates/Groups placeholders retired.
+- GroupInfluxReader issues a single aggregateWindow+pivot Flux query (no fill()) for the N×M member matrix plus a companion last()-per-member freshness query, and IBatchDetectorClient gains ScoreGroupBatchAsync/FitGroupAsync wrapping the Phase 5 group RPCs.
+- Group MQTT discovery/state layer: peer-divergence emits per-member binary_sensor+score pairs, joint emits one group-level pair, all sharing a single HA device per group_id, with removed-members-only retraction.
+- Group scoring loop, joint-only nightly fit, and wall-clock staleness-cap boundary policy wired into BatchSchedulerWorker; group MQTT discovery/retraction wired into MqttPublisherWorker; DI wiring in Program.cs completes the end-to-end group anomaly pipeline.
+- Vite+Preact SPA in orchestrator/ui/ with a relative-fetch client, hand-rolled hash router, and 13 components reproducing v3.0's htmx entity-picker UI 1:1 (search, detector assignment, validation, save) — builds to Argus.Orchestrator/wwwroot and passes Vitest.
+- Converted three htmx HTML-fragment endpoints (`/api/sensors`, `/api/detectors/new-entry`, `/api/sensors/save`) to clean JSON matching the SPA's `types.ts` contract, wired `MapFallbackToFile("index.html")` for SPA hosting, and deleted all server-rendered HTML code (`EntityPickerPage.cs`, `DetectorFieldParser.cs`, `PlaceholderPage.cs`) with zero regression to Ingress auth or the config hot-reload pipeline.
+- 1. [Rule 1 - Bug] `ARG BUILD_FROM` not visible to the runtime stage's `FROM` (Docker build model constraint)
+- peer_divergence.threshold and multivariate contamination/n_estimators are now real, request.params-driven knobs — presets built in later plans will genuinely change detection instead of being cosmetic.
+- Four auth-guarded Minimal API endpoints (group CRUD, static detector catalog, attribution status) plus HA area/domain sensor enrichment — the exact backend contract Phase 8's SPA consumes, with the Pitfall-4 contribution-sort bug fixed before any UI reads it.
+- Group list/editor/member-picker screens wired to the 08-02 endpoints with client-side floor/unit validation, plus a server-side bug fix that unblocked friendly_name search and area-grouped sensor browse.
+- Guided-flow algorithm chooser with catalog-sourced presets/Advanced-override, ranked joint-anomaly attribution bars, and approve-only area-scoped group suggestions — completing the Phase 8 transparency crux (ALGO-01..04, GRP-09, SRCH-03); the final live-HA Ingress checkpoint is pending human execution.
+- Lowered group member-count floor from 3 to 2 at all three config-validation layers (client TS, server C#, config-load C#) for both joint and peer_divergence modes, switched the guided chooser's "together" recommendation from ecod to copod, and rewrote all 5 DetectorCatalog BestFor entries with accurate correlation-handling/attribution copy including a 2-member peer_divergence caveat.
+- New `PairwiseDeltaDetector` (delegates to the existing PyOD MAD detector) scores `member_a - member_b` for 2-member `peer_divergence` groups; servicer routes on `len(request.series) == 2` before the classic `PeerDivergenceDetector` path, leaving the N>=3 algorithm and its locked floor test completely untouched.
+- Count-aware BatchSchedulerWorker staleness/publish/nightly-fit branches plus a shared `DiscoveryPublisher.UsesPerMemberEntities` helper so 2-member peer_divergence groups get fitted, scored, published, and retracted as a single group-level relationship check instead of silently misbehaving.
+
+**Delivered:** Argus extended from single-sensor to group anomaly detection (peer-divergence + joint-multivariate), rebuilt the config UI as a Preact+Vite SPA with a guided algorithm chooser, and corrected 2-member group support + guidance defaults.
+
+**Stats:** Phases 5-9 · 18 plans · 42 tasks · 25/25 requirements complete · 254 files changed (+28,201 / −17,000) · 135 commits · 2026-07-02 → 2026-07-06.
+
+**Known deferred items at close: 3** — Phase 07 + Phase 08 `human_needed` verifications (live-HA Ingress round-trip for the SPA + group/algorithm-chooser/attribution UI) and 10 skipped Phase 08 UAT scenarios, all deferred by operator decision pending the planned UI rebuild. Backend paths (proto/Python detectors, group pipeline, 2-member routing) verified: Phases 05/06/09 VERIFICATION `passed`. See STATE.md Deferred Items.
+
+---
+
 ## v3.0 Ingress Configuration UI (Shipped: 2026-07-02)
 
 **Phases completed:** 4 phases, 12 plans, 11 tasks
