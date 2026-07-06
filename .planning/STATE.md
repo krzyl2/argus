@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: Group & Multivariate Anomaly Detection + UX
-current_phase: 999.1
-current_phase_name: BACKLOG
+current_phase: 09
+current_phase_name: 2-Member Groups + Algorithm Guidance Correction
 status: verifying
 stopped_at: "08-04-PLAN.md Tasks 1-2 complete (algorithm chooser, attribution, area suggestions); Task 3 checkpoint:human-verify pending"
-last_updated: "2026-07-03T10:24:56.820Z"
-last_activity: 2026-07-03
-last_activity_desc: Phase 9 complete, transitioned to Phase 999.1
+last_updated: "2026-07-06T13:39:05.610Z"
+last_activity: 2026-07-06
+last_activity_desc: Phase 08 complete, transitioned to Phase 09
 progress:
   total_phases: 6
   completed_phases: 1
@@ -232,7 +232,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Current Position
 
-Phase: 999.1 — Algorithm tester/simulator in group config UI (BACKLOG)
+Phase: 09 — 2-Member Groups + Algorithm Guidance Correction
 Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-07-03 — Phase 9 complete, transitioned to Phase 999.1
+Last activity: 2026-07-06 — Phase 08 complete, transitioned to Phase 09

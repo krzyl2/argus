@@ -172,7 +172,7 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 | 5. Group Detection Core (Proto + Python Detectors) | v4.0 | 4/4 | Complete    | 2026-07-02 |
 | 6. Batch Group Pipeline | v4.0 | 4/4 | Complete    | 2026-07-02 |
 | 7. SPA Scaffolding | v4.0 | 3/3 | Complete    | 2026-07-02 |
-| 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete   | 2026-07-02 |
+| 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete    | 2026-07-02 |
 
 ## Backlog
 
@@ -180,7 +180,7 @@ friendly name, and a modern readable UI (light SPA — Preact + Vite).
 
 **Goal:** [Captured for future planning] During group creation/editing, let the operator simulate/preview how different group detectors (peer_divergence, ecod, copod, pca, iforest) would score the actual selected sensors' historical data, to validate the algorithm choice before saving — rather than relying solely on the guided chooser's static recommendation.
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 4/4 plans complete
 
 Plans:
 
