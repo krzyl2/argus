@@ -84,8 +84,8 @@ production code) — `ui_kits/admin/index.html` (composition reference), `compon
 API+look specs), `tokens/*.css` (colors/typography/spacing/elevation — light on `:root`, dark on
 `[data-theme="dark"]`), `readme.md` (voice/content + visual foundation spec).
 
-- [ ] **Phase 10: Design System Foundation** - Dark-mode tokens, ported shared component library (Button/Input/Select/.../Sidebar), and cross-cutting focus-visibility + radio-card a11y rules that every later screen depends on
-- [ ] **Phase 11: New Standalone Screens (Dashboard, Algorithms, Settings)** - Three new admin screens (mocked KPIs/recent-anomalies/health, read-only detector catalog browse, global config) built on the Phase 10 foundation
+- [x] **Phase 10: Design System Foundation** - Dark-mode tokens, ported shared component library (Button/Input/Select/.../Sidebar), and cross-cutting focus-visibility + radio-card a11y rules that every later screen depends on (completed 2026-07-08)
+- [x] **Phase 11: New Standalone Screens (Dashboard, Algorithms, Settings)** - Three new admin screens (mocked KPIs/recent-anomalies/health, read-only detector catalog browse, global config) built on the Phase 10 foundation (completed 2026-07-08)
 - [ ] **Phase 12: Sensors Screen Rebuild** - Sensor list + single-sensor detector assignment (hst/mad/stl) with inline validation, rebuilt to Design System spec
 - [ ] **Phase 13: Groups Screen Rebuild** - Group editor + algorithm creation wizard + attribution panel rebuilt to Design System spec
 
@@ -116,7 +116,7 @@ built pixel-accurate in both themes without re-deriving these primitives per-scr
      selected option, and the selected vs. unselected state is distinguishable without relying on color
      alone
 
-**Plans**: 5/7 plans executed
+**Plans**: 7/7 plans complete
 
 Plans:
 **Wave 1**
@@ -132,8 +132,8 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 10-06-PLAN.md — Retrofit forms consumers: SaveBar/AddDetectorButton/DetectorEntry/SensorListRow/SensorSearchInput (COMP-01, A11Y-01)
-- [ ] 10-07-PLAN.md — Retrofit display/feedback consumers: GroupListRow + 3 banner components (COMP-01)
+- [x] 10-06-PLAN.md — Retrofit forms consumers: SaveBar/AddDetectorButton/DetectorEntry/SensorListRow/SensorSearchInput (COMP-01, A11Y-01)
+- [x] 10-07-PLAN.md — Retrofit display/feedback consumers: GroupListRow + 3 banner components (COMP-01)
 
 **UI hint**: yes
 
@@ -232,7 +232,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 7. SPA Scaffolding | v4.0 | 3/3 | Complete | 2026-07-02 |
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete | 2026-07-02 |
 | 9. 2-Member Groups + Algorithm Guidance Correction | v4.0 | 3/3 | Complete | 2026-07-03 |
-| 10. Design System Foundation | v4.1 | 5/7 | In Progress|  |
+| 10. Design System Foundation | v4.1 | 7/7 | Complete   | 2026-07-08 |
 | 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 0/TBD | Not started | - |
 | 12. Sensors Screen Rebuild | v4.1 | 0/TBD | Not started | - |
 | 13. Groups Screen Rebuild | v4.1 | 0/TBD | Not started | - |
