@@ -116,12 +116,12 @@ built pixel-accurate in both themes without re-deriving these primitives per-scr
      selected option, and the selected vs. unselected state is distinguishable without relying on color
      alone
 
-**Plans**: 7 plans
+**Plans**: 1/7 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 10-01-PLAN.md — CSS token foundation + [data-theme="dark"] block + all component BEM classes + A11Y-01 focus fix + main.tsx theme bootstrap (THEME-01, THEME-02, A11Y-01)
+- [x] 10-01-PLAN.md — CSS token foundation + [data-theme="dark"] block + all component BEM classes + A11Y-01 focus fix + main.tsx theme bootstrap (THEME-01, THEME-02, A11Y-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -232,7 +232,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 7. SPA Scaffolding | v4.0 | 3/3 | Complete | 2026-07-02 |
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete | 2026-07-02 |
 | 9. 2-Member Groups + Algorithm Guidance Correction | v4.0 | 3/3 | Complete | 2026-07-03 |
-| 10. Design System Foundation | v4.1 | 0/7 | Not started | - |
+| 10. Design System Foundation | v4.1 | 1/7 | In Progress|  |
 | 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 0/TBD | Not started | - |
 | 12. Sensors Screen Rebuild | v4.1 | 0/TBD | Not started | - |
 | 13. Groups Screen Rebuild | v4.1 | 0/TBD | Not started | - |
