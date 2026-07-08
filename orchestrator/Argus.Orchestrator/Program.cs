@@ -585,6 +585,16 @@ app.MapGet("/api/detectors/catalog", (HttpRequest req) =>
     return Results.Json(new { detectors = DetectorCatalog.All(), guided = DetectorCatalog.Guided() });
 });
 
+// [9b] GET /api/settings — read-only orchestrator configuration for the Settings screen
+// (D-06). SettingsProjection is the sole allowlist boundary (D-07) — it never serializes
+// ConnectionSettings as a whole, so credentials and connection secrets cannot leak here.
+app.MapGet("/api/settings", (HttpRequest req, ConnectionSettings settings, IConfiguration config) =>
+{
+    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
+
+    return Results.Json(SettingsProjection.Build(settings, config));
+});
+
 // [10] GET /api/groups/{id}/status — last cached joint-mode verdict (GRP-09). Returns
 // 200-with-null for an unknown/never-scored id (T-08-05: no existence oracle via 404).
 app.MapGet("/api/groups/{id}/status", (HttpRequest req, string id, IGroupStatusCache statusCache) =>
