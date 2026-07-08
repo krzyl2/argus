@@ -1,4 +1,7 @@
+import { useState } from 'preact/hooks';
 import { route } from '../router';
+
+type Theme = 'light' | 'dark';
 
 interface NavItem {
   id: string;
@@ -31,6 +34,16 @@ function handleNavigate(item: NavItem) {
 
 export function Sidebar() {
   const currentRoute = route.value;
+  const [theme, setTheme] = useState<Theme>(
+    (document.documentElement.getAttribute('data-theme') as Theme | null) ?? 'light'
+  );
+
+  function handleThemeToggle() {
+    const next: Theme = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('argus-theme', next);
+    setTheme(next);
+  }
 
   return (
     <nav class="argus-sidebar">
@@ -66,7 +79,16 @@ export function Sidebar() {
         );
       })}
 
-      <div class="argus-sidebar__footer" />
+      <div class="argus-sidebar__footer">
+        <button
+          type="button"
+          class="argus-sidebar__theme-toggle"
+          onClick={handleThemeToggle}
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+        >
+          <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
+        </button>
+      </div>
     </nav>
   );
 }
