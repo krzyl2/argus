@@ -116,7 +116,7 @@ built pixel-accurate in both themes without re-deriving these primitives per-scr
      selected option, and the selected vs. unselected state is distinguishable without relying on color
      alone
 
-**Plans**: 1/7 plans executed
+**Plans**: 5/7 plans executed
 
 Plans:
 **Wave 1**
@@ -125,10 +125,10 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 10-02-PLAN.md — Form components: Button (+test), Input, Select, Textarea, Checkbox, SearchInput (COMP-01, A11Y-01)
-- [ ] 10-03-PLAN.md — Display components: Card, Badge, StatusDot, KpiTile, Disclosure, AttributionBar (COMP-01)
-- [ ] 10-04-PLAN.md — Feedback + Selection: Banner, EmptyState, AlgorithmCard, SensitivityPreset (COMP-01, A11Y-02)
-- [ ] 10-05-PLAN.md — Navigation: Sidebar + AppShell shell + theme toggle (THEME-02, COMP-01)
+- [x] 10-02-PLAN.md — Form components: Button (+test), Input, Select, Textarea, Checkbox, SearchInput (COMP-01, A11Y-01)
+- [x] 10-03-PLAN.md — Display components: Card, Badge, StatusDot, KpiTile, Disclosure, AttributionBar (COMP-01)
+- [x] 10-04-PLAN.md — Feedback + Selection: Banner, EmptyState, AlgorithmCard, SensitivityPreset (COMP-01, A11Y-02)
+- [x] 10-05-PLAN.md — Navigation: Sidebar + AppShell shell + theme toggle (THEME-02, COMP-01)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -232,7 +232,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 7. SPA Scaffolding | v4.0 | 3/3 | Complete | 2026-07-02 |
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete | 2026-07-02 |
 | 9. 2-Member Groups + Algorithm Guidance Correction | v4.0 | 3/3 | Complete | 2026-07-03 |
-| 10. Design System Foundation | v4.1 | 1/7 | In Progress|  |
+| 10. Design System Foundation | v4.1 | 5/7 | In Progress|  |
 | 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 0/TBD | Not started | - |
 | 12. Sensors Screen Rebuild | v4.1 | 0/TBD | Not started | - |
 | 13. Groups Screen Rebuild | v4.1 | 0/TBD | Not started | - |
