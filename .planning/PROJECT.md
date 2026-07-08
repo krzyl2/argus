@@ -14,12 +14,31 @@ Anomalies on v1 environmental sensors appear in HA as live binary_sensor + score
 
 **Open at v4.0 close:** live-HA UI verification for the SPA (Phases 07/08 `human_needed`) + 10 Phase 08 UAT scenarios deferred pending a planned UI rebuild (Phase 999.1). Backend detection paths verified (Phases 05/06/09 passed). See STATE.md Deferred Items.
 
-## Next Milestone: TBD
+## Current Milestone: v4.1 Admin UI Rebuild (Design System)
 
-No milestone active. Run `/gsd-new-milestone` to scope the next one. Candidate directions surfaced during v4.0:
-- **UI rebuild** — the SPA shipped functionally but the operator intends to redesign it; live-HA UI sign-off is deferred until then.
-- **Phase 999.1 (backlog)** — algorithm tester/simulator: preview how each detector would score the operator's actual sensor history before saving a group.
-- **Streaming groups (STRM-01/02)** — deferred from v4.0; group detection on the live streaming path once the batch model is proven in production.
+**Goal:** Replace the functional-but-provisional v4.0 SPA with a pixel-perfect implementation of the Argus Design System across all 5 admin screens, in Preact using existing `argus.css` conventions, with full light/dark mode.
+
+**Target features:**
+- Dashboard — KpiTile + recent anomalies + system health (data is mocked; runtime endpoints may not exist yet — mark TODO)
+- Algorithms — group detector catalog (peer_divergence/ecod/copod/pca/iforest), presets, "best for…" copy — source `Web/DetectorCatalog.cs`
+- Sensors — sensor list, single-sensor detector assignment (hst/mad/stl) with inline validation — source `Web/DetectorDefaults.cs`, `src/validation/detectorParams.ts`
+- Groups — group editor + algorithm creation wizard + attribution panel (AttributionBar)
+- Settings — global configuration
+- Port design-system components to Preact: Button, Input, Select, Checkbox, SearchInput, Textarea, Card, Badge, StatusDot, KpiTile, AttributionBar, Disclosure, Banner, EmptyState, AlgorithmCard, SensitivityPreset, Sidebar
+
+**Key context:**
+- Typographic brand only, no logo ("A" tile + "Argus" wordmark)
+- Chrome UI in English; HA entity friendly-names in Polish; entity IDs always monospace
+- No emoji — status = StatusDot
+- Icons: Unicode glyph placeholders for now (swap to Lucide/Material Symbols only if repo adopts an icon set)
+- Radio-card selection = 2px accent border (a11y rule), never color alone
+- Focus always visible (2px accent outline, 2px offset)
+- `data-theme="dark"` first-class
+- Motion minimal, respects `prefers-reduced-motion`
+- Rebuild against the existing app — reproduce fidelity from `Argus Design System/ui_kits/admin/index.html` using Preact + argus.css patterns, not copy-pasted HTML
+- Resolves the v4.0-deferred "UI redesign" item; unblocks the deferred Phase 07/08 live-HA UI verification
+
+Source: `Argus Design System/HANDOFF_TO_CLAUDE_CODE.md` (design reference package, not production code).
 
 ---
 
@@ -60,9 +79,13 @@ No milestone active. Run `/gsd-new-milestone` to scope the next one. Candidate d
 - ✓ Sensor search by friendly name + categorized area/domain browse + area-scoped suggestions — v4.0 (SRCH-01/02/03)
 - ✓ Config UI rebuilt as a light Preact+Vite SPA (built at Docker build-time, no Node in runtime) — v4.0 (UI-01..04); live-HA UI sign-off deferred pending planned redesign
 
-### Active (next milestone — TBD)
+### Active (v4.1)
 
-- [ ] UI redesign — the v4.0 SPA is functional but the operator intends to rebuild it; complete deferred live-HA UI verification as part of that work
+- [ ] UI rebuild against Argus Design System — Dashboard, Algorithms, Sensors, Groups, Settings in Preact + argus.css, light/dark
+- [ ] Complete deferred live-HA UI verification (Phase 07/08) as part of the rebuild
+
+### Future
+
 - [ ] Algorithm tester/simulator in group config UI (Phase 999.1 backlog) — preview detector scores against real sensor history before saving
 
 ### Deferred (not yet scheduled)
@@ -136,4 +159,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-06 after v4.0 milestone — Group & Multivariate Detection + UX shipped (Phases 5-9); UI = Preact+Vite SPA (redesign pending)*
+*Last updated: 2026-07-08 — v4.1 Admin UI Rebuild milestone started (Argus Design System, 5 admin screens)*

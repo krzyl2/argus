@@ -1,20 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v4.0
-milestone_name: Group & Multivariate Anomaly Detection + UX
-current_phase: 0
-status: Awaiting next milestone
-stopped_at: "08-04-PLAN.md Tasks 1-2 complete (algorithm chooser, attribution, area suggestions); Task 3 checkpoint:human-verify pending"
-last_updated: "2026-07-06T14:45:04.297Z"
-last_activity: 2026-07-06
-last_activity_desc: Milestone v4.0 completed and archived
+milestone: v4.1
+milestone_name: Admin UI Rebuild (Design System)
+status: planning
+last_updated: "2026-07-08T07:15:11.449Z"
+last_activity: 2026-07-08
 progress:
-  total_phases: 6
-  completed_phases: 1
-  total_plans: 22
-  completed_plans: 18
-  percent: 17
-current_phase_name: 2-Member Groups + Algorithm Guidance Correction
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: Argus
@@ -246,7 +242,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Current Position
 
-Phase: Milestone v4.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-06 — Milestone v4.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-07-08 — Milestone v4.1 started
