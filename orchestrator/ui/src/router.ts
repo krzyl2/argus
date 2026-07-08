@@ -2,6 +2,12 @@ import { signal, effect } from '@preact/signals';
 
 // Hand-rolled hash router — see 08-UI-SPEC.md "Screens / Routes". Do NOT add a
 // router library (preact-router/preact-iso) — see RESEARCH Pattern 2.
+//
+// Phase 11 (D-10) adds 3 new static routes: /dashboard, /algorithms, /settings.
+// None take an :id segment, so they need no parser changes here — they flow
+// through the existing `route` signal + hashchange listener like /sensors and
+// /groups already do; only Sidebar.tsx (nav+isActive) and main.tsx (render
+// switch) needed updates.
 export const route = signal(normalizeHash(location.hash));
 
 // Parsed :id segment for #/groups/:id (null for /groups, /groups/new, or /sensors).

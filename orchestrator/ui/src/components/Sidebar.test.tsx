@@ -9,13 +9,13 @@ describe('Sidebar (D-02 nav items + THEME-02 toggle)', () => {
     localStorage.removeItem('argus-theme');
   });
 
-  it('renders 5 nav items with 3 disabled', () => {
+  it('renders 5 nav items, all enabled (Phase 11 D-10)', () => {
     const { container } = render(<Sidebar />);
     const items = container.querySelectorAll('.argus-sidebar__item');
     expect(items.length).toBe(5);
 
     const disabled = container.querySelectorAll('.argus-sidebar__item--disabled');
-    expect(disabled.length).toBe(3);
+    expect(disabled.length).toBe(0);
   });
 
   it('clicking the theme toggle sets data-theme and localStorage["argus-theme"]', () => {
