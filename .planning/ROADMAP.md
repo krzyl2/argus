@@ -6,6 +6,7 @@
 - ✅ **v2.0 Home Assistant Add-on** — Phases 1-4 (shipped 2026-06-30)
 - ✅ **v3.0 Ingress Configuration UI** — Phases 1-4 (shipped 2026-07-02)
 - ✅ **v4.0 Group & Multivariate Anomaly Detection + UX** — Phases 5-9 (shipped 2026-07-06)
+- 🚧 **v4.1 Admin UI Rebuild (Design System)** — Phases 10-13 (in progress)
 
 ## Phases
 
@@ -66,9 +67,117 @@ Full detail in `.planning/milestones/v4.0-ROADMAP.md`.
 - [x] **Phase 9: 2-Member Groups + Algorithm Guidance Correction** — joint-mode floor lowered 3→2, PairwiseDeltaDetector for 2-member peer_divergence, guided "together" default ecod→copod, DetectorCatalog BestFor rewrite (VERIFICATION: passed, 11/11)
 
 **Deferred at close:** Phase 07/08 live-HA UI verification + 10 Phase 08 UAT scenarios, pending the
-planned UI rebuild (Phase 999.1). Backend detection paths verified (Phases 05/06/09 passed).
+planned UI rebuild (Phase 999.1 backlog item promoted into this v4.1 milestone). Backend detection
+paths verified (Phases 05/06/09 passed).
 
 </details>
+
+### 🚧 v4.1 Admin UI Rebuild (Design System) (In Progress)
+
+**Milestone Goal:** Replace the functional-but-provisional v4.0 SPA with a pixel-perfect implementation
+of the Argus Design System across all 5 admin screens (Dashboard, Algorithms, Sensors, Groups,
+Settings), in Preact using existing `argus.css` conventions, with full light/dark mode. Resolves the
+v4.0-deferred "UI redesign" item and unblocks the deferred Phase 07/08 live-HA UI verification.
+
+**Reference:** `Argus Design System/HANDOFF_TO_CLAUDE_CODE.md` (design reference package, not
+production code) — `ui_kits/admin/index.html` (composition reference), `components/*` (component
+API+look specs), `tokens/*.css` (colors/typography/spacing/elevation — light on `:root`, dark on
+`[data-theme="dark"]`), `readme.md` (voice/content + visual foundation spec).
+
+- [ ] **Phase 10: Design System Foundation** - Dark-mode tokens, ported shared component library (Button/Input/Select/.../Sidebar), and cross-cutting focus-visibility + radio-card a11y rules that every later screen depends on
+- [ ] **Phase 11: New Standalone Screens (Dashboard, Algorithms, Settings)** - Three new admin screens (mocked KPIs/recent-anomalies/health, read-only detector catalog browse, global config) built on the Phase 10 foundation
+- [ ] **Phase 12: Sensors Screen Rebuild** - Sensor list + single-sensor detector assignment (hst/mad/stl) with inline validation, rebuilt to Design System spec
+- [ ] **Phase 13: Groups Screen Rebuild** - Group editor + algorithm creation wizard + attribution panel rebuilt to Design System spec
+
+## Phase Details
+
+### Phase 10: Design System Foundation
+
+**Goal**: The design system's visual and interaction foundation — dark-mode tokens, the shared Preact
+component library, and the two cross-cutting accessibility rules — exists so every later screen can be
+built pixel-accurate in both themes without re-deriving these primitives per-screen.
+**Depends on**: Phase 9 (v4.0 — existing Preact+Vite SPA + argus.css to extend, not replace)
+**Requirements**: THEME-01, THEME-02, COMP-01, A11Y-01, A11Y-02
+**Success Criteria** (what must be TRUE):
+
+  1. Toggling the theme switch in the sidebar instantly swaps every token-driven color across the whole
+     app between the light and dark token sets, with no unstyled or light-leaking regions, and the
+     choice persists in localStorage and is restored on reload — consistent across all 5 admin screens
+  2. Every design-system component (Button, Input, Select, Checkbox, SearchInput, Textarea, Card,
+     Badge, StatusDot, KpiTile, AttributionBar, Disclosure, Banner, EmptyState, AlgorithmCard,
+     SensitivityPreset, Sidebar) exists as a Preact component matching its `Argus Design System/components/*`
+     spec, in both themes
+  3. Tabbing through any interactive element (button, input, radio-card, nav link) shows a visible 2px
+     accent outline with 2px offset — focus is never invisible
+  4. Selecting an AlgorithmCard or SensitivityPreset radio-card shows a 2px accent border on the
+     selected option, and the selected vs. unselected state is distinguishable without relying on color
+     alone
+
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 11: New Standalone Screens (Dashboard, Algorithms, Settings)
+
+**Goal**: Operators have three new admin screens — an at-a-glance Dashboard, a browsable Algorithms
+catalog, and a Settings screen — reachable from the sidebar and matching the Design System in both
+themes, built on the Phase 10 foundation.
+**Depends on**: Phase 10
+**Requirements**: DASH-01, DASH-02, DASH-03, ALGO-07, ALGO-08, SET-01
+**Success Criteria** (what must be TRUE):
+
+  1. Navigating to Dashboard shows KPI tiles (KpiTile) per the `ui_kits/admin/index.html` layout, with a
+     "recent anomalies" section and a "system health" section — where a backend endpoint doesn't exist
+     yet, the section shows mocked data explicitly marked TODO rather than silently faking a real feed
+  2. Navigating to Algorithms shows a read-only catalog of all 5 group detectors (peer_divergence,
+     ecod, copod, pca, iforest) with presets and "best for…" copy sourced from `Web/DetectorCatalog.cs`
+     — distinct from the in-flow `AlgorithmChooser` wizard step used by Groups
+  3. Navigating to Settings shows a global-configuration screen scoped per `templates/admin-page` and
+     the app's existing configurable settings
+  4. All three screens are reachable from the sidebar navigation and render correctly in both light and
+     dark mode with no unstyled regions
+
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 12: Sensors Screen Rebuild
+
+**Goal**: The existing, functional Sensors screen (`SensorsPage.tsx` and its supporting components) is
+rebuilt — markup and component structure may be refactored, not just restyled — to the Design System
+spec, with single-sensor detector assignment and inline validation fully preserved.
+**Depends on**: Phase 10
+**Requirements**: SEN-01, SEN-02
+**Success Criteria** (what must be TRUE):
+
+  1. The Sensors screen's list and filtering UI (search, area/domain browse) matches the Design System
+     spec (Card/Badge/StatusDot/SearchInput patterns) in both themes
+  2. Assigning a detector (hst/mad/stl) to a sensor still works end-to-end after the rebuild, with
+     inline validation errors shown per the existing `detectorParams.ts` rules and `DetectorDefaults.cs`
+     server defaults
+  3. Selecting a detector via the sensor's radio-card picker shows the Phase 10 shared component's 2px
+     accent-border selection state, never color alone
+
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 13: Groups Screen Rebuild
+
+**Goal**: The existing, functional Groups screen (`GroupsPage.tsx`, `GroupEditorForm.tsx`,
+`MemberPicker.tsx`, `AlgorithmChooser.tsx`, `AttributionBar.tsx`) is rebuilt — markup and component
+structure may be refactored, not just restyled — to the Design System spec, with group CRUD, the
+guided algorithm wizard, and attribution display fully preserved.
+**Depends on**: Phase 10
+**Requirements**: GRP-12, GRP-13, GRP-14
+**Success Criteria** (what must be TRUE):
+
+  1. The group editor (list, member picker, save/delete) matches the Design System spec in both themes
+  2. The guided algorithm creation wizard's steps (chooser, sensitivity presets, Advanced override)
+     match the Design System spec, with radio-card detector/preset selection showing the Phase 10
+     shared component's 2px accent-border state
+  3. The attribution panel (AttributionBar) renders ranked per-member/per-feature contribution bars
+     matching the Design System spec, in both themes
+
+**Plans**: TBD
+**UI hint**: yes
 
 ## Backlog
 
@@ -96,3 +205,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 7. SPA Scaffolding | v4.0 | 3/3 | Complete | 2026-07-02 |
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete | 2026-07-02 |
 | 9. 2-Member Groups + Algorithm Guidance Correction | v4.0 | 3/3 | Complete | 2026-07-03 |
+| 10. Design System Foundation | v4.1 | 0/TBD | Not started | - |
+| 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 0/TBD | Not started | - |
+| 12. Sensors Screen Rebuild | v4.1 | 0/TBD | Not started | - |
+| 13. Groups Screen Rebuild | v4.1 | 0/TBD | Not started | - |

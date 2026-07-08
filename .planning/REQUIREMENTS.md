@@ -69,32 +69,30 @@ Deferred, not in this milestone's roadmap.
 
 ## Traceability
 
-Filled during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| THEME-01 | TBD | Pending |
-| THEME-02 | TBD | Pending |
-| COMP-01 | TBD | Pending |
-| DASH-01 | TBD | Pending |
-| DASH-02 | TBD | Pending |
-| DASH-03 | TBD | Pending |
-| ALGO-07 | TBD | Pending |
-| ALGO-08 | TBD | Pending |
-| SEN-01 | TBD | Pending |
-| SEN-02 | TBD | Pending |
-| GRP-12 | TBD | Pending |
-| GRP-13 | TBD | Pending |
-| GRP-14 | TBD | Pending |
-| SET-01 | TBD | Pending |
-| A11Y-01 | TBD | Pending |
-| A11Y-02 | TBD | Pending |
+| THEME-01 | Phase 10 | Pending |
+| THEME-02 | Phase 10 | Pending |
+| COMP-01 | Phase 10 | Pending |
+| A11Y-01 | Phase 10 | Pending |
+| A11Y-02 | Phase 10 | Pending |
+| DASH-01 | Phase 11 | Pending |
+| DASH-02 | Phase 11 | Pending |
+| DASH-03 | Phase 11 | Pending |
+| ALGO-07 | Phase 11 | Pending |
+| ALGO-08 | Phase 11 | Pending |
+| SET-01 | Phase 11 | Pending |
+| SEN-01 | Phase 12 | Pending |
+| SEN-02 | Phase 12 | Pending |
+| GRP-12 | Phase 13 | Pending |
+| GRP-13 | Phase 13 | Pending |
+| GRP-14 | Phase 13 | Pending |
 
 **Coverage:**
 - v4.1 requirements: 16 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 16 ⚠️
+- Mapped to phases: 16 (Phase 10: 5, Phase 11: 6, Phase 12: 2, Phase 13: 3)
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-07-08*
-*Last updated: 2026-07-08 after initial definition*
+*Last updated: 2026-07-08 after ROADMAP.md creation — 4 phases (10-13), 100% coverage*

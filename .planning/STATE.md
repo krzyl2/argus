@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v4.1
 milestone_name: Admin UI Rebuild (Design System)
 status: planning
-last_updated: "2026-07-08T07:15:11.449Z"
+last_updated: "2026-07-08T08:00:00.000Z"
 last_activity: 2026-07-08
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,10 +17,10 @@ progress:
 
 ## Current Status
 
-- Milestone: **v4.0 Group & Multivariate Anomaly Detection + UX — in progress** (Phases 5-9; Phases 5-8 shipped 2026-07-02, Phase 9 planned 2026-07-03)
-- Previous: **v3.0 Ingress Configuration UI — SHIPPED & archived 2026-07-02** (add-on 2.0.9)
-- Next: Execute Phase 9 with `/gsd-execute-phase 9`
-- Last action: Phase 9 planned — 3 plans (09-01/02/03), all Wave 1, plan-checker VERIFICATION PASSED
+- Milestone: **v4.1 Admin UI Rebuild (Design System) — roadmap created** (Phases 10-13, 16/16 requirements mapped)
+- Previous: **v4.0 Group & Multivariate Anomaly Detection + UX — SHIPPED 2026-07-06** (18 plans, 25/25 requirements)
+- Next: Plan Phase 10 with `/gsd-plan-phase 10`
+- Last action: ROADMAP.md created for v4.1 — 4 phases (10 Design System Foundation, 11 New Standalone Screens, 12 Sensors Rebuild, 13 Groups Rebuild), 100% requirement coverage
 
 ## Deferred Items
 
@@ -44,40 +44,41 @@ checks (sub-2s reload latency, MQTT retraction within 30s, detector pre-fill) �
 not formally signed off.
 
 Items acknowledged and deferred at v4.0 milestone close on 2026-07-06 (operator chose to defer the
-live-HA UI verification pending a planned UI rebuild — see Phase 999.1 backlog):
+live-HA UI verification pending a planned UI rebuild — now underway as v4.1):
 
 | Category | Item | Status |
 |----------|------|--------|
-| verification | Phase 07 — 07-VERIFICATION.md (SPA under live Ingress) | human_needed (deferred) |
-| verification | Phase 08 — 08-VERIFICATION.md (group UI / chooser / attribution) | human_needed (deferred) |
-| uat | Phase 08 — 08-UAT.md (10 scenarios: tests 4-13) | skipped (deferred, UI rebuild pending) |
+| verification | Phase 07 — 07-VERIFICATION.md (SPA under live Ingress) | human_needed (deferred to v4.1) |
+| verification | Phase 08 — 08-VERIFICATION.md (group UI / chooser / attribution) | human_needed (deferred to v4.1) |
+| uat | Phase 08 — 08-UAT.md (10 scenarios: tests 4-13) | skipped (deferred to v4.1) |
 
 Backend paths are verified independently of the UI: Phase 05 (proto + Python group detectors),
 Phase 06 (batch group pipeline), and Phase 09 (2-member groups + guidance) all closed with
 VERIFICATION `status: passed`. The deferred items are exclusively live-HA visual/interaction sign-off
-for the SPA UI, which the operator intends to rebuild — re-verify UI flows after that rebuild.
+for the SPA UI — v4.1 rebuilds all 5 admin screens against the Argus Design System and re-verifies
+these UI flows (Phases 10-13).
 
 ## Project Reference
 
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
-**Current focus:** Phase 9 — 2-Member Groups + Algorithm Guidance Correction
+**Current focus:** Phase 10 — Design System Foundation (ready to plan)
 
-## Phase Status (v4.0)
+## Phase Status (v4.1)
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 5 | Group Detection Core (Proto + Python Detectors) | Not started |
-| 6 | Batch Group Pipeline | Not started |
-| 7 | SPA Scaffolding | Not started |
-| 8 | Group Config UI + Algorithm Chooser | Not started |
+| 10 | Design System Foundation | Not started |
+| 11 | New Standalone Screens (Dashboard, Algorithms, Settings) | Not started |
+| 12 | Sensors Screen Rebuild | Not started |
+| 13 | Groups Screen Rebuild | Not started |
 
 ```
 Progress: [░░░░░░░░░░] 0%
 ```
 
-v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive/`.
+v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/archive/`.
 
 ## Accumulated Context
 
@@ -95,12 +96,20 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 - **SDK migration:** `Microsoft.NET.Sdk.Worker` → `Microsoft.NET.Sdk.Web`; `Host.CreateApplicationBuilder` → `WebApplication.CreateBuilder`. All existing `AddHostedService`/`AddSingleton` registrations are identical under `WebApplication` — no service registration changes.
 - **Co-host in orchestrator process:** Kestrel + Minimal API inside the existing process; no second s6 service. UI reads same singletons as workers (EntitiesConfig, health signals).
-- **UI technology:** Server-rendered HTML + htmx 2.0.10 (14 KB, BSD 0-Clause, committed to `wwwroot/`). No SPA, no Node.js build step, no CDN. Air-gapped safe.
+- **UI technology (superseded by v4.0):** v3.0 shipped server-rendered HTML + htmx; v4.0 replaced this with a Preact+Vite SPA (see below). v4.1 rebuilds the SPA's screens against the Argus Design System — no further UI-technology change.
 - **Config source of truth:** `/data/entities.yaml` unchanged — UI reads and writes it via `YamlDotNet` (already in project). No new config format.
 - **Reload mechanism:** `ILiveEntitiesConfig` singleton with `Interlocked.Exchange` swap + `ConfigChanged` event. `HaListenerWorker` cancels inner CTS (not host-level stoppingToken) and restarts `ScoreStreamPipeline.RunAsync` loop only. MQTT + gRPC transport stays alive. Streaming gap < 1 second.
 - **Kestrel bind:** `0.0.0.0:8099` (not loopback). Supervisor connects from `172.30.32.2`.
 - **Docker base image:** `mcr.microsoft.com/dotnet/aspnet:8.0-jammy-chiseled` (replaces `runtime:8.0-jammy-chiseled`; ~10 MB larger; same distroless base).
 - **No `ports:` entry in config.yaml:** Ingress-only; exposing the port bypasses HA auth.
+
+### v4.0 outcomes (relevant to v4.1)
+
+- SPA lives in `orchestrator/ui/` (Vite + Preact), builds to `Argus.Orchestrator/wwwroot` at Docker build-time, no runtime Node. `argus.css` lives at `orchestrator/ui/public/css/argus.css` (canonical source since Phase 07-01).
+- Hand-rolled hash router (`router.ts`) — routes today: `/sensors` (default), `/groups`, `/groups/new`, `/groups/:id`. No `/dashboard`, `/algorithms`, or `/settings` routes exist yet — v4.1 Phase 11 adds them.
+- Existing rebuild targets: `SensorsPage.tsx`, `GroupsPage.tsx`, `GroupEditorForm.tsx`, `MemberPicker.tsx`, `AlgorithmChooser.tsx`, `AttributionBar.tsx`/`AttributionPanel.tsx`, `SensitivityPresetPicker.tsx`, `EmptyState.tsx` — all functional today; v4.1 Phases 12-13 rebuild them to the Design System spec, refactoring markup/structure as needed (not restyle-only).
+- Backend data sources for new screens: `Web/DetectorCatalog.cs` (group detector catalog — Algorithms screen), `Web/DetectorDefaults.cs` (single-sensor detector defaults — Sensors screen), `src/validation/detectorParams.ts` (inline validation), `src/api/types.ts` (data contracts).
+- 0 dark-mode CSS rules exist in the shipped `argus.css` — THEME-01 starts from a clean slate, not a partial dark-mode implementation.
 
 ### Critical pre-conditions (must not be deferred)
 
@@ -109,17 +118,13 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 - **Phase 2 (start):** `gen-entities.py` guard (`_source: ui` marker or `.ui_config_present` lock file) must land BEFORE the first UI save endpoint is wired — otherwise an add-on restart after a UI save silently erases user config.
 - **Phase 3 (before planning):** Source-read `BatchSchedulerWorker` to determine whether it captures `EntitiesConfig.Entities` at construction or per-cycle. This decides whether it is in the "must change" list for Phase 3.
 
-### Live research gaps (resolve during phase)
-
-- **Phase 1:** X-Ingress-Path / UsePathBase conflict — live HA OS test required. Safe implementation: set PathBase per-request AND emit `<base href="{ingressPath}/">`. Verify via "Open Web UI" (never direct port).
-- **Phase 2:** Supervisor `validate_session` API shape — probe live Supervisor before implementing `IngressAuthMiddleware`. Fallback: accept from 172.30.32.2 in Phase 2 MVP, complete auth middleware in Phase 4.
-
 ### Locked decisions (historical, still in force)
 
 - .NET 8 orchestrator + Python gRPC detector (D2); gRPC mTLS for remote, insecure loopback for local (D4)
 - MQTT discovery for HA entity creation (D6); PyOD MAD + STL + River HST detection engines
 - Mono-repo: proto/, orchestrator/, detector/, deploy/, argus/ (add-on)
 - Licenses: BSD/Apache/MIT only (no GPL, no ADTK/MPL-2.0)
+- v4.1: rebuild against the existing Preact+Vite SPA app — reproduce fidelity from `Argus Design System/ui_kits/admin/index.html` using Preact + argus.css patterns, not copy-pasted HTML
 
 ### Plan 01-01 decisions (config seam)
 
@@ -188,11 +193,12 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ### Blockers
 
-- 08-04 Task 3: checkpoint:human-verify (live-HA Ingress round-trip for the new group/algorithm-chooser/attribution UI) awaiting operator execution — see 08-04-SUMMARY.md "Pending Human Checkpoint"
+None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's own Phase 11-13 live-HA re-verification (see Deferred Items).
 
 ### Roadmap Evolution
 
-- Phase 9 added: 2-Member Groups + Algorithm Guidance Correction — lower the joint-mode member floor to 2, add a pairwise-delta path (existing single-entity MAD detector on member_a − member_b) for 2-member peer_divergence, switch the guided chooser's "together" default from ecod to copod, and rewrite DetectorCatalog.cs BestFor copy. Raised 2026-07-03 during live verification of Phase 8, from two operator use cases (2 front-tire pressures; 2-sensor water pressure+temperature pair) plus empirical PyOD testing that found the existing "together" guidance produces ~90% false positives on correlated-pair relationship-break scenarios. See Phase 9 section in ROADMAP.md for full research context.
+- **2026-07-08**: v4.1 ROADMAP.md created — 4 phases (10 Design System Foundation, 11 New Standalone Screens [Dashboard/Algorithms/Settings], 12 Sensors Rebuild, 13 Groups Rebuild), continuing numbering from v4.0's Phase 9. THEME-01/02 + COMP-01 grouped as the foundation phase (every screen depends on tokens + shared components existing first); A11Y-01/02 folded into the same foundation phase since both rules are properties of the shared components (focus-visible baked into all interactive components; radio-card border-not-color baked into AlgorithmCard/SensitivityPreset) rather than separate late-phase verification work. Dashboard/Algorithms/Settings (all new, lower-complexity screens — mocked data, read-only catalog, simple config form) grouped into one phase per coarse-granularity guidance rather than three thin single-purpose phases. Sensors and Groups kept as separate phases since both are logic-preserving rebuilds of existing functional screens with real refactoring scope, not restyle-only work. 16/16 requirements mapped, 0 orphans.
+- Phase 9 added (v4.0): 2-Member Groups + Algorithm Guidance Correction — lower the joint-mode member floor to 2, add a pairwise-delta path (existing single-entity MAD detector on member_a − member_b) for 2-member peer_divergence, switch the guided chooser's "together" default from ecod to copod, and rewrite DetectorCatalog.cs BestFor copy. Raised 2026-07-03 during live verification of Phase 8, from two operator use cases (2 front-tire pressures; 2-sensor water pressure+temperature pair) plus empirical PyOD testing that found the existing "together" guidance produces ~90% false positives on correlated-pair relationship-break scenarios. See `.planning/milestones/v4.0-ROADMAP.md` Phase 9 section for full research context.
 
 ## Performance Metrics
 
@@ -200,7 +206,7 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 |--------|--------|---------|
 | Plans completed | — | 0/TBD |
 | Phases completed | 4 | 0/4 |
-| Requirements mapped | 9/9 | 9/9 |
+| Requirements mapped | 16/16 | 16/16 |
 | Phase 01 P01-01 | 2 | 2 tasks | 5 files |
 | Phase 01 P01-02 | 231 | - tasks | - files |
 | Phase 02 P02-01 | 4m | 3 tasks | 7 files |
@@ -229,20 +235,17 @@ v1.0 + v2.0 + v3.0 archived under `.planning/milestones/` and `.planning/archive
 
 ## Session Continuity
 
-**Last session:** 2026-07-03T09:35:26.382Z
-**Stopped at:** 08-04-PLAN.md Tasks 1-2 complete (algorithm chooser, attribution, area suggestions); Task 3 checkpoint:human-verify pending
-**Resume file:** .planning/phases/08-group-config-ui-algorithm-chooser/08-04-SUMMARY.md
-
-- Last session: 2026-06-30 — Plan 01-02 complete: SDK migration (Worker → Web), Kestrel 0.0.0.0:8099, X-Ingress-Path PathBase middleware, placeholder page (PlaceholderPage.cs), wwwroot assets (htmx 2.0.10, argus.css), config.yaml ingress keys. Live-HA verification deferred to operator.
-- Resume point: Live-HA verification per 01-02-SUMMARY.md "Pending Live-HA Verification" section, then Phase 2 planning.
+**Last session:** 2026-07-08T08:00:00.000Z
+**Stopped at:** v4.1 ROADMAP.md + REQUIREMENTS.md traceability written (Phases 10-13, 16/16 requirements mapped); awaiting roadmap approval, then `/gsd-plan-phase 10`
+**Resume file:** .planning/ROADMAP.md (Phase Details, Phase 10)
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Review the v4.1 roadmap draft; once approved, run `/gsd-plan-phase 10` to plan Design System Foundation
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-07-08 — Milestone v4.1 started
+Phase: 10 of 13 (Design System Foundation) — not yet planned
+Plan: — (roadmap created, no plans yet)
+Status: Ready to plan
+Last activity: 2026-07-08 — v4.1 ROADMAP.md created (4 phases, 16/16 requirements mapped, 0 orphans)
