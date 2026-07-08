@@ -1233,3 +1233,88 @@ details[open] > .argus-disclosure-toggle::before {
 .argus-banner__dismiss:hover {
   opacity: 1;
 }
+
+/* ── Phase 11: Standalone screens (Dashboard/Algorithms/Settings) ───────── */
+
+/* Page header (title + subtitle stack) — all 3 new screens */
+.argus-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xl);
+}
+
+.argus-page-header__title {
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
+  color: var(--color-text-primary);
+}
+
+.argus-page-header__subtitle {
+  font-size: var(--font-size-lead);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  max-width: 620px;
+}
+
+/* Section label (recipe generalized from .argus-kpi-tile__label) */
+.argus-section-label {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-caps);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-sm);
+}
+
+/* Dashboard KPI row (4 tiles) */
+.argus-dashboard-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
+}
+
+@media (max-width: 900px) {
+  .argus-dashboard-kpi-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .argus-dashboard-kpi-row {
+    grid-template-columns: repeat(1, 1fr);
+  }
+}
+
+/* Dashboard two-column layout ("Recent anomalies" / "System health") */
+.argus-dashboard-layout {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .argus-dashboard-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Algorithms catalog param-schema row (key left, description right) */
+.argus-catalog-param-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+}
+
+/* Settings layout container (3 stacked sections, narrower than --content-max) */
+.argus-settings-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  max-width: 720px;
+}

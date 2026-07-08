@@ -1,7 +1,5 @@
-import { useState } from 'preact/hooks';
 import { route } from '../router';
-
-type Theme = 'light' | 'dark';
+import { theme, setTheme } from '../state/theme';
 
 interface NavItem {
   id: string;
@@ -11,19 +9,22 @@ interface NavItem {
   disabled?: boolean;
 }
 
-// D-02: final order/look for all 5 screens now; Dashboard/Algorithms/Settings
-// are disabled placeholders until Phase 11 adds their routes.
+// D-02: final order/look for all 5 screens now. Phase 11 (D-10) enables
+// Dashboard/Algorithms/Settings — no longer disabled placeholders.
 const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: '▦', disabled: true },
-  { id: 'algorithms', label: 'Algorithms', icon: '⚙', disabled: true },
+  { id: 'dashboard', label: 'Dashboard', icon: '▦', href: '#/dashboard' },
+  { id: 'algorithms', label: 'Algorithms', icon: '⚙', href: '#/algorithms' },
   { id: 'sensors', label: 'Sensors', icon: '◎', href: '#/sensors' },
   { id: 'groups', label: 'Groups', icon: '⧉', href: '#/groups' },
-  { id: 'settings', label: 'Settings', icon: '⚙', disabled: true },
+  { id: 'settings', label: 'Settings', icon: '⚙', href: '#/settings' },
 ];
 
 function isActive(item: NavItem, currentRoute: string): boolean {
+  if (item.id === 'dashboard') return currentRoute === '/dashboard';
+  if (item.id === 'algorithms') return currentRoute === '/algorithms';
   if (item.id === 'sensors') return currentRoute === '/sensors';
   if (item.id === 'groups') return currentRoute === '/groups' || currentRoute.startsWith('/groups/');
+  if (item.id === 'settings') return currentRoute === '/settings';
   return false;
 }
 
@@ -34,15 +35,9 @@ function handleNavigate(item: NavItem) {
 
 export function Sidebar() {
   const currentRoute = route.value;
-  const [theme, setTheme] = useState<Theme>(
-    (document.documentElement.getAttribute('data-theme') as Theme | null) ?? 'light'
-  );
 
   function handleThemeToggle() {
-    const next: Theme = theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('argus-theme', next);
-    setTheme(next);
+    setTheme(theme.value === 'dark' ? 'light' : 'dark');
   }
 
   return (
@@ -84,9 +79,9 @@ export function Sidebar() {
           type="button"
           class="argus-sidebar__theme-toggle"
           onClick={handleThemeToggle}
-          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          aria-label={theme.value === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
         >
-          <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
+          <span aria-hidden="true">{theme.value === 'dark' ? '☀' : '☾'}</span>
         </button>
       </div>
     </nav>
