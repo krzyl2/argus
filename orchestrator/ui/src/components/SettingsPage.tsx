@@ -1,10 +1,16 @@
 import { useEffect } from 'preact/hooks';
 import { settings, loadError, loadSettings } from '../state/settings';
+import { theme, setTheme, type Theme } from '../state/theme';
 import { Card } from './Card';
 import { Badge } from './Badge';
 import { Banner } from './Banner';
 import { Input } from './Input';
 import { Select } from './Select';
+
+const THEME_OPTIONS: { value: Theme; label: string }[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+];
 
 const LOG_LEVEL_OPTIONS = [
   { value: 'debug', label: 'debug' },
@@ -19,8 +25,9 @@ const LOG_LEVEL_UNSET_OPTIONS = [{ value: '', label: '—' }];
 function noop(): void {}
 
 // Settings screen (#/settings). Connections + Batch & detection are read-only,
-// driven live by GET /api/settings (Plan 11-01). Appearance (functional) lands
-// in Task 2 of this plan.
+// driven live by GET /api/settings (Plan 11-01). Appearance is the one functional
+// section (D-09) — a second surface over the shared state/theme.ts signal, in sync
+// with the Sidebar toggle.
 export function SettingsPage() {
   useEffect(() => {
     void loadSettings();
@@ -125,6 +132,33 @@ export function SettingsPage() {
                 ariaLabel="Log level"
                 options={s?.logLevel ? LOG_LEVEL_OPTIONS : LOG_LEVEL_UNSET_OPTIONS}
               />
+            </div>
+          </Card>
+        </section>
+
+        <section>
+          <h2 class="argus-section-label">Appearance</h2>
+          <Card padding="sm">
+            <span class="argus-label">Theme</span>
+            <div class="argus-sensitivity-preset-picker">
+              <div
+                class="argus-sensitivity-preset-picker__options"
+                role="radiogroup"
+                aria-label="Theme"
+              >
+                {THEME_OPTIONS.map((option) => (
+                  <label key={option.value} class="argus-sensitivity-preset-picker__option">
+                    <input
+                      type="radio"
+                      name="theme"
+                      value={option.value}
+                      checked={theme.value === option.value}
+                      onChange={() => setTheme(option.value)}
+                    />
+                    <span class="argus-label">{option.label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           </Card>
         </section>
