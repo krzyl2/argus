@@ -138,3 +138,13 @@ export interface GroupStatus {
 export interface GroupStatusResponse {
   status: GroupStatus | null;
 }
+
+// GET /api/settings response (D-06) — non-sensitive orchestrator configuration only (D-07).
+export interface SettingsResponse {
+  detectorEndpoint: string | null;
+  influxUrl: string | null;
+  influxBucket: string | null;
+  batchIntervalMinutes: number;
+  nightlyFitHour: number;
+  logLevel: string | null;
+}
