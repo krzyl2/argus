@@ -15,6 +15,27 @@
   --color-status-ok:      #198754;
   --color-status-error:   #dc3545;
 
+  /* ── Brand ─────────────────────────────────────────────────────────────── */
+  --color-brand-navy:     #16294d;
+  --color-brand-navy-2:   #1f3562;
+  --color-on-brand:       #dbe6fb;
+
+  /* ── Additional semantic status ──────────────────────────────────────────── */
+  --color-status-warn:    #b7791f;
+
+  /* ── Tinted status surfaces (subtle fills for banners/pills/badges) ─────── */
+  --color-ok-soft:    color-mix(in srgb, var(--color-status-ok) 12%, var(--color-element));
+  --color-warn-soft:  color-mix(in srgb, var(--color-status-warn) 14%, var(--color-element));
+  --color-error-soft: color-mix(in srgb, var(--color-status-error) 12%, var(--color-element));
+  --color-accent-soft:color-mix(in srgb, var(--color-accent) 10%, var(--color-element));
+
+  /* ── Interaction helpers ─────────────────────────────────────────────────── */
+  --color-row-hover:    color-mix(in srgb, var(--color-surface) 60%, transparent);
+  --color-accent-hover: #0b5ed7;
+  --color-focus-ring:   var(--color-accent);
+
+  color-scheme: light;
+
   /* ── Spacing scale (4px grid) ─────────────────────────────────────────── */
   --space-xs:  4px;
   --space-sm:  8px;
@@ -24,33 +45,84 @@
   --space-2xl: 48px;
   --space-3xl: 64px;
 
+  /* ── Radius ──────────────────────────────────────────────────────────────── */
+  --radius-sm:   4px;
+  --radius-md:   6px;
+  --radius-full: 999px;
+
+  /* ── Borders ─────────────────────────────────────────────────────────────── */
+  --border-width:        1px;
+  --border-width-strong: 2px;
+  --border-default:      var(--border-width) solid var(--color-border);
+
+  /* ── Control sizing (hit targets) ───────────────────────────────────────── */
+  --control-height:    44px;
+  --control-height-sm: 36px;
+  --control-height-xs: 32px;
+
+  /* ── Layout ──────────────────────────────────────────────────────────────── */
+  --sidebar-width:           240px;
+  --sidebar-width-collapsed: 60px;
+  --content-max:             960px;
+
   /* ── Typography ───────────────────────────────────────────────────────── */
   --font-family:          system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono:            "SFMono-Regular", ui-monospace, Consolas, "Liberation Mono", Menlo, monospace;
+  --font-size-micro:      11px;
   --font-size-body:       14px;
   --font-size-label:      12px;
+  --font-size-lead:       16px;
   --font-size-heading:    20px;
+  --font-size-title:      24px;
   --font-size-display:    28px;
+  --font-size-kpi:        34px;
   --font-weight-regular:  400;
   --font-weight-semibold: 600;
   --line-height-body:     1.5;
   --line-height-label:    1.4;
   --line-height-heading:  1.2;
   --line-height-display:  1.15;
+  --letter-spacing-caps:  0.04em;
+
+  /* ── Elevation ───────────────────────────────────────────────────────────── */
+  --shadow-none:    none;
+  --shadow-sticky:  0 -1px 0 0 var(--color-border);
+  --shadow-popover: 0 4px 16px -4px rgba(17, 24, 39, 0.16);
+  --shadow-dialog:  0 12px 40px -8px rgba(17, 24, 39, 0.28);
+  --focus-ring:     0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus-ring);
 }
 
-/* ── Color tokens (dark scheme) ─────────────────────────────────────────── */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-surface:        #1c1c1e;
-    --color-element:        #2c2c2e;
-    --color-accent:         #3b9eff;
-    --color-border:         #3a3a3c;
-    --color-text-primary:   #f2f2f7;
-    --color-text-secondary: #aeaeb2;
-    --color-destructive:    #ff453a;
-    --color-status-ok:      #32d74b;
-    --color-status-error:   #ff453a;
-  }
+/* ── Color tokens (dark scheme) ───────────────────────────────────────────── */
+[data-theme="dark"] {
+  --color-surface:        #1c1c1e;
+  --color-element:        #2c2c2e;
+  --color-border:         #3a3a3c;
+
+  --color-accent:         #3b9eff;
+  --color-brand-navy:     #14213d;
+  --color-brand-navy-2:   #1e2f52;
+  --color-on-brand:       #cddcf5;
+
+  --color-text-primary:   #f2f2f7;
+  --color-text-secondary: #aeaeb2;
+
+  --color-destructive:    #ff453a;
+  --color-status-ok:      #32d74b;
+  --color-status-warn:    #ffd60a;
+  --color-status-error:   #ff453a;
+
+  --color-ok-soft:    color-mix(in srgb, var(--color-status-ok) 18%, var(--color-element));
+  --color-warn-soft:  color-mix(in srgb, var(--color-status-warn) 18%, var(--color-element));
+  --color-error-soft: color-mix(in srgb, var(--color-status-error) 18%, var(--color-element));
+  --color-accent-soft:color-mix(in srgb, var(--color-accent) 16%, var(--color-element));
+
+  --color-row-hover:    color-mix(in srgb, #ffffff 6%, transparent);
+  --color-accent-hover: #5cb0ff;
+
+  --shadow-popover: 0 4px 16px -4px rgba(0, 0, 0, 0.5);
+  --shadow-dialog:  0 12px 40px -8px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
 }
 
 /* ── Base reset ──────────────────────────────────────────────────────────── */
