@@ -17,14 +17,14 @@
 
 ### Dashboard (new screen)
 
-- [ ] **DASH-01**: Dashboard screen with KPI tiles (KpiTile) per `ui_kits/admin/index.html` layout
-- [ ] **DASH-02**: "Recent anomalies" section (mocked data; marked TODO where the backend endpoint doesn't exist yet)
-- [ ] **DASH-03**: "System health" section (mocked data; marked TODO)
+- [x] **DASH-01**: Dashboard screen with KPI tiles (KpiTile) per `ui_kits/admin/index.html` layout
+- [x] **DASH-02**: "Recent anomalies" section (mocked data; marked TODO where the backend endpoint doesn't exist yet)
+- [x] **DASH-03**: "System health" section (mocked data; marked TODO)
 
 ### Algorithms (new screen)
 
-- [ ] **ALGO-07**: Algorithms screen — group detector catalog browse (peer_divergence/ecod/copod/pca/iforest), source `Web/DetectorCatalog.cs`
-- [ ] **ALGO-08**: Presets + "best for…" copy per detector, sourced from `DetectorCatalog.cs`
+- [x] **ALGO-07**: Algorithms screen — group detector catalog browse (peer_divergence/ecod/copod/pca/iforest), source `Web/DetectorCatalog.cs`
+- [x] **ALGO-08**: Presets + "best for…" copy per detector, sourced from `DetectorCatalog.cs`
 
 ### Sensors (rebuild)
 
@@ -39,7 +39,7 @@
 
 ### Settings (new screen)
 
-- [ ] **SET-01**: Settings screen — global configuration (scope per `templates/admin-page` + existing repo settings)
+- [x] **SET-01**: Settings screen — global configuration (scope per `templates/admin-page` + existing repo settings)
 
 ### Accessibility & Interaction
 
@@ -76,12 +76,12 @@ Deferred, not in this milestone's roadmap.
 | COMP-01 | Phase 10 | Complete |
 | A11Y-01 | Phase 10 | Complete |
 | A11Y-02 | Phase 10 | Complete |
-| DASH-01 | Phase 11 | Pending |
-| DASH-02 | Phase 11 | Pending |
-| DASH-03 | Phase 11 | Pending |
-| ALGO-07 | Phase 11 | Pending |
-| ALGO-08 | Phase 11 | Pending |
-| SET-01 | Phase 11 | Pending |
+| DASH-01 | Phase 11 | Complete |
+| DASH-02 | Phase 11 | Complete |
+| DASH-03 | Phase 11 | Complete |
+| ALGO-07 | Phase 11 | Complete |
+| ALGO-08 | Phase 11 | Complete |
+| SET-01 | Phase 11 | Complete |
 | SEN-01 | Phase 12 | Pending |
 | SEN-02 | Phase 12 | Pending |
 | GRP-12 | Phase 13 | Pending |
