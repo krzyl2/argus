@@ -212,7 +212,7 @@ guided algorithm wizard, and attribution display fully preserved.
 
 **Goal:** [Captured for future planning] During group creation/editing, let the operator simulate/preview how different group detectors (peer_divergence, ecod, copod, pca, iforest) would score the actual selected sensors' historical data, to validate the algorithm choice before saving — rather than relying solely on the guided chooser's static recommendation.
 **Requirements:** TBD
-**Plans:** not yet planned
+**Plans:** 7/7 plans complete
 
 Plans:
 
@@ -232,7 +232,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 7. SPA Scaffolding | v4.0 | 3/3 | Complete | 2026-07-02 |
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete | 2026-07-02 |
 | 9. 2-Member Groups + Algorithm Guidance Correction | v4.0 | 3/3 | Complete | 2026-07-03 |
-| 10. Design System Foundation | v4.1 | 7/7 | Complete   | 2026-07-08 |
+| 10. Design System Foundation | v4.1 | 7/7 | Complete    | 2026-07-08 |
 | 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 0/TBD | Not started | - |
 | 12. Sensors Screen Rebuild | v4.1 | 0/TBD | Not started | - |
 | 13. Groups Screen Rebuild | v4.1 | 0/TBD | Not started | - |

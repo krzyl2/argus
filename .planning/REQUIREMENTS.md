@@ -8,12 +8,12 @@
 
 ### Theming
 
-- [ ] **THEME-01**: `argus.css` has a full set of dark-mode tokens (`data-theme="dark"`) matching `Argus Design System/tokens/colors.css` + `elevation.css` — currently 0 dark-mode rules exist in the shipped stylesheet
-- [ ] **THEME-02**: Theme toggle (light/dark) in the sidebar; selection persists (localStorage); works consistently across all 5 screens
+- [x] **THEME-01**: `argus.css` has a full set of dark-mode tokens (`data-theme="dark"`) matching `Argus Design System/tokens/colors.css` + `elevation.css` — currently 0 dark-mode rules exist in the shipped stylesheet
+- [x] **THEME-02**: Theme toggle (light/dark) in the sidebar; selection persists (localStorage); works consistently across all 5 screens
 
 ### Shared Components
 
-- [ ] **COMP-01**: Design-system component set ported to Preact (Button, Input, Select, Checkbox, SearchInput, Textarea, Card, Badge, StatusDot, KpiTile, AttributionBar, Disclosure, Banner, EmptyState, AlgorithmCard, SensitivityPreset, Sidebar) per `Argus Design System/components/*` specs
+- [x] **COMP-01**: Design-system component set ported to Preact (Button, Input, Select, Checkbox, SearchInput, Textarea, Card, Badge, StatusDot, KpiTile, AttributionBar, Disclosure, Banner, EmptyState, AlgorithmCard, SensitivityPreset, Sidebar) per `Argus Design System/components/*` specs
 
 ### Dashboard (new screen)
 
@@ -43,8 +43,8 @@
 
 ### Accessibility & Interaction
 
-- [ ] **A11Y-01**: Focus always visible (2px accent outline, 2px offset) on all interactive elements, all screens
-- [ ] **A11Y-02**: Radio-card selection = 2px accent border, never color alone (Groups wizard + Sensors detector picker)
+- [x] **A11Y-01**: Focus always visible (2px accent outline, 2px offset) on all interactive elements, all screens
+- [x] **A11Y-02**: Radio-card selection = 2px accent border, never color alone (Groups wizard + Sensors detector picker)
 
 ## Future Requirements
 
@@ -71,11 +71,11 @@ Deferred, not in this milestone's roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| THEME-01 | Phase 10 | Pending |
-| THEME-02 | Phase 10 | Pending |
-| COMP-01 | Phase 10 | Pending |
-| A11Y-01 | Phase 10 | Pending |
-| A11Y-02 | Phase 10 | Pending |
+| THEME-01 | Phase 10 | Complete |
+| THEME-02 | Phase 10 | Complete |
+| COMP-01 | Phase 10 | Complete |
+| A11Y-01 | Phase 10 | Complete |
+| A11Y-02 | Phase 10 | Complete |
 | DASH-01 | Phase 11 | Pending |
 | DASH-02 | Phase 11 | Pending |
 | DASH-03 | Phase 11 | Pending |
@@ -89,6 +89,7 @@ Deferred, not in this milestone's roadmap.
 | GRP-14 | Phase 13 | Pending |
 
 **Coverage:**
+
 - v4.1 requirements: 16 total
 - Mapped to phases: 16 (Phase 10: 5, Phase 11: 6, Phase 12: 2, Phase 13: 3)
 - Unmapped: 0 ✓
