@@ -1,5 +1,13 @@
 import type { DetectorEntry as DetectorEntryModel } from '../api/types';
 import { DetectorParamGrid } from './DetectorParamGrid';
+import { Select } from './Select';
+import { Button } from './Button';
+
+const DETECTOR_TYPE_OPTIONS = [
+  { value: 'hst', label: 'HST' },
+  { value: 'mad', label: 'MAD' },
+  { value: 'stl', label: 'STL' },
+];
 
 interface DetectorEntryProps {
   entityIdx: number;
@@ -25,25 +33,16 @@ export function DetectorEntry({
   return (
     <div class="argus-detector-entry">
       <div class="argus-detector-header">
-        <select
-          class="argus-detector-select"
-          aria-label={`Detector type for entity ${entityIdx}`}
+        <Select
           value={detector.name}
-          onChange={(e) => onTypeChange((e.target as HTMLSelectElement).value as 'hst' | 'mad' | 'stl')}
-        >
-          <option value="hst">HST</option>
-          <option value="mad">MAD</option>
-          <option value="stl">STL</option>
-        </select>
+          ariaLabel={`Detector type for entity ${entityIdx}`}
+          options={DETECTOR_TYPE_OPTIONS}
+          onChange={(v) => onTypeChange(v as 'hst' | 'mad' | 'stl')}
+        />
         <span class="argus-timing-caption">{timingCaption}</span>
-        <button
-          type="button"
-          class="argus-btn argus-btn--destructive-ghost"
-          aria-label="Remove this detector"
-          onClick={onRemove}
-        >
+        <Button variant="destructive-ghost" size="xs" ariaLabel="Remove this detector" onClick={onRemove}>
           Remove
-        </button>
+        </Button>
       </div>
       <DetectorParamGrid
         entityIdx={entityIdx}
