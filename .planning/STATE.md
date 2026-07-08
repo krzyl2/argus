@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v4.1
 milestone_name: Admin UI Rebuild
 current_phase: 11
-current_phase_name: Dashboard, Algorithms, Settings
+current_phase_name: new-standalone-screens-dashboard-algorithms-settings
 status: executing
 stopped_at: Phase 11 UI-SPEC approved
-last_updated: "2026-07-08T11:18:14.548Z"
+last_updated: "2026-07-08T11:19:30.334Z"
 last_activity: 2026-07-08
-last_activity_desc: Phase 10 complete, transitioned to Phase 11
+last_activity_desc: Phase 11 execution started
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 7
+  total_plans: 12
   completed_plans: 7
   percent: 20
 ---
@@ -67,7 +67,7 @@ these UI flows (Phases 10-13).
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
-**Current focus:** Phase 10 — Design System Foundation
+**Current focus:** Phase 11 — new-standalone-screens-dashboard-algorithms-settings
 
 ## Phase Status (v4.1)
 
@@ -249,7 +249,7 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 ## Current Position
 
-Phase: 11 — New Standalone Screens (Dashboard, Algorithms, Settings)
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-08 — Phase 10 complete, transitioned to Phase 11
+Phase: 11 (new-standalone-screens-dashboard-algorithms-settings) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 11
+Last activity: 2026-07-08 — Phase 11 execution started

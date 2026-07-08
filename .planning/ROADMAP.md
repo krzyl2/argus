@@ -160,13 +160,13 @@ themes, built on the Phase 10 foundation.
   4. All three screens are reachable from the sidebar navigation and render correctly in both light and
      dark mode with no unstyled regions
 
-**Plans**: 5 plans
+**Plans**: 2/5 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 11-01-PLAN.md — GET /api/settings endpoint (redacted, non-sensitive config) + SettingsResponse type (SET-01)
-- [ ] 11-02-PLAN.md — Frontend foundation: nav/routing enablement + shared theme signal + skeleton pages + new CSS classes (DASH-01, ALGO-07, SET-01)
+- [x] 11-01-PLAN.md — GET /api/settings endpoint (redacted, non-sensitive config) + SettingsResponse type (SET-01)
+- [x] 11-02-PLAN.md — Frontend foundation: nav/routing enablement + shared theme signal + skeleton pages + new CSS classes (DASH-01, ALGO-07, SET-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -246,6 +246,6 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete | 2026-07-02 |
 | 9. 2-Member Groups + Algorithm Guidance Correction | v4.0 | 3/3 | Complete | 2026-07-03 |
 | 10. Design System Foundation | v4.1 | 7/7 | Complete    | 2026-07-08 |
-| 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 0/5 | Planned | - |
+| 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 2/5 | In Progress|  |
 | 12. Sensors Screen Rebuild | v4.1 | 0/TBD | Not started | - |
 | 13. Groups Screen Rebuild | v4.1 | 0/TBD | Not started | - |
