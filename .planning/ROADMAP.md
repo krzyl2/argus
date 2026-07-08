@@ -103,17 +103,38 @@ built pixel-accurate in both themes without re-deriving these primitives per-scr
   1. Toggling the theme switch in the sidebar instantly swaps every token-driven color across the whole
      app between the light and dark token sets, with no unstyled or light-leaking regions, and the
      choice persists in localStorage and is restored on reload — consistent across all 5 admin screens
+
   2. Every design-system component (Button, Input, Select, Checkbox, SearchInput, Textarea, Card,
      Badge, StatusDot, KpiTile, AttributionBar, Disclosure, Banner, EmptyState, AlgorithmCard,
      SensitivityPreset, Sidebar) exists as a Preact component matching its `Argus Design System/components/*`
      spec, in both themes
+
   3. Tabbing through any interactive element (button, input, radio-card, nav link) shows a visible 2px
      accent outline with 2px offset — focus is never invisible
+
   4. Selecting an AlgorithmCard or SensitivityPreset radio-card shows a 2px accent border on the
      selected option, and the selected vs. unselected state is distinguishable without relying on color
      alone
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 10-01-PLAN.md — CSS token foundation + [data-theme="dark"] block + all component BEM classes + A11Y-01 focus fix + main.tsx theme bootstrap (THEME-01, THEME-02, A11Y-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 10-02-PLAN.md — Form components: Button (+test), Input, Select, Textarea, Checkbox, SearchInput (COMP-01, A11Y-01)
+- [ ] 10-03-PLAN.md — Display components: Card, Badge, StatusDot, KpiTile, Disclosure, AttributionBar (COMP-01)
+- [ ] 10-04-PLAN.md — Feedback + Selection: Banner, EmptyState, AlgorithmCard, SensitivityPreset (COMP-01, A11Y-02)
+- [ ] 10-05-PLAN.md — Navigation: Sidebar + AppShell shell + theme toggle (THEME-02, COMP-01)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 10-06-PLAN.md — Retrofit forms consumers: SaveBar/AddDetectorButton/DetectorEntry/SensorListRow/SensorSearchInput (COMP-01, A11Y-01)
+- [ ] 10-07-PLAN.md — Retrofit display/feedback consumers: GroupListRow + 3 banner components (COMP-01)
+
 **UI hint**: yes
 
 ### Phase 11: New Standalone Screens (Dashboard, Algorithms, Settings)
@@ -128,11 +149,14 @@ themes, built on the Phase 10 foundation.
   1. Navigating to Dashboard shows KPI tiles (KpiTile) per the `ui_kits/admin/index.html` layout, with a
      "recent anomalies" section and a "system health" section — where a backend endpoint doesn't exist
      yet, the section shows mocked data explicitly marked TODO rather than silently faking a real feed
+
   2. Navigating to Algorithms shows a read-only catalog of all 5 group detectors (peer_divergence,
      ecod, copod, pca, iforest) with presets and "best for…" copy sourced from `Web/DetectorCatalog.cs`
      — distinct from the in-flow `AlgorithmChooser` wizard step used by Groups
+
   3. Navigating to Settings shows a global-configuration screen scoped per `templates/admin-page` and
      the app's existing configurable settings
+
   4. All three screens are reachable from the sidebar navigation and render correctly in both light and
      dark mode with no unstyled regions
 
@@ -150,9 +174,11 @@ spec, with single-sensor detector assignment and inline validation fully preserv
 
   1. The Sensors screen's list and filtering UI (search, area/domain browse) matches the Design System
      spec (Card/Badge/StatusDot/SearchInput patterns) in both themes
+
   2. Assigning a detector (hst/mad/stl) to a sensor still works end-to-end after the rebuild, with
      inline validation errors shown per the existing `detectorParams.ts` rules and `DetectorDefaults.cs`
      server defaults
+
   3. Selecting a detector via the sensor's radio-card picker shows the Phase 10 shared component's 2px
      accent-border selection state, never color alone
 
@@ -173,6 +199,7 @@ guided algorithm wizard, and attribution display fully preserved.
   2. The guided algorithm creation wizard's steps (chooser, sensitivity presets, Advanced override)
      match the Design System spec, with radio-card detector/preset selection showing the Phase 10
      shared component's 2px accent-border state
+
   3. The attribution panel (AttributionBar) renders ranked per-member/per-feature contribution bars
      matching the Design System spec, in both themes
 
@@ -205,7 +232,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 7. SPA Scaffolding | v4.0 | 3/3 | Complete | 2026-07-02 |
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete | 2026-07-02 |
 | 9. 2-Member Groups + Algorithm Guidance Correction | v4.0 | 3/3 | Complete | 2026-07-03 |
-| 10. Design System Foundation | v4.1 | 0/TBD | Not started | - |
+| 10. Design System Foundation | v4.1 | 0/7 | Not started | - |
 | 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 0/TBD | Not started | - |
 | 12. Sensors Screen Rebuild | v4.1 | 0/TBD | Not started | - |
 | 13. Groups Screen Rebuild | v4.1 | 0/TBD | Not started | - |
