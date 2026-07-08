@@ -195,7 +195,10 @@ spec, with single-sensor detector assignment and inline validation fully preserv
   3. Selecting a detector via the sensor's radio-card picker shows the Phase 10 shared component's 2px
      accent-border selection state, never color alone
 
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 12-01-PLAN.md — Widen shared primitives (AlgorithmCard string props + Input passthrough) [Wave 1]
+- [ ] 12-02-PLAN.md — Rebuild list/row: DS header, Card, Badge, groupByArea, single-select-and-expand [Wave 1]
+- [ ] 12-03-PLAN.md — Rebuild detector editor (Select→AlgorithmCard, raw input→Input) + regression gate [Wave 2]
 **UI hint**: yes
 
 ### Phase 13: Groups Screen Rebuild
