@@ -1,7 +1,9 @@
 ---
 phase: 11-new-standalone-screens-dashboard-algorithms-settings
 verified: 2026-07-08T11:53:17Z
-status: human_needed
+status: verified
+human_verified: 2026-07-08T14:35:00Z
+human_verification_result: "both items PASS via UAT (11-UAT.md)"
 score: 20/20 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -136,7 +138,13 @@ Note: per instructions, the full test suites were already confirmed green at HEA
 
 None — no gaps map to later milestone phases; this phase (11) is the terminal phase for DASH-01/02/03, ALGO-07/08, SET-01 in the current roadmap.
 
-### Human Verification Required
+### Human Verification — COMPLETE ✓
+
+Both items verified by operator via UAT on 2026-07-08 (see `11-UAT.md`) — **both PASS**:
+1. Visual/theme parity across both themes — **PASS** (screens loaded via Vite dev server + Chrome; both themes confirmed)
+2. End-to-end Log level display against a real deployment — **PASS** (add-on 2.1.2 deployed to live HA; `log_level` debug/info/warning each showed the correct Select option Debug/Information/Warning)
+
+Original items (for reference):
 
 1. **Visual/theme parity across both themes**
    **Test:** Load `#/dashboard`, `#/algorithms`, `#/settings` with `data-theme="light"` and `data-theme="dark"`; toggle theme from the Sidebar and from the Settings Appearance control.
