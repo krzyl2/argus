@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'preact/hooks';
+import { SearchInput } from './SearchInput';
 
 interface SensorSearchInputProps {
   value: string;
@@ -7,32 +7,16 @@ interface SensorSearchInputProps {
 
 const DEBOUNCE_MS = 200;
 
-// Replaces <input class="argus-search__input"> (htmx keyup changed delay:200ms).
+// Thin instantiation of the shared SearchInput (Plan 10-02). Replaces
+// <input class="argus-search__input"> (htmx keyup changed delay:200ms).
 export function SensorSearchInput({ value, onChange }: SensorSearchInputProps) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Clear any pending debounce timer on unmount so onChange never fires for an
-  // inactive/unmounted view (e.g. once a second route is added).
-  useEffect(() => () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-  }, []);
-
-  function handleInput(e: Event) {
-    const next = (e.target as HTMLInputElement).value;
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => onChange(next), DEBOUNCE_MS);
-  }
-
   return (
-    <div class="argus-search">
-      <input
-        class="argus-search__input"
-        type="search"
-        defaultValue={value}
-        placeholder="Filter by name or entity ID…"
-        aria-label="Filter entities"
-        onInput={handleInput}
-      />
-    </div>
+    <SearchInput
+      value={value}
+      onChange={onChange}
+      placeholder="Filter by name or entity ID…"
+      ariaLabel="Filter entities"
+      debounceMs={DEBOUNCE_MS}
+    />
   );
 }

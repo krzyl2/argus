@@ -1,5 +1,6 @@
 import type { SensorEntry, DetectorEntry as DetectorEntryModel } from '../api/types';
 import { DetectorDisclosure } from './DetectorDisclosure';
+import { Checkbox } from './Checkbox';
 
 interface SensorListRowProps {
   entry: SensorEntry;
@@ -36,13 +37,7 @@ export function SensorListRow({
   return (
     <li class={`argus-list-row${isTracked ? ' argus-list-row--tracked' : ''}`}>
       <label style={{ display: 'contents' }}>
-        <input
-          class="argus-checkbox"
-          type="checkbox"
-          checked={isTracked}
-          aria-label={entry.entityId}
-          onChange={(e) => onToggleTracked((e.target as HTMLInputElement).checked)}
-        />
+        <Checkbox checked={isTracked} ariaLabel={entry.entityId} onChange={onToggleTracked} />
         <div class="argus-row-content">
           <span class="argus-row-entity-id">{entry.entityId}</span>
           {showFriendlyName && (
