@@ -11,6 +11,13 @@ function App() {
   return <AppShell>{isGroupsRoute ? <GroupsPage /> : <SensorsPage />}</AppShell>;
 }
 
+const storedTheme = localStorage.getItem('argus-theme');
+if (storedTheme) {
+  document.documentElement.setAttribute('data-theme', storedTheme);
+} else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+  document.documentElement.setAttribute('data-theme', 'dark');
+}
+
 const mountEl = document.getElementById('app');
 if (mountEl) {
   render(<App />, mountEl);

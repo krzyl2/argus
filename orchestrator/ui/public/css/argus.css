@@ -15,6 +15,27 @@
   --color-status-ok:      #198754;
   --color-status-error:   #dc3545;
 
+  /* ── Brand ─────────────────────────────────────────────────────────────── */
+  --color-brand-navy:     #16294d;
+  --color-brand-navy-2:   #1f3562;
+  --color-on-brand:       #dbe6fb;
+
+  /* ── Additional semantic status ──────────────────────────────────────────── */
+  --color-status-warn:    #b7791f;
+
+  /* ── Tinted status surfaces (subtle fills for banners/pills/badges) ─────── */
+  --color-ok-soft:    color-mix(in srgb, var(--color-status-ok) 12%, var(--color-element));
+  --color-warn-soft:  color-mix(in srgb, var(--color-status-warn) 14%, var(--color-element));
+  --color-error-soft: color-mix(in srgb, var(--color-status-error) 12%, var(--color-element));
+  --color-accent-soft:color-mix(in srgb, var(--color-accent) 10%, var(--color-element));
+
+  /* ── Interaction helpers ─────────────────────────────────────────────────── */
+  --color-row-hover:    color-mix(in srgb, var(--color-surface) 60%, transparent);
+  --color-accent-hover: #0b5ed7;
+  --color-focus-ring:   var(--color-accent);
+
+  color-scheme: light;
+
   /* ── Spacing scale (4px grid) ─────────────────────────────────────────── */
   --space-xs:  4px;
   --space-sm:  8px;
@@ -24,33 +45,84 @@
   --space-2xl: 48px;
   --space-3xl: 64px;
 
+  /* ── Radius ──────────────────────────────────────────────────────────────── */
+  --radius-sm:   4px;
+  --radius-md:   6px;
+  --radius-full: 999px;
+
+  /* ── Borders ─────────────────────────────────────────────────────────────── */
+  --border-width:        1px;
+  --border-width-strong: 2px;
+  --border-default:      var(--border-width) solid var(--color-border);
+
+  /* ── Control sizing (hit targets) ───────────────────────────────────────── */
+  --control-height:    44px;
+  --control-height-sm: 36px;
+  --control-height-xs: 32px;
+
+  /* ── Layout ──────────────────────────────────────────────────────────────── */
+  --sidebar-width:           240px;
+  --sidebar-width-collapsed: 60px;
+  --content-max:             960px;
+
   /* ── Typography ───────────────────────────────────────────────────────── */
   --font-family:          system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono:            "SFMono-Regular", ui-monospace, Consolas, "Liberation Mono", Menlo, monospace;
+  --font-size-micro:      11px;
   --font-size-body:       14px;
   --font-size-label:      12px;
+  --font-size-lead:       16px;
   --font-size-heading:    20px;
+  --font-size-title:      24px;
   --font-size-display:    28px;
+  --font-size-kpi:        34px;
   --font-weight-regular:  400;
   --font-weight-semibold: 600;
   --line-height-body:     1.5;
   --line-height-label:    1.4;
   --line-height-heading:  1.2;
   --line-height-display:  1.15;
+  --letter-spacing-caps:  0.04em;
+
+  /* ── Elevation ───────────────────────────────────────────────────────────── */
+  --shadow-none:    none;
+  --shadow-sticky:  0 -1px 0 0 var(--color-border);
+  --shadow-popover: 0 4px 16px -4px rgba(17, 24, 39, 0.16);
+  --shadow-dialog:  0 12px 40px -8px rgba(17, 24, 39, 0.28);
+  --focus-ring:     0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus-ring);
 }
 
-/* ── Color tokens (dark scheme) ─────────────────────────────────────────── */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-surface:        #1c1c1e;
-    --color-element:        #2c2c2e;
-    --color-accent:         #3b9eff;
-    --color-border:         #3a3a3c;
-    --color-text-primary:   #f2f2f7;
-    --color-text-secondary: #aeaeb2;
-    --color-destructive:    #ff453a;
-    --color-status-ok:      #32d74b;
-    --color-status-error:   #ff453a;
-  }
+/* ── Color tokens (dark scheme) ───────────────────────────────────────────── */
+[data-theme="dark"] {
+  --color-surface:        #1c1c1e;
+  --color-element:        #2c2c2e;
+  --color-border:         #3a3a3c;
+
+  --color-accent:         #3b9eff;
+  --color-brand-navy:     #14213d;
+  --color-brand-navy-2:   #1e2f52;
+  --color-on-brand:       #cddcf5;
+
+  --color-text-primary:   #f2f2f7;
+  --color-text-secondary: #aeaeb2;
+
+  --color-destructive:    #ff453a;
+  --color-status-ok:      #32d74b;
+  --color-status-warn:    #ffd60a;
+  --color-status-error:   #ff453a;
+
+  --color-ok-soft:    color-mix(in srgb, var(--color-status-ok) 18%, var(--color-element));
+  --color-warn-soft:  color-mix(in srgb, var(--color-status-warn) 18%, var(--color-element));
+  --color-error-soft: color-mix(in srgb, var(--color-status-error) 18%, var(--color-element));
+  --color-accent-soft:color-mix(in srgb, var(--color-accent) 16%, var(--color-element));
+
+  --color-row-hover:    color-mix(in srgb, #ffffff 6%, transparent);
+  --color-accent-hover: #5cb0ff;
+
+  --shadow-popover: 0 4px 16px -4px rgba(0, 0, 0, 0.5);
+  --shadow-dialog:  0 12px 40px -8px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
 }
 
 /* ── Base reset ──────────────────────────────────────────────────────────── */
@@ -98,12 +170,14 @@ a:hover {
 }
 
 .argus-main {
-  max-width: 720px;
+  max-width: var(--content-max);
   margin: 0 auto;
   padding: var(--space-3xl) var(--space-xl);
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
+  flex: 1;
+  min-width: 0;
 }
 
 .argus-footer {
@@ -189,6 +263,9 @@ a:hover {
 
 .argus-search__input:focus {
   border-color: var(--color-accent);
+}
+
+.argus-search__input:focus:not(:focus-visible) {
   outline: none;
 }
 
@@ -338,6 +415,9 @@ a:hover {
 
 .argus-filters__textarea:focus {
   border-color: var(--color-accent);
+}
+
+.argus-filters__textarea:focus:not(:focus-visible) {
   outline: none;
 }
 
@@ -525,6 +605,9 @@ details[open] > .argus-disclosure-toggle::before {
 
 .argus-detector-select:focus {
   border-color: var(--color-accent);
+}
+
+.argus-detector-select:focus:not(:focus-visible) {
   outline: none;
 }
 
@@ -583,6 +666,9 @@ details[open] > .argus-disclosure-toggle::before {
 
 .argus-param-field__input:focus {
   border-color: var(--color-accent);
+}
+
+.argus-param-field__input:focus:not(:focus-visible) {
   outline: none;
 }
 
@@ -651,6 +737,9 @@ details[open] > .argus-disclosure-toggle::before {
 
 .argus-param-field--error .argus-param-field__input {
   border-color: var(--color-status-error);
+}
+
+.argus-param-field--error .argus-param-field__input:focus:not(:focus-visible) {
   outline: none;
 }
 
@@ -832,4 +921,315 @@ details[open] > .argus-disclosure-toggle::before {
   color: var(--color-text-primary);
   margin-top: 0;
   margin-bottom: var(--space-md);
+}
+
+/* ── Phase 10: Design System Foundation ──────────────────────────────────── */
+
+/* Button — additional variants, sizes, spinner */
+.argus-btn--secondary {
+  background: transparent;
+  color: var(--color-accent);
+  border: var(--border-width) solid var(--color-accent);
+}
+
+.argus-btn--secondary:hover {
+  background: var(--color-accent-soft);
+}
+
+.argus-btn--secondary:active {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+
+.argus-btn--ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: none;
+}
+
+.argus-btn--ghost:hover {
+  background: var(--color-row-hover);
+}
+
+.argus-btn--ghost:active {
+  background: color-mix(in srgb, var(--color-text-secondary) 16%, transparent);
+}
+
+.argus-btn--sm {
+  min-height: var(--control-height-sm);
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.argus-btn--xs {
+  min-height: var(--control-height-xs);
+  padding: var(--space-xs) var(--space-sm);
+  font-size: var(--font-size-label);
+}
+
+.argus-btn__spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.6;
+  animation: argus-spin 0.6s linear infinite;
+}
+
+/* Shell / Sidebar layout (D-01) */
+.argus-shell {
+  display: flex;
+  flex-direction: row;
+  min-height: 100vh;
+}
+
+.argus-sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  height: 100%;
+  min-height: 100vh;
+  background: var(--color-brand-navy);
+  color: var(--color-on-brand);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-md) var(--space-sm);
+  gap: var(--space-xs);
+}
+
+.argus-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.argus-sidebar__brand-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  background: var(--color-accent);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-body);
+}
+
+.argus-sidebar__wordmark {
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-semibold);
+  color: #ffffff;
+  letter-spacing: 0.01em;
+}
+
+.argus-sidebar__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-sm) var(--space-md);
+  min-height: var(--control-height);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  background: transparent;
+  color: var(--color-on-brand);
+  transition: background 0.12s ease;
+}
+
+.argus-sidebar__item:hover {
+  background: var(--color-brand-navy-2);
+}
+
+.argus-sidebar__item--active {
+  background: var(--color-brand-navy-2);
+  color: #ffffff;
+  font-weight: var(--font-weight-semibold);
+}
+
+.argus-sidebar__item--active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-accent);
+}
+
+.argus-sidebar__item--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.argus-sidebar__icon {
+  font-size: 16px;
+  line-height: 1;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.argus-sidebar__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.argus-sidebar__footer {
+  margin-top: auto;
+  padding-top: var(--space-md);
+}
+
+.argus-sidebar__theme-toggle {
+  background: transparent;
+  border: none;
+  color: var(--color-on-brand);
+  cursor: pointer;
+  min-height: var(--control-height-sm);
+  border-radius: var(--radius-md);
+  padding: var(--space-xs) var(--space-sm);
+  font-size: var(--font-size-body);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+}
+
+.argus-sidebar__theme-toggle:hover {
+  background: var(--color-brand-navy-2);
+}
+
+/* Card (generic container) */
+.argus-card {
+  background: var(--color-element);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+}
+
+.argus-card--interactive {
+  transition: border-color 0.15s ease;
+}
+
+.argus-card--interactive:hover {
+  border-color: var(--color-accent);
+}
+
+/* KpiTile */
+.argus-kpi-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  background: var(--color-element);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+}
+
+.argus-kpi-tile--accent {
+  border-top: var(--border-width-strong) solid var(--color-accent);
+}
+
+.argus-kpi-tile__label {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-caps);
+  color: var(--color-text-secondary);
+}
+
+.argus-kpi-tile__value {
+  font-size: var(--font-size-kpi);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.argus-kpi-tile__unit {
+  font-size: var(--font-size-body);
+  color: var(--color-text-secondary);
+}
+
+.argus-kpi-tile__hint {
+  font-size: var(--font-size-label);
+  color: var(--color-text-secondary);
+}
+
+/* Badge tones extending .argus-pill */
+.argus-pill--member {
+  background-color: var(--color-accent);
+  color: #ffffff;
+}
+
+.argus-pill--neutral {
+  background-color: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: var(--border-default);
+}
+
+.argus-pill--ok {
+  background-color: var(--color-ok-soft);
+  color: var(--color-status-ok);
+}
+
+.argus-pill--warn {
+  background-color: var(--color-warn-soft);
+  color: var(--color-status-warn);
+}
+
+.argus-pill--error {
+  background-color: var(--color-error-soft);
+  color: var(--color-status-error);
+}
+
+.argus-pill--accent {
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+/* StatusDot — additional tri-state tones */
+.argus-status-dot.status-warn {
+  background-color: var(--color-status-warn);
+}
+
+.argus-status-dot.status-idle {
+  background-color: var(--color-text-secondary);
+}
+
+/* Banner — info tone (subtle, dismissable) */
+.argus-banner--info {
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+  border: var(--border-default);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.argus-banner__dismiss {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px;
+  margin-left: auto;
+}
+
+.argus-banner__dismiss:hover {
+  opacity: 1;
 }
