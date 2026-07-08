@@ -47,6 +47,19 @@ that exist today (Sensors, Groups).
   is a structural consequence of shared tokens/components existing, not something Phase 10
   needs to additionally verify against live routes.
 
+### UI-SPEC checker gate resolutions (2026-07-08, post /gsd-ui-phase)
+- **D-06:** The retrofitted primary CTA label is renamed away from the bare generic
+  "Save" (flagged by the UI-SPEC checker as a blocklisted generic label) to a specific
+  verb+noun label (e.g. "Save changes" / "Save group", exact wording left to the
+  component/screen it lives on). This is a narrow, explicit exception to the "retrofit =
+  swap implementation, not rewrite copy" framing in D-04 — the label text itself is in
+  scope for Phase 10 wherever the shared Button component is adopted.
+- **D-07:** The 8-size typography scale (micro/label/body/lead/heading/title/display/kpi)
+  from `Argus Design System/tokens/typography.css` is locked as-is, exceeding the UI-SPEC
+  template's default 4-size guideline intentionally. It is a verbatim port of the
+  already-approved Design System token package (project source of truth), not a new
+  design decision — the template limit does not apply to an inherited, locked scale.
+
 ### Claude's Discretion
 - **Dark-mode activation mechanism** — user did not select this gray area for discussion.
   Flagging a real conflict found during codebase scouting, resolved at Claude's discretion:
