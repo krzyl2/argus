@@ -1,13 +1,134 @@
-// Settings screen (#/settings). Skeleton this plan (11-02) — Connections,
-// Batch & detection, and Appearance sections are fleshed out in 11-05.
+import { useEffect } from 'preact/hooks';
+import { settings, loadError, loadSettings } from '../state/settings';
+import { Card } from './Card';
+import { Badge } from './Badge';
+import { Banner } from './Banner';
+import { Input } from './Input';
+import { Select } from './Select';
+
+const LOG_LEVEL_OPTIONS = [
+  { value: 'debug', label: 'debug' },
+  { value: 'info', label: 'info' },
+  { value: 'warning', label: 'warning' },
+];
+
+const LOG_LEVEL_UNSET_OPTIONS = [{ value: '', label: '—' }];
+
+// noop onChange — every control in Connections/Batch & detection is disabled
+// (D-06/D-08, read-only), so Input/Select never actually fire a change.
+function noop(): void {}
+
+// Settings screen (#/settings). Connections + Batch & detection are read-only,
+// driven live by GET /api/settings (Plan 11-01). Appearance (functional) lands
+// in Task 2 of this plan.
 export function SettingsPage() {
+  useEffect(() => {
+    void loadSettings();
+  }, []);
+
+  const s = settings.value;
+
   return (
-    <header class="argus-page-header">
-      <h1 class="argus-page-header__title">Settings</h1>
-      <p class="argus-page-header__subtitle">
-        Current connection and detection configuration. Appearance can be changed below; other
-        values are read-only.
-      </p>
-    </header>
+    <>
+      <header class="argus-page-header">
+        <h1 class="argus-page-header__title">Settings</h1>
+        <p class="argus-page-header__subtitle">
+          Current connection and detection configuration. Appearance can be changed below; other
+          values are read-only.
+        </p>
+      </header>
+
+      {loadError.value && (
+        <Banner tone="error">Couldn't load settings. Refresh to try again.</Banner>
+      )}
+
+      <div class="argus-settings-layout">
+        <section>
+          <h2 class="argus-section-label">Connections</h2>
+          <Card padding="sm">
+            <p class="argus-label">
+              Home Assistant &amp; MQTT are injected automatically by the Supervisor.{' '}
+              <Badge tone="ok">auto</Badge>
+            </p>
+
+            <div class="argus-param-field">
+              <span class="argus-param-field__label">Detector gRPC endpoint (mTLS)</span>
+              <Input
+                value={s?.detectorEndpoint ?? ''}
+                onChange={noop}
+                disabled
+                ariaLabel="Detector gRPC endpoint (mTLS)"
+              />
+            </div>
+
+            <div class="argus-param-grid">
+              <div class="argus-param-field">
+                <span class="argus-param-field__label">InfluxDB URL (optional)</span>
+                <Input
+                  value={s?.influxUrl ?? ''}
+                  onChange={noop}
+                  disabled
+                  ariaLabel="InfluxDB URL (optional)"
+                />
+              </div>
+              <div class="argus-param-field">
+                <span class="argus-param-field__label">InfluxDB bucket</span>
+                <Input
+                  value={s?.influxBucket ?? ''}
+                  onChange={noop}
+                  disabled
+                  ariaLabel="InfluxDB bucket"
+                />
+              </div>
+            </div>
+          </Card>
+        </section>
+
+        <section>
+          <h2 class="argus-section-label">Batch &amp; detection</h2>
+          <Card padding="sm">
+            <div class="argus-param-grid">
+              <div class="argus-param-field">
+                <span class="argus-param-field__label">Batch interval (minutes)</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                  <Input
+                    value={s ? String(s.batchIntervalMinutes) : ''}
+                    onChange={noop}
+                    type="number"
+                    disabled
+                    ariaLabel="Batch interval (minutes)"
+                  />
+                  <span class="argus-label">min</span>
+                </div>
+              </div>
+              <div class="argus-param-field">
+                <span class="argus-param-field__label">Nightly fit hour (UTC)</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                  <Input
+                    value={s ? String(s.nightlyFitHour) : ''}
+                    onChange={noop}
+                    type="number"
+                    disabled
+                    ariaLabel="Nightly fit hour (UTC)"
+                  />
+                  <span class="argus-label">h</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="argus-param-field">
+              <span class="argus-param-field__label">Log level</span>
+              <Select
+                value={s?.logLevel ?? ''}
+                onChange={noop}
+                disabled
+                ariaLabel="Log level"
+                options={s?.logLevel ? LOG_LEVEL_OPTIONS : LOG_LEVEL_UNSET_OPTIONS}
+              />
+            </div>
+          </Card>
+        </section>
+      </div>
+    </>
   );
 }
