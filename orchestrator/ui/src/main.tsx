@@ -26,12 +26,9 @@ function App() {
   return <AppShell>{page}</AppShell>;
 }
 
-const storedTheme = localStorage.getItem('argus-theme');
-if (storedTheme) {
-  document.documentElement.setAttribute('data-theme', storedTheme);
-} else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-  document.documentElement.setAttribute('data-theme', 'dark');
-}
+// Theme bootstrap (localStorage / prefers-color-scheme -> data-theme) now
+// lives in state/theme.ts (D-09) — it runs as a side effect of the
+// AppShell -> Sidebar -> state/theme import chain above, before render().
 
 const mountEl = document.getElementById('app');
 if (mountEl) {
