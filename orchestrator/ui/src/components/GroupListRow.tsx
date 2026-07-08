@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { GroupConfig, GroupStatus } from '../api/types';
 import { deleteGroup } from '../state/groups';
+import { Button } from './Button';
+import { Badge } from './Badge';
 
 interface GroupListRowProps {
   group: GroupConfig;
@@ -43,29 +45,23 @@ export function GroupListRow({ group, status }: GroupListRowProps) {
     <li class="argus-list-row">
       <div class="argus-row-content">
         <span class="argus-row-entity-id">{group.friendlyName || group.groupId}</span>
-        <span class="argus-pill">{modeLabel}</span>
+        <Badge tone="neutral">{modeLabel}</Badge>
       </div>
       <div class="argus-row-meta">
         <span class="argus-label">
           {group.members.length} {memberWord}
         </span>
         {status ? (
-          <span class="argus-pill argus-pill--tracked">
-            {status.isAnomaly ? 'anomaly' : 'active'}
-          </span>
+          <Badge tone="tracked">{status.isAnomaly ? 'anomaly' : 'active'}</Badge>
         ) : (
           <span class="argus-label">no status yet</span>
         )}
         <a class="argus-label" href={`#/groups/${encodeURIComponent(group.groupId)}`}>
           Edit
         </a>
-        <button
-          type="button"
-          class="argus-btn argus-btn--destructive-ghost"
-          onClick={handleDeleteClick}
-        >
+        <Button variant="destructive-ghost" size="xs" onClick={handleDeleteClick}>
           {armed ? 'Confirm delete' : 'Delete group'}
-        </button>
+        </Button>
       </div>
     </li>
   );

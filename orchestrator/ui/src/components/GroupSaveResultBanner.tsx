@@ -1,4 +1,5 @@
 import type { GroupSaveResponse } from '../api/types';
+import { Banner } from './Banner';
 
 interface GroupSaveResultBannerProps {
   result: GroupSaveResponse;
@@ -14,24 +15,24 @@ export function GroupSaveResultBanner({ result, memberCount }: GroupSaveResultBa
   if (result.ok) {
     const memberWord = memberCount === 1 ? 'member' : 'members';
     return (
-      <div class="argus-banner argus-banner--success" role="status" aria-live="polite">
+      <Banner tone="success">
         Saved — group active. {memberCount} {memberWord} tracked.
-      </div>
+      </Banner>
     );
   }
 
   if (result.kind === 'validation') {
     return (
-      <div class="argus-banner argus-banner--validation" role="alert" aria-live="assertive">
+      <Banner tone="validation">
         Save blocked: {result.errorCount} field(s) have invalid values. Correct the highlighted
         fields and try again.
-      </div>
+      </Banner>
     );
   }
 
   return (
-    <div class="argus-banner argus-banner--error" role="alert" aria-live="assertive">
+    <Banner tone="error">
       Save failed. {result.reason}. Check the add-on log for details.
-    </div>
+    </Banner>
   );
 }

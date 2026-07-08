@@ -1,4 +1,5 @@
 import type { SaveResponse } from '../api/types';
+import { Banner } from './Banner';
 
 interface SaveResultBannerProps {
   result: SaveResponse;
@@ -10,7 +11,7 @@ export function SaveResultBanner({ result }: SaveResultBannerProps) {
   if (result.ok) {
     const entityWord = result.count === 1 ? 'entity' : 'entities';
     return (
-      <div class="argus-banner argus-banner--success" role="status" aria-live="polite">
+      <Banner tone="success">
         Saved — pipeline active. {result.count} {entityWord} tracked.
         {result.hasHst && (
           <p class="argus-warmup-note">
@@ -18,22 +19,22 @@ export function SaveResultBanner({ result }: SaveResultBannerProps) {
             Anomaly scores will be low until warm-up completes.
           </p>
         )}
-      </div>
+      </Banner>
     );
   }
 
   if (result.kind === 'validation') {
     return (
-      <div class="argus-banner argus-banner--validation" role="alert" aria-live="assertive">
+      <Banner tone="validation">
         Save blocked: {result.errorCount} field(s) have invalid values. Correct the highlighted
         fields and try again.
-      </div>
+      </Banner>
     );
   }
 
   return (
-    <div class="argus-banner argus-banner--error" role="alert" aria-live="assertive">
+    <Banner tone="error">
       Save failed. {result.reason}. Check the add-on log for details.
-    </div>
+    </Banner>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { SensorEntry, GroupConfig } from '../api/types';
 import { pendingPrefillMembers } from '../state/groups';
+import { Banner } from './Banner';
 
 interface AreaSuggestionBannerProps {
   sensors: SensorEntry[];
@@ -55,16 +56,22 @@ export function AreaSuggestionBanner({ sensors, groups }: AreaSuggestionBannerPr
   }
 
   return (
-    <div class="argus-banner argus-area-suggestion-banner" role="status">
+    <Banner
+      tone="info"
+      action={
+        <>
+          <button type="button" class="argus-btn argus-btn--primary" onClick={review}>
+            Review
+          </button>
+          <button type="button" class="argus-btn" onClick={dismiss}>
+            Not now
+          </button>
+        </>
+      }
+    >
       <span class="argus-body">
         {suggestion.entityIds.length} sensors share area &quot;{suggestion.area}&quot; — group them?
       </span>
-      <button type="button" class="argus-btn argus-btn--primary" onClick={review}>
-        Review
-      </button>
-      <button type="button" class="argus-btn" onClick={dismiss}>
-        Not now
-      </button>
-    </div>
+    </Banner>
   );
 }
