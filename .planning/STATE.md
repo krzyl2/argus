@@ -5,8 +5,8 @@ milestone_name: Admin UI Rebuild
 current_phase: 12
 current_phase_name: Sensors Screen Rebuild
 status: executing
-stopped_at: Phase 11 UI-SPEC approved
-last_updated: "2026-07-08T12:20:26.511Z"
+stopped_at: Phase 12 context gathered
+last_updated: "2026-07-08T12:51:16.942Z"
 last_activity: 2026-07-08
 last_activity_desc: Phase 11 complete, transitioned to Phase 12
 progress:
@@ -239,9 +239,9 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 ## Session Continuity
 
-**Last session:** 2026-07-08T10:56:17.151Z
-**Stopped at:** Phase 11 UI-SPEC approved
-**Resume file:** .planning/phases/11-new-standalone-screens-dashboard-algorithms-settings/11-UI-SPEC.md
+**Last session:** 2026-07-08T12:51:16.933Z
+**Stopped at:** Phase 12 context gathered
+**Resume file:** .planning/phases/12-sensors-screen-rebuild/12-CONTEXT.md
 
 ## Operator Next Steps
 
