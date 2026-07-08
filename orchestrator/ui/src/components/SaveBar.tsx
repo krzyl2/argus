@@ -1,3 +1,5 @@
+import { Button } from './Button';
+
 interface SaveBarProps {
   saving: boolean;
   disabled: boolean;
@@ -9,15 +11,9 @@ interface SaveBarProps {
 export function SaveBar({ saving, disabled, onSave }: SaveBarProps) {
   return (
     <div class="argus-save-bar">
-      <span id="argus-spinner" aria-hidden="true" class={saving ? 'htmx-request' : ''} />
-      <button
-        type="button"
-        class="argus-btn argus-btn--primary"
-        disabled={disabled}
-        onClick={onSave}
-      >
+      <Button variant="primary" loading={saving} disabled={disabled} onClick={onSave}>
         Save configuration
-      </button>
+      </Button>
     </div>
   );
 }

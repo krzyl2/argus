@@ -1,3 +1,5 @@
+import { Button } from './Button';
+
 interface AddDetectorButtonProps {
   entityId: string;
   onAdd: () => void;
@@ -8,14 +10,9 @@ interface AddDetectorButtonProps {
 export function AddDetectorButton({ entityId, onAdd }: AddDetectorButtonProps) {
   return (
     <div class="argus-add-detector-row">
-      <button
-        type="button"
-        class="argus-btn argus-btn--add-detector"
-        aria-label={`Add detector to ${entityId}`}
-        onClick={onAdd}
-      >
+      <Button variant="secondary" onClick={onAdd} ariaLabel={`Add detector to ${entityId}`}>
         + Add detector
-      </button>
+      </Button>
     </div>
   );
 }
