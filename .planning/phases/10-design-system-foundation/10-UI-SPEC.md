@@ -13,11 +13,13 @@ created: 2026-07-08
 
 Every value below is pre-populated from `Argus Design System/` (the phase's own canonical
 reference package, per `10-CONTEXT.md`) and `orchestrator/ui/public/css/argus.css` (the existing
-production token file being extended, not replaced). Nothing in this contract required a new
-user decision — the design system package IS the locked visual spec; this file translates it into
-the design-contract shape the planner/executor/checker expect. Where the system's scale exceeds
-this template's default guidance (e.g. more than 4 type sizes), that is flagged explicitly as an
-intentional carry-over from the already-locked source, not scope creep (Rule 7).
+production token file being extended, not replaced). Almost nothing in this contract required a
+new user decision — the design system package IS the locked visual spec; this file translates it
+into the design-contract shape the planner/executor/checker expect. Two exceptions, both resolved
+by explicit user decision after the first UI-SPEC checker pass (see `10-CONTEXT.md` D-06/D-07):
+the primary CTA copy (generic "Save" replaced with "Save configuration") and the 8-size typography
+scale (approved as exceeding the template's default 4-size guidance, a locked carry-over from the
+Design System package, not scope creep — Rule 7).
 
 ---
 
@@ -82,11 +84,14 @@ Base template roles, mapped to the system's scale:
 **Only two weights exist in the whole system: 400 (regular) and 600 (semibold).** Never introduce a
 third weight.
 
-**Flagged carry-over (Rule 7 — not re-litigated, inherited from the locked source):** the actual
-type scale in `Argus Design System/tokens/typography.css` has 8 sizes, not the template's default
-3-4 — this is the existing, already-shipped/locked scale (`argus.css` already has 4 of these; the
-Design System package adds 4 more for the new screens). Declare all 8; do not prune to fit the
-generic guidance:
+**Locked 8-size scale (D-07, user-approved — see `10-CONTEXT.md`):** the actual type scale in
+`Argus Design System/tokens/typography.css` has 8 sizes, not the template's default 3-4. The user
+explicitly reviewed and approved this exceeding the template's default size-count guidance as a
+verbatim port of the already-locked Design System token package (project source of truth), not a
+new design decision subject to the generic 3-4 size limit. This is D-07, not a Rule-7 carry-over
+inference alone — it is a recorded user decision. `argus.css` already has 4 of these; the Design
+System package adds 4 more for the new screens. Declare all 8; do not prune to fit the generic
+guidance:
 
 | Size token | Value | Usage |
 |------------|-------|-------|
@@ -138,7 +143,7 @@ Additional semantic tokens in the same file (status, not accent/destructive — 
 
 | Element | Copy |
 |---------|------|
-| Primary CTA | "Save" (existing dominant CTA, `SaveBar`/`GroupEditorForm`) — Phase 10 does not introduce new CTAs, it retrofits the shared `Button` component these already use |
+| Primary CTA | "Save configuration" — dominant CTA rendered by the shared `SaveBar` component, consumed by both `SensorsPage.tsx` and `GroupEditorForm.tsx`. Per **D-06** (locked in `10-CONTEXT.md`), the bare generic label "Save" is replaced with this specific verb+noun label; this is the label the production `SaveBar.tsx` already renders today, so Phase 10's retrofit keeps this exact copy when porting the call site to the new shared `Button` component — no new wording is introduced, the existing correct label is simply preserved through the retrofit |
 | Empty state heading | "No sensors tracked yet" (per `EmptyState.prompt.md` reference example — reuse pattern for any other empty list surfaced during retrofit) |
 | Empty state body | "Tick a sensor above to start monitoring it." — imperative, second-person, states the next concrete action, per readme.md voice rules |
 | Error state | Per-field inline: existing `.argus-param-field__error-msg` convention (message under the offending field) + banner rollup: "3 fields need attention." (tone `validation`) — problem count + implicit fix-path (scroll to highlighted fields). Do not invent new copy patterns; Phase 10 must preserve these verbatim during the Button/Banner retrofit |
