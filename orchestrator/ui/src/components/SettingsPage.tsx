@@ -12,10 +12,14 @@ const THEME_OPTIONS: { value: Theme; label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ];
 
+// Values MUST match what GET /api/settings emits for logLevel — the orchestrator
+// surfaces config["Logging:LogLevel:Default"], which 10-config-gen.sh sets to the
+// .NET-cased "Debug" / "Information" / "Warning". Lowercase values never match the
+// live value, so the read-only <Select> would render blank on every deployment.
 const LOG_LEVEL_OPTIONS = [
-  { value: 'debug', label: 'debug' },
-  { value: 'info', label: 'info' },
-  { value: 'warning', label: 'warning' },
+  { value: 'Debug', label: 'Debug' },
+  { value: 'Information', label: 'Information' },
+  { value: 'Warning', label: 'Warning' },
 ];
 
 const LOG_LEVEL_UNSET_OPTIONS = [{ value: '', label: '—' }];
