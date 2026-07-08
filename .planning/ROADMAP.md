@@ -85,7 +85,7 @@ API+look specs), `tokens/*.css` (colors/typography/spacing/elevation — light o
 `[data-theme="dark"]`), `readme.md` (voice/content + visual foundation spec).
 
 - [x] **Phase 10: Design System Foundation** - Dark-mode tokens, ported shared component library (Button/Input/Select/.../Sidebar), and cross-cutting focus-visibility + radio-card a11y rules that every later screen depends on (completed 2026-07-08)
-- [ ] **Phase 11: New Standalone Screens (Dashboard, Algorithms, Settings)** - Three new admin screens (mocked KPIs/recent-anomalies/health, read-only detector catalog browse, global config) built on the Phase 10 foundation
+- [x] **Phase 11: New Standalone Screens (Dashboard, Algorithms, Settings)** - Three new admin screens (mocked KPIs/recent-anomalies/health, read-only detector catalog browse, global config) built on the Phase 10 foundation (completed 2026-07-08)
 - [ ] **Phase 12: Sensors Screen Rebuild** - Sensor list + single-sensor detector assignment (hst/mad/stl) with inline validation, rebuilt to Design System spec
 - [ ] **Phase 13: Groups Screen Rebuild** - Group editor + algorithm creation wizard + attribution panel rebuilt to Design System spec
 
@@ -160,7 +160,7 @@ themes, built on the Phase 10 foundation.
   4. All three screens are reachable from the sidebar navigation and render correctly in both light and
      dark mode with no unstyled regions
 
-**Plans**: 2/5 plans executed
+**Plans**: 5/5 plans complete
 
 Plans:
 **Wave 1**
@@ -170,9 +170,9 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 11-03-PLAN.md — Dashboard screen: real KPI counts + explicitly-mocked HA tile / recent anomalies / system health (DASH-01, DASH-02, DASH-03)
-- [ ] 11-04-PLAN.md — Algorithms screen: read-only 5-detector catalog browse from DetectorCatalog (ALGO-07, ALGO-08)
-- [ ] 11-05-PLAN.md — Settings screen: read-only Connections + Batch & detection from /api/settings + functional Light/Dark Appearance (SET-01)
+- [x] 11-03-PLAN.md — Dashboard screen: real KPI counts + explicitly-mocked HA tile / recent anomalies / system health (DASH-01, DASH-02, DASH-03)
+- [x] 11-04-PLAN.md — Algorithms screen: read-only 5-detector catalog browse from DetectorCatalog (ALGO-07, ALGO-08)
+- [x] 11-05-PLAN.md — Settings screen: read-only Connections + Batch & detection from /api/settings + functional Light/Dark Appearance (SET-01)
 
 **UI hint**: yes
 
@@ -246,6 +246,6 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 8. Group Config UI + Algorithm Chooser | v4.0 | 4/4 | Complete | 2026-07-02 |
 | 9. 2-Member Groups + Algorithm Guidance Correction | v4.0 | 3/3 | Complete | 2026-07-03 |
 | 10. Design System Foundation | v4.1 | 7/7 | Complete    | 2026-07-08 |
-| 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 2/5 | In Progress|  |
+| 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 5/5 | Complete   | 2026-07-08 |
 | 12. Sensors Screen Rebuild | v4.1 | 0/TBD | Not started | - |
 | 13. Groups Screen Rebuild | v4.1 | 0/TBD | Not started | - |
