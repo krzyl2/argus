@@ -186,7 +186,8 @@ spec, with single-sensor detector assignment and inline validation fully preserv
 **Success Criteria** (what must be TRUE):
 
   1. The Sensors screen's list and filtering UI (search, area/domain browse) matches the Design System
-     spec (Card/Badge/StatusDot/SearchInput patterns) in both themes
+     spec (Card/Badge/SearchInput patterns) in both themes
+     (StatusDot deferred per 12-CONTEXT.md — `SensorEntry` has no health/availability signal)
 
   2. Assigning a detector (hst/mad/stl) to a sensor still works end-to-end after the rebuild, with
      inline validation errors shown per the existing `detectorParams.ts` rules and `DetectorDefaults.cs`
