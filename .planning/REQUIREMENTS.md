@@ -28,8 +28,8 @@
 
 ### Sensors (rebuild)
 
-- [ ] **SEN-01**: Sensors screen rebuilt to Design System spec (list, filtering)
-- [ ] **SEN-02**: Single-sensor detector assignment (hst/mad/stl) with inline validation — source `DetectorDefaults.cs` + `detectorParams.ts`; markup and component structure may be refactored, not just restyled
+- [x] **SEN-01**: Sensors screen rebuilt to Design System spec (list, filtering)
+- [x] **SEN-02**: Single-sensor detector assignment (hst/mad/stl) with inline validation — source `DetectorDefaults.cs` + `detectorParams.ts`; markup and component structure may be refactored, not just restyled
 
 ### Groups (rebuild)
 
@@ -82,8 +82,8 @@ Deferred, not in this milestone's roadmap.
 | ALGO-07 | Phase 11 | Complete |
 | ALGO-08 | Phase 11 | Complete |
 | SET-01 | Phase 11 | Complete |
-| SEN-01 | Phase 12 | Pending |
-| SEN-02 | Phase 12 | Pending |
+| SEN-01 | Phase 12 | Complete |
+| SEN-02 | Phase 12 | Complete |
 | GRP-12 | Phase 13 | Pending |
 | GRP-13 | Phase 13 | Pending |
 | GRP-14 | Phase 13 | Pending |

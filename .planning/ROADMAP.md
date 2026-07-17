@@ -86,7 +86,7 @@ API+look specs), `tokens/*.css` (colors/typography/spacing/elevation — light o
 
 - [x] **Phase 10: Design System Foundation** - Dark-mode tokens, ported shared component library (Button/Input/Select/.../Sidebar), and cross-cutting focus-visibility + radio-card a11y rules that every later screen depends on (completed 2026-07-08)
 - [x] **Phase 11: New Standalone Screens (Dashboard, Algorithms, Settings)** - Three new admin screens (mocked KPIs/recent-anomalies/health, read-only detector catalog browse, global config) built on the Phase 10 foundation (completed 2026-07-08)
-- [ ] **Phase 12: Sensors Screen Rebuild** - Sensor list + single-sensor detector assignment (hst/mad/stl) with inline validation, rebuilt to Design System spec
+- [x] **Phase 12: Sensors Screen Rebuild** - Sensor list + single-sensor detector assignment (hst/mad/stl) with inline validation, rebuilt to Design System spec (completed 2026-07-17)
 - [ ] **Phase 13: Groups Screen Rebuild** - Group editor + algorithm creation wizard + attribution panel rebuilt to Design System spec
 
 ## Phase Details
@@ -253,5 +253,5 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 9. 2-Member Groups + Algorithm Guidance Correction | v4.0 | 3/3 | Complete | 2026-07-03 |
 | 10. Design System Foundation | v4.1 | 7/7 | Complete    | 2026-07-08 |
 | 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 5/5 | Complete    | 2026-07-08 |
-| 12. Sensors Screen Rebuild | v4.1 | 3/3 | In Progress|  |
+| 12. Sensors Screen Rebuild | v4.1 | 3/3 | Complete    | 2026-07-17 |
 | 13. Groups Screen Rebuild | v4.1 | 0/TBD | Not started | - |
