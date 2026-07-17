@@ -301,6 +301,11 @@ a:hover {
 .argus-list-row--tracked {
 }
 
+/* .argus-list-row--selected: soft-accent highlight for the single-select-and-expand row model (D-04) */
+.argus-list-row--selected {
+  background: var(--color-accent-soft);
+}
+
 /* Checkbox */
 .argus-checkbox {
   width: 18px;

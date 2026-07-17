@@ -2,11 +2,15 @@ import type { SensorEntry } from '../api/types';
 import type { EntityEditState } from '../state/sensors';
 import { SensorListRow } from './SensorListRow';
 import { EmptyState } from './EmptyState';
+import { Card } from './Card';
 
 interface SensorListProps {
   entries: SensorEntry[];
   query: string;
   edits: Record<string, EntityEditState>;
+  // D-04/D-05: which entity's row is selected (local UI state owned by SensorsPage).
+  selectedEntityId: string | null;
+  onSelectRow: (entityId: string) => void;
   onToggleTracked: (entityId: string, checked: boolean) => void;
   onDetectorTypeChange: (entityId: string, detIdx: number, name: 'hst' | 'mad' | 'stl') => void;
   onDetectorParamChange: (entityId: string, detIdx: number, key: string, value: string) => void;
@@ -23,6 +27,8 @@ export function SensorList({
   entries,
   query,
   edits,
+  selectedEntityId,
+  onSelectRow,
   onToggleTracked,
   onDetectorTypeChange,
   onDetectorParamChange,
@@ -50,6 +56,8 @@ export function SensorList({
         entry={entry}
         entityIdx={entityIdx}
         isTracked={isTracked}
+        isSelected={entry.entityId === selectedEntityId}
+        onSelectRow={() => onSelectRow(entry.entityId)}
         detectors={detectors}
         onToggleTracked={(checked) => onToggleTracked(entry.entityId, checked)}
         onDetectorTypeChange={(detIdx, name) => onDetectorTypeChange(entry.entityId, detIdx, name)}
@@ -63,7 +71,11 @@ export function SensorList({
   }
 
   if (!groupByArea) {
-    return <ul class="argus-list">{entries.map(renderRow)}</ul>;
+    return (
+      <Card padding="none">
+        <ul class="argus-list">{entries.map(renderRow)}</ul>
+      </Card>
+    );
   }
 
   // Group by resolved area name; entries with no area fall back to a per-domain
@@ -95,7 +107,9 @@ export function SensorList({
             <summary class="argus-disclosure-toggle">
               {label} ({sectionEntries.length})
             </summary>
-            <ul class="argus-list">{sectionEntries.map(renderRow)}</ul>
+            <Card padding="none">
+              <ul class="argus-list">{sectionEntries.map(renderRow)}</ul>
+            </Card>
           </details>
         );
       })}
