@@ -14,6 +14,8 @@ Anomalies on v1 environmental sensors appear in HA as live binary_sensor + score
 
 **Open at v4.0 close:** live-HA UI verification for the SPA (Phases 07/08 `human_needed`) + 10 Phase 08 UAT scenarios deferred pending a planned UI rebuild (Phase 999.1). Backend detection paths verified (Phases 05/06/09 passed). See STATE.md Deferred Items.
 
+**v4.1 progress:** Phases 10 & 11 shipped (Design System foundation + Dashboard/Algorithms). Phase 12 (Sensors screen) complete 2026-07-17 — DS page-header, Card-wrapped groupByArea list, single-select-and-expand row, AlgorithmCard radiogroup detector picker + shared-Input param grid; save/validation flow preserved (D-08). Next: Phase 13 (Groups screen).
+
 ## Current Milestone: v4.1 Admin UI Rebuild (Design System)
 
 **Goal:** Replace the functional-but-provisional v4.0 SPA with a pixel-perfect implementation of the Argus Design System across all 5 admin screens, in Preact using existing `argus.css` conventions, with full light/dark mode.
@@ -159,4 +161,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-08 — v4.1 Admin UI Rebuild milestone started (Argus Design System, 5 admin screens)*
+*Last updated: 2026-07-17 — Phase 12 (Sensors screen) complete; v4.1 milestone in progress (3/5 screens: Dashboard, Algorithms, Sensors)*
