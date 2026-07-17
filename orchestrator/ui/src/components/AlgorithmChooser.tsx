@@ -1,4 +1,5 @@
 import { useEffect } from 'preact/hooks';
+import type { GroupDetectorName } from '../api/types';
 import { draftDetector, draftParams, draftPresetLabel } from '../state/groups';
 import {
   catalog,
@@ -76,10 +77,11 @@ export function AlgorithmChooser({ existingDetector }: AlgorithmChooserProps) {
           {cat.detectors.map((entry) => (
             <AlgorithmCard
               key={entry.name}
-              entry={entry}
+              name={entry.name}
+              bestFor={entry.bestFor}
               selected={selected === entry.name}
-              guidedRecommended={guidedRecommended.value === entry.name}
-              onSelect={(detector) => pickAlgorithmManually(detector)}
+              recommended={guidedRecommended.value === entry.name}
+              onSelect={(name) => pickAlgorithmManually(name as GroupDetectorName)}
             />
           ))}
         </div>
