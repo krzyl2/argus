@@ -1,6 +1,7 @@
 import type { DetectorEntry } from '../api/types';
 import { validateDetectorParams } from '../validation/detectorParams';
 import { FieldValidationError } from './FieldValidationError';
+import { Input } from './Input';
 
 interface DetectorParamGridProps {
   entityIdx: number;
@@ -68,15 +69,15 @@ export function DetectorParamGrid({ entityIdx, detIdx, detector, onParamChange }
             <label class="argus-param-field__label" for={inputId}>
               {field.label}
             </label>
-            <input
-              class="argus-param-field__input"
+            <Input
+              id={inputId}
+              value={detector.params[field.key] ?? ''}
+              onChange={(v) => onParamChange(field.key, v)}
               type="number"
               step={field.step}
-              id={inputId}
-              aria-describedby={`${inputId}-err`}
-              aria-invalid={error ? 'true' : 'false'}
-              value={detector.params[field.key] ?? ''}
-              onInput={(e) => onParamChange(field.key, (e.target as HTMLInputElement).value)}
+              invalid={!!error}
+              ariaDescribedby={`${inputId}-err`}
+              ariaLabel={field.label}
             />
             <FieldValidationError message={error} />
           </div>
