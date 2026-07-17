@@ -196,10 +196,12 @@ spec, with single-sensor detector assignment and inline validation fully preserv
   3. Selecting a detector via the sensor's radio-card picker shows the Phase 10 shared component's 2px
      accent-border selection state, never color alone
 
-**Plans**: 3 plans
-- [ ] 12-01-PLAN.md — Widen shared primitives (AlgorithmCard string props + Input passthrough) [Wave 1]
-- [ ] 12-02-PLAN.md — Rebuild list/row: DS header, Card, Badge, groupByArea, single-select-and-expand [Wave 1]
+**Plans**: 2/3 plans executed
+
+- [x] 12-01-PLAN.md — Widen shared primitives (AlgorithmCard string props + Input passthrough) [Wave 1]
+- [x] 12-02-PLAN.md — Rebuild list/row: DS header, Card, Badge, groupByArea, single-select-and-expand [Wave 1]
 - [ ] 12-03-PLAN.md — Rebuild detector editor (Select→AlgorithmCard, raw input→Input) + regression gate [Wave 2]
+
 **UI hint**: yes
 
 ### Phase 13: Groups Screen Rebuild
@@ -251,5 +253,5 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 9. 2-Member Groups + Algorithm Guidance Correction | v4.0 | 3/3 | Complete | 2026-07-03 |
 | 10. Design System Foundation | v4.1 | 7/7 | Complete    | 2026-07-08 |
 | 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 5/5 | Complete    | 2026-07-08 |
-| 12. Sensors Screen Rebuild | v4.1 | 0/TBD | Not started | - |
+| 12. Sensors Screen Rebuild | v4.1 | 2/3 | In Progress|  |
 | 13. Groups Screen Rebuild | v4.1 | 0/TBD | Not started | - |

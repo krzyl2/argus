@@ -1,20 +1,20 @@
 ---
 gsd_state_version: 1.0
 milestone: v4.1
-milestone_name: Admin UI Rebuild
+milestone_name: Admin UI Rebuild (Design System)
 current_phase: 12
-current_phase_name: Sensors Screen Rebuild
+current_phase_name: sensors-screen-rebuild
 status: executing
 stopped_at: Phase 12 context gathered
-last_updated: "2026-07-08T12:51:16.942Z"
-last_activity: 2026-07-08
-last_activity_desc: Phase 11 complete, transitioned to Phase 12
+last_updated: "2026-07-17T10:44:28.921Z"
+last_activity: 2026-07-17
+last_activity_desc: Phase 12 execution started
 progress:
-  total_phases: 5
+  total_phases: 4
   completed_phases: 2
-  total_plans: 12
+  total_plans: 15
   completed_plans: 12
-  percent: 40
+  percent: 50
 ---
 
 # Project State: Argus
@@ -67,7 +67,7 @@ these UI flows (Phases 10-13).
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
-**Current focus:** Phase 11 — new-standalone-screens-dashboard-algorithms-settings
+**Current focus:** Phase 12 — sensors-screen-rebuild
 
 ## Phase Status (v4.1)
 
@@ -249,7 +249,7 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 ## Current Position
 
-Phase: 12 — Sensors Screen Rebuild
-Plan: Not started
-Status: Executing Phase 11
-Last activity: 2026-07-08 — Phase 11 complete, transitioned to Phase 12
+Phase: 12 (sensors-screen-rebuild) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 12
+Last activity: 2026-07-17 — Phase 12 execution started
