@@ -1,4 +1,4 @@
-import { useEffect } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import {
   query,
   sensors,
@@ -28,6 +28,9 @@ export function SensorsPage() {
     loadSensors(query.value);
   }, []);
 
+  // D-05: selection is local, ephemeral UI state — never persisted to state/sensors.ts.
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+
   function handleSearchChange(next: string) {
     query.value = next;
     loadSensors(next);
@@ -38,10 +41,12 @@ export function SensorsPage() {
 
   return (
     <div>
-      <div>
-        <p class="argus-heading">Entity Selection</p>
-        <p class="argus-body">Select the sensors Argus monitors and assign detectors to each.</p>
-      </div>
+      <header class="argus-page-header">
+        <h1 class="argus-page-header__title">Sensors</h1>
+        <p class="argus-page-header__subtitle">
+          Select the sensors Argus monitors and assign detectors to each.
+        </p>
+      </header>
 
       <SensorSearchInput value={query.value} onChange={handleSearchChange} />
 
@@ -50,6 +55,9 @@ export function SensorsPage() {
         entries={sensors.value}
         query={query.value}
         edits={entityEdits.value}
+        groupByArea
+        selectedEntityId={selectedEntityId}
+        onSelectRow={setSelectedEntityId}
         onToggleTracked={setTracked}
         onDetectorTypeChange={updateDetectorName}
         onDetectorParamChange={updateDetectorParam}
