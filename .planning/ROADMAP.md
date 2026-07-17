@@ -222,7 +222,18 @@ guided algorithm wizard, and attribution display fully preserved.
   3. The attribution panel (AttributionBar) renders ranked per-member/per-feature contribution bars
      matching the Design System spec, in both themes
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 13-01-PLAN.md — Group list + editor shell + member picker: Card/Badge rows, Input/Select fields, DS page-header + Back, Card/Checkbox/Badge member rows (GRP-12)
+- [ ] 13-02-PLAN.md — Algorithm wizard restyle: GuidedFlowStep Card+Buttons, AdvancedParamsDisclosure Input fields, no-mode-filter guard (GRP-13)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 13-03-PLAN.md — Attribution panel: Card + SectionLabel + custom empty, AttributionBar accent fill, phase regression gate (GRP-14)
+
 **UI hint**: yes
 
 ## Backlog
