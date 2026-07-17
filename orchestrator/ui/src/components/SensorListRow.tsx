@@ -1,11 +1,14 @@
 import type { SensorEntry, DetectorEntry as DetectorEntryModel } from '../api/types';
 import { DetectorDisclosure } from './DetectorDisclosure';
 import { Checkbox } from './Checkbox';
+import { Badge } from './Badge';
 
 interface SensorListRowProps {
   entry: SensorEntry;
   entityIdx: number;
   isTracked: boolean;
+  isSelected: boolean;
+  onSelectRow: () => void;
   detectors: DetectorEntryModel[];
   onToggleTracked: (checked: boolean) => void;
   onDetectorTypeChange: (detIdx: number, name: 'hst' | 'mad' | 'stl') => void;
@@ -15,10 +18,14 @@ interface SensorListRowProps {
 }
 
 // Replaces one <li class="argus-list-row"> in BuildListRows.
+// D-04: single-select-and-expand — clicking the row selects it; only the selected
+// AND tracked row expands its detector editor inline.
 export function SensorListRow({
   entry,
   entityIdx,
   isTracked,
+  isSelected,
+  onSelectRow,
   detectors,
   onToggleTracked,
   onDetectorTypeChange,
@@ -35,21 +42,26 @@ export function SensorListRow({
     : entry.currentValue;
 
   return (
-    <li class={`argus-list-row${isTracked ? ' argus-list-row--tracked' : ''}`}>
-      <label style={{ display: 'contents' }}>
+    <li
+      class={`argus-list-row${isTracked ? ' argus-list-row--tracked' : ''}${
+        isSelected ? ' argus-list-row--selected' : ''
+      }`}
+      onClick={onSelectRow}
+    >
+      <span onClick={(e) => e.stopPropagation()}>
         <Checkbox checked={isTracked} ariaLabel={entry.entityId} onChange={onToggleTracked} />
-        <div class="argus-row-content">
-          <span class="argus-row-entity-id">{entry.entityId}</span>
-          {showFriendlyName && (
-            <span class="argus-row-friendly-name">{entry.friendlyName}</span>
-          )}
-        </div>
-        <div class="argus-row-meta">
-          <span class="argus-row-value">{valueDisplay}</span>
-          {isTracked && <span class="argus-pill argus-pill--tracked">tracked</span>}
-        </div>
-      </label>
-      {isTracked && (
+      </span>
+      <div class="argus-row-content">
+        <span class="argus-row-entity-id">{entry.entityId}</span>
+        {showFriendlyName && (
+          <span class="argus-row-friendly-name">{entry.friendlyName}</span>
+        )}
+      </div>
+      <div class="argus-row-meta">
+        <span class="argus-row-value">{valueDisplay}</span>
+        {isTracked && <Badge tone="tracked">tracked</Badge>}
+      </div>
+      {isSelected && isTracked && (
         <DetectorDisclosure
           entityId={entry.entityId}
           entityIdx={entityIdx}
