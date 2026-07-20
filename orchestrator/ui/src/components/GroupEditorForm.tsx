@@ -18,6 +18,9 @@ import { AttributionPanel } from './AttributionPanel';
 import { SaveBar } from './SaveBar';
 import { GroupSaveResultBanner } from './GroupSaveResultBanner';
 import { FieldValidationError } from './FieldValidationError';
+import { Input } from './Input';
+import { Select } from './Select';
+import { Button } from './Button';
 
 interface GroupEditorFormProps {
   groupId: string | null; // null = /groups/new
@@ -69,24 +72,28 @@ export function GroupEditorForm({ groupId, sensors }: GroupEditorFormProps) {
 
   return (
     <div>
-      <p class="argus-heading">{groupId ? 'Edit group' : 'Create group'}</p>
+      <header class="argus-page-header">
+        <h1 class="argus-page-header__title">{groupId ? 'Edit group' : 'Create group'}</h1>
+        <Button variant="ghost" size="sm" onClick={() => { location.hash = '#/groups'; }}>
+          Back to groups
+        </Button>
+      </header>
 
-      <div class="argus-param-field">
+      <div class={`argus-param-field${nameError ? ' argus-param-field--error' : ''}`}>
         <label class="argus-param-field__label" for="group-name">
           Name
         </label>
-        <input
+        <Input
           id="group-name"
-          class="argus-param-field__input"
-          type="text"
           value={draftFriendlyName.value}
-          onInput={(e) => {
-            const next = (e.target as HTMLInputElement).value;
+          onChange={(next) => {
             draftFriendlyName.value = next;
             if (!groupId) {
               draftGroupId.value = slugify(next);
             }
           }}
+          invalid={!!nameError}
+          ariaDescribedby={nameError ? 'group-name-err' : undefined}
         />
         <FieldValidationError message={nameError ?? undefined} />
       </div>
@@ -95,20 +102,20 @@ export function GroupEditorForm({ groupId, sensors }: GroupEditorFormProps) {
         <label class="argus-param-field__label" for="group-mode">
           Mode
         </label>
-        <select
-          id="group-mode"
-          class="argus-param-field__input"
+        <Select
           value={draftMode.value}
-          onChange={(e) => {
-            draftMode.value = (e.target as HTMLSelectElement).value as typeof draftMode.value;
+          onChange={(v) => {
+            draftMode.value = v as typeof draftMode.value;
           }}
-        >
-          <option value="peer_divergence">Peer-divergence</option>
-          <option value="joint">Joint (multivariate)</option>
-        </select>
+          ariaLabel="Mode"
+          options={[
+            { value: 'peer_divergence', label: 'Peer-divergence — which sensor is diverging' },
+            { value: 'joint', label: 'Joint (multivariate) — unusual combination' },
+          ]}
+        />
       </div>
 
-      <p class="argus-heading">Members</p>
+      <p class="argus-section-label">Members</p>
       <MemberPicker
         sensors={sensors}
         selectedIds={draftMembers.value}
@@ -118,7 +125,7 @@ export function GroupEditorForm({ groupId, sensors }: GroupEditorFormProps) {
         onToggleMember={toggleMember}
       />
 
-      <p class="argus-heading">Choose algorithm</p>
+      <p class="argus-section-label">Choose algorithm</p>
       <div id="algorithm-chooser-slot">
         <AlgorithmChooser existingDetector={groupId ? draftDetector.value : null} />
       </div>
