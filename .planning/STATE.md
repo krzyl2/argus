@@ -5,15 +5,15 @@ milestone_name: Admin UI Rebuild (Design System)
 current_phase: 13
 current_phase_name: groups-screen-rebuild
 status: executing
-stopped_at: Completed 13-01-PLAN.md
-last_updated: "2026-07-20T07:00:10.754Z"
+stopped_at: Completed 13-02-PLAN.md
+last_updated: "2026-07-20T07:05:46.165Z"
 last_activity: 2026-07-20
 last_activity_desc: Phase 13 execution resumed (wave continue)
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 18
-  completed_plans: 16
+  completed_plans: 17
   percent: 75
 ---
 
@@ -79,7 +79,7 @@ See: .planning/PROJECT.md
 | 13 | Groups Screen Rebuild | Not started |
 
 ```
-Progress: [█████████░] 89%
+Progress: [█████████░] 94%
 ```
 
 v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -196,6 +196,8 @@ v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/
 - [Phase ?]: [Phase 09-01] Guided chooser together answer -> copod (was ecod); DetectorCatalog BestFor copy rewritten per empirical PyOD false-positive findings, flagged as draft pending operator sign-off
 - [Phase ?]: Folded pre-existing uncommitted MIN_QUERY_LENGTH=2 diff on MemberPicker.tsx into 13-01's MemberPicker commit as the D-07-locked target behavior (not reverted)
 - [Phase ?]: GroupListRow detector Badge uses tone=accent alongside mode Badge tone=neutral (Assumption A1)
+- [Phase ?]: [Phase 13-02]: AdvancedParamsDisclosure Input call site omits min/max (Input has no such props, matches DetectorParamGrid convention); field set/order/defaults unaffected
+- [Phase ?]: [Phase 13-02]: AlgorithmChooser section-label text is "Algorithm", copied verbatim from the DS reference's SectionLabel usage in Groups.jsx
 
 ### Blockers
 
@@ -243,11 +245,12 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 13 P01 | 4min | 3 tasks | 9 files |
+| Phase 13 P02 | 3min | 3 tasks | 7 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-20T07:00:10.742Z
-**Stopped at:** Completed 13-01-PLAN.md
+**Last session:** 2026-07-20T07:05:46.154Z
+**Stopped at:** Completed 13-02-PLAN.md
 **Resume file:** None
 
 ## Operator Next Steps
@@ -257,6 +260,6 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 ## Current Position
 
 Phase: 13 (groups-screen-rebuild) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-20 — Phase 13 execution resumed (wave continue)
