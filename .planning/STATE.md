@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v4.1
 milestone_name: Admin UI Rebuild (Design System)
 current_phase: 13
-current_phase_name: Groups Screen Rebuild
-status: planning
-stopped_at: Phase 13 context gathered
-last_updated: "2026-07-17T11:21:56.172Z"
-last_activity: 2026-07-17
-last_activity_desc: Phase 12 complete, transitioned to Phase 13
+current_phase_name: groups-screen-rebuild
+status: executing
+stopped_at: Completed 13-01-PLAN.md
+last_updated: "2026-07-20T07:00:10.754Z"
+last_activity: 2026-07-20
+last_activity_desc: Phase 13 execution resumed (wave continue)
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 15
-  completed_plans: 15
+  total_plans: 18
+  completed_plans: 16
   percent: 75
 ---
 
@@ -67,7 +67,7 @@ these UI flows (Phases 10-13).
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
-**Current focus:** Phase 12 — sensors-screen-rebuild
+**Current focus:** Phase 13 — groups-screen-rebuild
 
 ## Phase Status (v4.1)
 
@@ -79,7 +79,7 @@ See: .planning/PROJECT.md
 | 13 | Groups Screen Rebuild | Not started |
 
 ```
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████████░] 89%
 ```
 
 v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -194,6 +194,8 @@ v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/
 - [Phase 08-04]: AttributionPanel polls at a fixed 60s interval and swallows poll errors into last-known-state rendering (soft, best-effort display) rather than an error banner
 - [Phase ?]: [Phase 09-01] Config-validation member floor lowered to 2 for BOTH joint and peer_divergence modes (uniform, no mode branching) — required to unblock 2-member peer_divergence groups routed to the pairwise-delta path in Plan 09-02/09-03
 - [Phase ?]: [Phase 09-01] Guided chooser together answer -> copod (was ecod); DetectorCatalog BestFor copy rewritten per empirical PyOD false-positive findings, flagged as draft pending operator sign-off
+- [Phase ?]: Folded pre-existing uncommitted MIN_QUERY_LENGTH=2 diff on MemberPicker.tsx into 13-01's MemberPicker commit as the D-07-locked target behavior (not reverted)
+- [Phase ?]: GroupListRow detector Badge uses tone=accent alongside mode Badge tone=neutral (Assumption A1)
 
 ### Blockers
 
@@ -236,12 +238,17 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 | Phase 08 P03 | 15min | 3 tasks | 22 files |
 | Phase 08 P04 | 35min | 2 tasks | 17 files |
 | Phase 09 P01 | 12min | 2 tasks | 7 files |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 13 P01 | 4min | 3 tasks | 9 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-17T11:21:56.160Z
-**Stopped at:** Phase 13 context gathered
-**Resume file:** .planning/phases/13-groups-screen-rebuild/13-CONTEXT.md
+**Last session:** 2026-07-20T07:00:10.742Z
+**Stopped at:** Completed 13-01-PLAN.md
+**Resume file:** None
 
 ## Operator Next Steps
 
@@ -249,7 +256,7 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 ## Current Position
 
-Phase: 13 — Groups Screen Rebuild
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-17 — Phase 12 complete, transitioned to Phase 13
+Phase: 13 (groups-screen-rebuild) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-07-20 — Phase 13 execution resumed (wave continue)

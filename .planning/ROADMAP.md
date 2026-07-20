@@ -222,12 +222,12 @@ guided algorithm wizard, and attribution display fully preserved.
   3. The attribution panel (AttributionBar) renders ranked per-member/per-feature contribution bars
      matching the Design System spec, in both themes
 
-**Plans**: 3 plans
+**Plans**: 1/3 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 13-01-PLAN.md — Group list + editor shell + member picker: Card/Badge rows, Input/Select fields, DS page-header + Back, Card/Checkbox/Badge member rows (GRP-12)
+- [x] 13-01-PLAN.md — Group list + editor shell + member picker: Card/Badge rows, Input/Select fields, DS page-header + Back, Card/Checkbox/Badge member rows (GRP-12)
 - [ ] 13-02-PLAN.md — Algorithm wizard restyle: GuidedFlowStep Card+Buttons, AdvancedParamsDisclosure Input fields, no-mode-filter guard (GRP-13)
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -265,4 +265,4 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 10. Design System Foundation | v4.1 | 7/7 | Complete    | 2026-07-08 |
 | 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 5/5 | Complete    | 2026-07-08 |
 | 12. Sensors Screen Rebuild | v4.1 | 3/3 | Complete    | 2026-07-17 |
-| 13. Groups Screen Rebuild | v4.1 | 0/TBD | Not started | - |
+| 13. Groups Screen Rebuild | v4.1 | 1/3 | In Progress|  |

@@ -33,7 +33,7 @@
 
 ### Groups (rebuild)
 
-- [ ] **GRP-12**: Group editor rebuilt to Design System spec
+- [x] **GRP-12**: Group editor rebuilt to Design System spec
 - [ ] **GRP-13**: Algorithm creation wizard (guided flow) rebuilt to Design System spec
 - [ ] **GRP-14**: Attribution panel (AttributionBar) rebuilt to Design System spec
 
@@ -84,7 +84,7 @@ Deferred, not in this milestone's roadmap.
 | SET-01 | Phase 11 | Complete |
 | SEN-01 | Phase 12 | Complete |
 | SEN-02 | Phase 12 | Complete |
-| GRP-12 | Phase 13 | Pending |
+| GRP-12 | Phase 13 | Complete |
 | GRP-13 | Phase 13 | Pending |
 | GRP-14 | Phase 13 | Pending |
 
