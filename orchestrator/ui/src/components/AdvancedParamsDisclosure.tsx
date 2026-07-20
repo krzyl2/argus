@@ -1,17 +1,17 @@
 import type { DetectorCatalogEntry } from '../api/types';
 import { draftParams } from '../state/groups';
+import { Input } from './Input';
 
 interface AdvancedParamsDisclosureProps {
   entry: DetectorCatalogEntry;
 }
 
-// Native <details>/<summary> "Advanced — view/override parameters" (ALGO-02) — reuses the
-// exact .argus-param-grid/.argus-param-field/.argus-param-field__input classes from Phase 7's
-// DetectorParamGrid (same disclosure pattern as DetectorDisclosure, just a param grid for
-// group-detector params instead of per-entity ones). Fields are pre-filled with the current
-// expanded preset values; editing a field overrides only that key in the draft — the preset
-// radio selection itself is not cleared (SensitivityPresetPicker's "customized" indicator
-// communicates the divergence).
+// Native <details>/<summary> "Advanced — view/override parameters" (ALGO-02) — field
+// rows follow the same external-label + shared-Input convention as Phase 12's
+// DetectorParamGrid (.argus-param-grid/.argus-param-field, Input owns .argus-param-field__input).
+// Fields are pre-filled with the current expanded preset values; editing a field overrides
+// only that key in the draft — the preset radio selection itself is not cleared
+// (SensitivityPresetPicker's "customized" indicator communicates the divergence).
 export function AdvancedParamsDisclosure({ entry }: AdvancedParamsDisclosureProps) {
   function updateParam(key: string, value: string) {
     draftParams.value = { ...draftParams.value, [key]: value };
@@ -28,15 +28,12 @@ export function AdvancedParamsDisclosure({ entry }: AdvancedParamsDisclosureProp
               <label class="argus-param-field__label" for={inputId}>
                 {field.key}
               </label>
-              <input
-                class="argus-param-field__input"
-                type={field.type === 'number' ? 'number' : 'text'}
+              <Input
                 id={inputId}
-                min={field.min ?? undefined}
-                max={field.max ?? undefined}
+                type={field.type === 'number' ? 'number' : 'text'}
                 step={field.step ?? undefined}
                 value={draftParams.value[field.key] ?? ''}
-                onInput={(e) => updateParam(field.key, (e.target as HTMLInputElement).value)}
+                onChange={(v) => updateParam(field.key, v)}
               />
             </div>
           );
