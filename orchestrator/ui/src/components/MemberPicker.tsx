@@ -4,6 +4,9 @@ import { EmptyState } from './EmptyState';
 import { FieldValidationError } from './FieldValidationError';
 import { matchesSensorQuery } from './sensorMatch';
 import { validateGroupMembers, validateUnitConsistency } from '../validation/groupParams';
+import { Card } from './Card';
+import { Checkbox } from './Checkbox';
+import { Badge } from './Badge';
 
 interface MemberPickerProps {
   sensors: SensorEntry[];
@@ -18,6 +21,10 @@ interface MemberPickerProps {
 // entity-tracked toggle in SensorListRow, without the detector-disclosure UI which
 // does not apply to member selection). Reuses .argus-list/.argus-list-row/.argus-checkbox
 // verbatim — same visual language as SensorList, no new CSS.
+// Below this length the full sensor list (400+ on a typical HA install) would render
+// unfiltered — require a search term before showing any rows.
+const MIN_QUERY_LENGTH = 2;
+
 export function MemberPicker({
   sensors,
   selectedIds,
@@ -26,7 +33,8 @@ export function MemberPicker({
   onQueryChange,
   onToggleMember,
 }: MemberPickerProps) {
-  const filtered = sensors.filter((s) => matchesSensorQuery(s, query));
+  const queryTooShort = query.trim().length < MIN_QUERY_LENGTH;
+  const filtered = queryTooShort ? [] : sensors.filter((s) => matchesSensorQuery(s, query));
   const selectedSet = new Set(selectedIds);
   const selectedEntries = sensors.filter((s) => selectedSet.has(s.entityId));
 
@@ -36,38 +44,42 @@ export function MemberPicker({
   return (
     <div class="argus-member-picker">
       <SensorSearchInput value={query} onChange={onQueryChange} />
-      {filtered.length === 0 ? (
+      {queryTooShort ? (
+        <div class="argus-empty">
+          <p class="argus-label">Type at least {MIN_QUERY_LENGTH} characters to search sensors.</p>
+        </div>
+      ) : filtered.length === 0 ? (
         <EmptyState query={query} />
       ) : (
-        <ul class="argus-list">
-          {filtered.map((entry) => {
-            const checked = selectedSet.has(entry.entityId);
-            const showFriendlyName = !!entry.friendlyName && entry.friendlyName !== entry.entityId;
-            return (
-              <li key={entry.entityId} class={`argus-list-row${checked ? ' argus-list-row--tracked' : ''}`}>
-                <label style={{ display: 'contents' }}>
-                  <input
-                    class="argus-checkbox"
-                    type="checkbox"
-                    checked={checked}
-                    aria-label={entry.entityId}
-                    onChange={(e) => onToggleMember(entry.entityId, (e.target as HTMLInputElement).checked)}
-                  />
-                  <div class="argus-row-content">
-                    <span class="argus-row-entity-id">{entry.entityId}</span>
-                    {showFriendlyName && <span class="argus-row-friendly-name">{entry.friendlyName}</span>}
-                  </div>
-                  <div class="argus-row-meta">
-                    {entry.unitOfMeasurement && (
-                      <span class="argus-row-value">{entry.unitOfMeasurement}</span>
-                    )}
-                    {checked && <span class="argus-pill argus-pill--tracked">member</span>}
-                  </div>
-                </label>
-              </li>
-            );
-          })}
-        </ul>
+        <Card padding="none">
+          <ul class="argus-list">
+            {filtered.map((entry) => {
+              const checked = selectedSet.has(entry.entityId);
+              const showFriendlyName = !!entry.friendlyName && entry.friendlyName !== entry.entityId;
+              return (
+                <li key={entry.entityId} class={`argus-list-row${checked ? ' argus-list-row--tracked' : ''}`}>
+                  <label style={{ display: 'contents' }}>
+                    <Checkbox
+                      checked={checked}
+                      ariaLabel={entry.entityId}
+                      onChange={(next) => onToggleMember(entry.entityId, next)}
+                    />
+                    <div class="argus-row-content">
+                      <span class="argus-row-entity-id">{entry.entityId}</span>
+                      {showFriendlyName && <span class="argus-row-friendly-name">{entry.friendlyName}</span>}
+                    </div>
+                    <div class="argus-row-meta">
+                      {entry.unitOfMeasurement && (
+                        <span class="argus-row-value">{entry.unitOfMeasurement}</span>
+                      )}
+                      {checked && <Badge tone="member">member</Badge>}
+                    </div>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
       )}
       <FieldValidationError message={memberFloorError ?? undefined} />
       <FieldValidationError message={unitMismatchError ?? undefined} />
