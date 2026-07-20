@@ -70,6 +70,8 @@ export function AlgorithmChooser({ existingDetector }: AlgorithmChooserProps) {
 
   return (
     <div class="argus-algorithm-chooser">
+      <p class="argus-section-label">Algorithm</p>
+
       {chooserMode.value === 'guided-question' && <GuidedFlowStep />}
 
       {chooserMode.value !== 'guided-question' && (

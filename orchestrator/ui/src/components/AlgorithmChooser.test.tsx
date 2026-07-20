@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/preact';
 import { AlgorithmChooser } from './AlgorithmChooser';
 import * as client from '../api/client';
-import { draftDetector, draftParams, draftPresetLabel } from '../state/groups';
+import { draftDetector, draftParams, draftPresetLabel, draftMode } from '../state/groups';
 import { chooserMode, selectedDetector, guidedRecommended, catalog } from '../state/groupEditor';
 import type { DetectorCatalog } from '../api/types';
 
@@ -45,6 +45,7 @@ function resetAll() {
   draftDetector.value = null;
   draftParams.value = {};
   draftPresetLabel.value = null;
+  draftMode.value = 'peer_divergence';
 }
 
 describe('AlgorithmChooser', () => {
@@ -143,5 +144,34 @@ describe('AlgorithmChooser', () => {
 
     await waitFor(() => expect(chooserMode.value).toBe('manual'));
     expect(screen.queryByText('What are you monitoring?')).toBeNull();
+  });
+
+  it('renders the "Algorithm" section-label heading', async () => {
+    render(<AlgorithmChooser existingDetector={null} />);
+
+    await screen.findByText('What are you monitoring?');
+    expect(screen.getByText('Algorithm')).toBeTruthy();
+  });
+
+  it('shows the full unfiltered catalog and keeps the guided step available in BOTH peer_divergence and joint modes (D-03 regression guard)', async () => {
+    draftMode.value = 'peer_divergence';
+    const peerRender = render(<AlgorithmChooser existingDetector={null} />);
+
+    await peerRender.findByText('What are you monitoring?'); // guided step reachable in peer mode
+    fireEvent.click(peerRender.getByText('Skip — choose manually'));
+    await peerRender.findByText('ecod');
+    const peerCardCount = peerRender.getAllByRole('radio').length;
+    expect(peerCardCount).toBe(2); // full catalog, no mode filter
+    peerRender.unmount();
+
+    resetAll();
+    draftMode.value = 'joint';
+    const jointRender = render(<AlgorithmChooser existingDetector={null} />);
+
+    await jointRender.findByText('What are you monitoring?'); // guided step still reachable in joint mode
+    fireEvent.click(jointRender.getByText('Skip — choose manually'));
+    await jointRender.findByText('ecod');
+    const jointCardCount = jointRender.getAllByRole('radio').length;
+    expect(jointCardCount).toBe(peerCardCount); // identical card count across both modes
   });
 });
