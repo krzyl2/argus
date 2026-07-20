@@ -1,12 +1,14 @@
 import type { GroupConfig } from '../api/types';
 import { GroupListRow } from './GroupListRow';
+import { Card } from './Card';
 
 interface GroupListProps {
   groups: GroupConfig[];
 }
 
-// Replaces SensorList's role for groups — <ul class="argus-list"> of GroupListRow,
-// with an EmptyState-style branch for zero groups (08-UI-SPEC.md "#/groups (Group List)").
+// Replaces SensorList's role for groups — Card-wrapped <ul class="argus-list"> of
+// GroupListRow (D-02), with a custom .argus-empty branch for zero groups (NOT the
+// sensor-specific EmptyState — its prop shape is query-based and doesn't apply here).
 export function GroupList({ groups }: GroupListProps) {
   if (groups.length === 0) {
     return (
@@ -21,10 +23,12 @@ export function GroupList({ groups }: GroupListProps) {
   }
 
   return (
-    <ul class="argus-list">
-      {groups.map((group) => (
-        <GroupListRow key={group.groupId} group={group} />
-      ))}
-    </ul>
+    <Card padding="none">
+      <ul class="argus-list">
+        {groups.map((group) => (
+          <GroupListRow key={group.groupId} group={group} />
+        ))}
+      </ul>
+    </Card>
   );
 }

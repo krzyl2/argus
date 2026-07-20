@@ -46,6 +46,7 @@ export function GroupListRow({ group, status }: GroupListRowProps) {
       <div class="argus-row-content">
         <span class="argus-row-entity-id">{group.friendlyName || group.groupId}</span>
         <Badge tone="neutral">{modeLabel}</Badge>
+        <Badge tone="accent">{group.detector}</Badge>
       </div>
       <div class="argus-row-meta">
         <span class="argus-label">

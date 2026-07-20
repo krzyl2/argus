@@ -26,13 +26,13 @@ export function GroupsPage() {
 
   return (
     <div>
-      <div>
-        <p class="argus-heading">Groups</p>
-        <p class="argus-body">
+      <header class="argus-page-header">
+        <h1 class="argus-page-header__title">Groups</h1>
+        <p class="argus-page-header__subtitle">
           Detect anomalies across related sensors — divergence within a group, or jointly-abnormal
           combinations.
         </p>
-      </div>
+      </header>
       <AreaSuggestionBanner sensors={sensors.value} groups={groups.value} />
       <p>
         <a class="argus-btn argus-btn--primary" href="#/groups/new">
