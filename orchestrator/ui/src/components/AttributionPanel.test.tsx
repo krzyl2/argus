@@ -14,7 +14,7 @@ describe('AttributionPanel', () => {
     vi.useRealTimers();
   });
 
-  it('renders ranked bars in received order (ecod/copod) without re-sorting, top bar accented', async () => {
+  it('renders ranked bars in received order (ecod/copod) without re-sorting, top bar accented, inside a Card with the section label', async () => {
     const res: GroupStatusResponse = {
       status: {
         groupId: 'grp.living_room',
@@ -45,9 +45,15 @@ describe('AttributionPanel', () => {
     expect(bars[0].classList.contains('argus-attribution-bar__fill--top')).toBe(true);
     expect(bars[1].classList.contains('argus-attribution-bar__fill--top')).toBe(false);
     expect(bars[2].classList.contains('argus-attribution-bar__fill--top')).toBe(false);
+
+    // Ranked branch is Card-wrapped and carries the DS section label.
+    expect(container.querySelector('.argus-card')).toBeTruthy();
+    expect(
+      screen.getByText('Member attribution · last result, refreshes ~60s', { selector: '.argus-section-label' })
+    ).toBeTruthy();
   });
 
-  it('renders the honest no-attribution message for pca/iforest (not an error state)', async () => {
+  it('renders the honest no-attribution message for pca/iforest (not an error state), Card-wrapped, without using EmptyState', async () => {
     const res: GroupStatusResponse = {
       status: {
         groupId: 'grp.x',
@@ -60,24 +66,42 @@ describe('AttributionPanel', () => {
     };
     vi.spyOn(client, 'apiGet').mockResolvedValue(res);
 
-    render(<AttributionPanel groupId="grp.x" />);
+    const { container } = render(<AttributionPanel groupId="grp.x" />);
 
-    await waitFor(() =>
-      expect(screen.getByText('This algorithm does not provide per-feature attribution.')).toBeTruthy()
-    );
+    await waitFor(() => expect(screen.getByText('Attribution not available.')).toBeTruthy());
+    expect(
+      screen.getByText('The pca detector does not provide per-feature attribution.')
+    ).toBeTruthy();
+
+    // Custom .argus-empty markup inside a Card, not the sensor-specific EmptyState.
+    expect(container.querySelector('.argus-card .argus-empty')).toBeTruthy();
+    // EmptyState's copy ("No sensors match" / "No sensors found") must never appear here.
+    expect(screen.queryByText(/No sensors/)).toBeNull();
   });
 
-  it('renders the no-verdict-yet state when status is null', async () => {
+  it('renders the no-verdict-yet state when status is null, Card-wrapped', async () => {
     const res: GroupStatusResponse = { status: null };
     vi.spyOn(client, 'apiGet').mockResolvedValue(res);
 
-    render(<AttributionPanel groupId="grp.new" />);
+    const { container } = render(<AttributionPanel groupId="grp.new" />);
 
     await waitFor(() =>
       expect(
         screen.getByText('No anomaly score yet — attribution will appear after the next batch run.')
       ).toBeTruthy()
     );
+    expect(container.querySelector('.argus-card')).toBeTruthy();
+  });
+
+  it('renders the loading state inside a Card', async () => {
+    // Never resolves before assertion — the initial `!loaded` branch renders synchronously
+    // on first render, before the poll's async apiGet call settles.
+    vi.spyOn(client, 'apiGet').mockImplementation(() => new Promise(() => {}));
+
+    const { container } = render(<AttributionPanel groupId="grp.loading" />);
+
+    expect(screen.getByText('Loading attribution…')).toBeTruthy();
+    expect(container.querySelector('.argus-card')).toBeTruthy();
   });
 
   it('polls on an interval and clears it on unmount (no leak after route change)', async () => {

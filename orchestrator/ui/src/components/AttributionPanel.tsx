@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { apiGet } from '../api/client';
 import type { GroupStatus, GroupStatusResponse } from '../api/types';
 import { AttributionBar } from './AttributionBar';
+import { Card } from './Card';
 
 interface AttributionPanelProps {
   groupId: string;
@@ -48,34 +49,50 @@ export function AttributionPanel({ groupId }: AttributionPanelProps) {
   }, [groupId]);
 
   if (!loaded) {
-    return <p class="argus-label">Loading attribution…</p>;
+    return (
+      <Card padding="sm">
+        <p class="argus-label">Loading attribution…</p>
+      </Card>
+    );
   }
 
   if (!status) {
     return (
-      <div class="argus-empty">
-        <p class="argus-body">No anomaly score yet — attribution will appear after the next batch run.</p>
-      </div>
+      <Card padding="sm">
+        <div class="argus-empty">
+          <p class="argus-body">No anomaly score yet — attribution will appear after the next batch run.</p>
+        </div>
+      </Card>
     );
   }
 
   if (status.contributions.length === 0) {
-    return <p class="argus-body argus-attribution-panel__unsupported">This algorithm does not provide per-feature attribution.</p>;
+    return (
+      <Card padding="sm">
+        <div class="argus-empty">
+          <p class="argus-body argus-attribution-panel__unsupported">Attribution not available.</p>
+          <p class="argus-label">The {status.detector} detector does not provide per-feature attribution.</p>
+        </div>
+      </Card>
+    );
   }
 
   const topContribution = status.contributions[0].contribution;
 
   return (
-    <div class="argus-attribution-panel">
-      {status.contributions.map((c, idx) => (
-        <AttributionBar
-          key={c.memberId}
-          memberId={c.memberId}
-          contribution={c.contribution}
-          topContribution={topContribution}
-          topRank={idx === 0}
-        />
-      ))}
-    </div>
+    <Card padding="sm">
+      <p class="argus-section-label">Member attribution · last result, refreshes ~60s</p>
+      <div class="argus-attribution-panel">
+        {status.contributions.map((c, idx) => (
+          <AttributionBar
+            key={c.memberId}
+            memberId={c.memberId}
+            contribution={c.contribution}
+            topContribution={topContribution}
+            topRank={idx === 0}
+          />
+        ))}
+      </div>
+    </Card>
   );
 }
