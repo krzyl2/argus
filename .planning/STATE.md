@@ -4,17 +4,17 @@ milestone: v4.1
 milestone_name: Admin UI Rebuild (Design System)
 current_phase: 13
 current_phase_name: groups-screen-rebuild
-status: executing
-stopped_at: Completed 13-02-PLAN.md
-last_updated: "2026-07-20T07:05:46.165Z"
+status: verifying
+stopped_at: Completed 13-03-PLAN.md (phase 13 groups-screen-rebuild complete)
+last_updated: "2026-07-20T07:10:23.754Z"
 last_activity: 2026-07-20
 last_activity_desc: Phase 13 execution resumed (wave continue)
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 18
-  completed_plans: 17
-  percent: 75
+  completed_plans: 18
+  percent: 100
 ---
 
 # Project State: Argus
@@ -79,7 +79,7 @@ See: .planning/PROJECT.md
 | 13 | Groups Screen Rebuild | Not started |
 
 ```
-Progress: [█████████░] 94%
+Progress: [██████████] 100%
 ```
 
 v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -198,6 +198,8 @@ v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/
 - [Phase ?]: GroupListRow detector Badge uses tone=accent alongside mode Badge tone=neutral (Assumption A1)
 - [Phase ?]: [Phase 13-02]: AdvancedParamsDisclosure Input call site omits min/max (Input has no such props, matches DetectorParamGrid convention); field set/order/defaults unaffected
 - [Phase ?]: [Phase 13-02]: AlgorithmChooser section-label text is "Algorithm", copied verbatim from the DS reference's SectionLabel usage in Groups.jsx
+- [Phase ?]: [Phase 13-03]: AttributionPanel unsupported-state copy rewritten to a two-line message naming status.detector, matching 13-RESEARCH.md Pattern 5's example (test assertion updated to match)
+- [Phase ?]: [Phase 13-03]: AttributionBar.tsx received no production change — its accent-vs-neutral fill contract already matched the D-05 spec since its Phase 8 build; only a new regression test file was added
 
 ### Blockers
 
@@ -246,11 +248,12 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 |------|----------|-------|-------|
 | Phase 13 P01 | 4min | 3 tasks | 9 files |
 | Phase 13 P02 | 3min | 3 tasks | 7 files |
+| Phase 13 P03 | 4min | 3 tasks | 3 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-20T07:05:46.154Z
-**Stopped at:** Completed 13-02-PLAN.md
+**Last session:** 2026-07-20T07:10:23.743Z
+**Stopped at:** Completed 13-03-PLAN.md (phase 13 groups-screen-rebuild complete)
 **Resume file:** None
 
 ## Operator Next Steps
@@ -261,5 +264,5 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 Phase: 13 (groups-screen-rebuild) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-20 — Phase 13 execution resumed (wave continue)
