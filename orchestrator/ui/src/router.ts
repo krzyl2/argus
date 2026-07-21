@@ -13,9 +13,18 @@ export const route = signal(normalizeHash(location.hash));
 // Parsed :id segment for #/groups/:id (null for /groups, /groups/new, or /sensors).
 export const routeGroupId = signal(parseGroupId(normalizeHash(location.hash)));
 
-function normalizeHash(hash: string): string {
-  const path = hash.replace(/^#/, '');
-  return path || '/sensors'; // root with no hash -> default route (client-side equiv. of v3 302)
+// Phase 14 (D-01/D-05): parsed :entityId segment for #/detectors/sensor/:entityId
+// (null for any other route). Exported alongside routeGroupId.
+export const routeSensorEntityId = signal(parseSensorEntityId(normalizeHash(location.hash)));
+
+// Exported so router.test.ts can assert D-01/D-05 redirect + parse behaviors directly
+// (was module-internal before Phase 14).
+export function normalizeHash(hash: string): string {
+  const path = hash.replace(/^#/, '') || '/detectors'; // root with no hash -> default route (client-side equiv. of v3 302)
+  // D-01/D-05: bare legacy routes redirect to the new unified screen. Exact-match
+  // only, so /groups/new and /groups/:id keep passing through unchanged.
+  if (path === '/sensors' || path === '/groups') return '/detectors';
+  return path;
 }
 
 /**
@@ -30,16 +39,34 @@ function parseGroupId(path: string): string | null {
   return segment === 'new' ? null : segment;
 }
 
+/**
+ * Extracts the :entityId segment from a /detectors/sensor/:entityId path.
+ * Entity ids are encodeURIComponent-encoded at link time (they contain dots,
+ * e.g. sensor.living_room_temp) — decodeURIComponent here, mirroring
+ * parseGroupId's idiom. Returns null for a non-matching path or a malformed
+ * percent-encoding (defensive fallback per T-14-01-01).
+ */
+export function parseSensorEntityId(path: string): string | null {
+  const match = path.match(/^\/detectors\/sensor\/([^/]+)$/);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
 window.addEventListener('hashchange', () => {
   const path = normalizeHash(location.hash);
   route.value = path;
   routeGroupId.value = parseGroupId(path);
+  routeSensorEntityId.value = parseSensorEntityId(path);
 });
 
 // On boot, if there is no hash at all, set one (client-side equivalent of the
-// v3.0 server 302 redirect from GET / -> /sensors).
+// v3.0 server 302 redirect from GET / -> /detectors).
 effect(() => {
   if (!location.hash) {
-    location.hash = '#/sensors';
+    location.hash = '#/detectors';
   }
 });
