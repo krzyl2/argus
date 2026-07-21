@@ -15,6 +15,7 @@ interface MemberPickerProps {
   query: string;
   onQueryChange: (q: string) => void;
   onToggleMember: (entityId: string, checked: boolean) => void;
+  minQueryLength?: number;
 }
 
 // Wraps sensor rows in multi-select mode (checkbox semantics identical to the
@@ -32,8 +33,9 @@ export function MemberPicker({
   query,
   onQueryChange,
   onToggleMember,
+  minQueryLength = MIN_QUERY_LENGTH,
 }: MemberPickerProps) {
-  const queryTooShort = query.trim().length < MIN_QUERY_LENGTH;
+  const queryTooShort = query.trim().length < minQueryLength;
   const filtered = queryTooShort ? [] : sensors.filter((s) => matchesSensorQuery(s, query));
   const selectedSet = new Set(selectedIds);
   const selectedEntries = sensors.filter((s) => selectedSet.has(s.entityId));
@@ -46,7 +48,7 @@ export function MemberPicker({
       <SensorSearchInput value={query} onChange={onQueryChange} />
       {queryTooShort ? (
         <div class="argus-empty">
-          <p class="argus-label">Type at least {MIN_QUERY_LENGTH} characters to search sensors.</p>
+          <p class="argus-label">Type at least {minQueryLength} characters to search sensors.</p>
         </div>
       ) : filtered.length === 0 ? (
         <EmptyState query={query} />

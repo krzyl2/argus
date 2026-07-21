@@ -85,4 +85,33 @@ describe('MemberPicker', () => {
     fireEvent.click(checkbox);
     expect(onToggleMember).toHaveBeenCalledWith('sensor.living_room_temp', true);
   });
+
+  it('honors a custom minQueryLength — gates at the raised threshold and reveals once met', () => {
+    const { container, rerender } = render(
+      <MemberPicker
+        sensors={SENSORS}
+        selectedIds={[]}
+        mode="peer_divergence"
+        query="li"
+        onQueryChange={() => {}}
+        onToggleMember={() => {}}
+        minQueryLength={3}
+      />
+    );
+    expect(container.querySelectorAll('.argus-list-row').length).toBe(0);
+    expect(screen.getByText(/Type at least 3 characters/)).toBeTruthy();
+
+    rerender(
+      <MemberPicker
+        sensors={SENSORS}
+        selectedIds={[]}
+        mode="peer_divergence"
+        query="liv"
+        onQueryChange={() => {}}
+        onToggleMember={() => {}}
+        minQueryLength={3}
+      />
+    );
+    expect(container.querySelectorAll('.argus-list-row').length).toBe(2);
+  });
 });
