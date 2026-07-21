@@ -9,21 +9,23 @@ interface NavItem {
   disabled?: boolean;
 }
 
-// D-02: final order/look for all 5 screens now. Phase 11 (D-10) enables
-// Dashboard/Algorithms/Settings — no longer disabled placeholders.
+// D-02/D-04 (Phase 14): Sensors + Groups nav items removed in favor of one
+// unified Detectors destination + a shared Add-detector wizard entry point.
+// /groups/:id is still reachable (via a Detectors row's Edit link), just not
+// from the sidebar directly.
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '▦', href: '#/dashboard' },
   { id: 'algorithms', label: 'Algorithms', icon: '⚙', href: '#/algorithms' },
-  { id: 'sensors', label: 'Sensors', icon: '◎', href: '#/sensors' },
-  { id: 'groups', label: 'Groups', icon: '⧉', href: '#/groups' },
+  { id: 'detectors', label: 'Detectors', icon: '◎', href: '#/detectors' },
+  { id: 'add-detector', label: 'Add detector', icon: '+', href: '#/detectors/add' },
   { id: 'settings', label: 'Settings', icon: '⚙', href: '#/settings' },
 ];
 
 function isActive(item: NavItem, currentRoute: string): boolean {
   if (item.id === 'dashboard') return currentRoute === '/dashboard';
   if (item.id === 'algorithms') return currentRoute === '/algorithms';
-  if (item.id === 'sensors') return currentRoute === '/sensors';
-  if (item.id === 'groups') return currentRoute === '/groups' || currentRoute.startsWith('/groups/');
+  if (item.id === 'detectors') return currentRoute === '/detectors' || currentRoute.startsWith('/detectors/');
+  if (item.id === 'add-detector') return currentRoute === '/detectors/add';
   if (item.id === 'settings') return currentRoute === '/settings';
   return false;
 }
