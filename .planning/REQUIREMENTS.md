@@ -52,7 +52,7 @@ Minted during Phase 14 planning from `14-RESEARCH.md`'s Derived Requirements tab
 restructure (no backend changes — D-09); depends on the Phase 10–13 Design System + rebuilt components.
 
 - [x] **DET-01**: Detectors screen shows one unified, DS-consistent list merging groups (`GET /api/groups`) and tracked single sensors (`GET /api/sensors`, `isTracked` entries only)
-- [ ] **DET-02**: Editing a group row navigates to the existing, unchanged `/groups/:id` `GroupEditorForm`
+- [x] **DET-02**: Editing a group row navigates to the existing, unchanged `/groups/:id` `GroupEditorForm`
 - [x] **DET-03**: Editing a single-sensor row navigates to a new dedicated single-sensor detector-edit view/route, preserving hst/mad/stl assignment + inline validation (`detectorParams.ts`) + `DetectorDefaults.cs` defaults
 - [x] **DET-04**: Sidebar "Sensors" and "Groups" nav items removed; "Detectors" + "Add detector" items added, with correct active-route highlighting
 - [x] **DET-05**: `/detectors` is the new default route; bare `/sensors` and bare `/groups` redirect to `/detectors`; `/groups/new` and `/groups/:id` continue to work unchanged for direct deep links

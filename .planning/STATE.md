@@ -4,17 +4,17 @@ milestone: v4.1
 milestone_name: Admin UI Rebuild (Design System)
 current_phase: 14
 current_phase_name: unified-detectors-screen-add-detector-wizard
-status: executing
-stopped_at: Completed 14-03-PLAN.md
-last_updated: "2026-07-21T18:41:48.937Z"
+status: verifying
+stopped_at: Completed 14-04-PLAN.md
+last_updated: "2026-07-21T18:49:11.706Z"
 last_activity: 2026-07-21
 last_activity_desc: Phase 14 execution started
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 22
-  completed_plans: 21
-  percent: 80
+  completed_plans: 22
+  percent: 100
 ---
 
 # Project State: Argus
@@ -79,7 +79,7 @@ See: .planning/PROJECT.md
 | 13 | Groups Screen Rebuild | Not started |
 
 ```
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 ```
 
 v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -206,6 +206,8 @@ v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/
 - [Phase ?]: [Phase 14-02]: AddDetectorWizard tests use real debounce + findByLabelText instead of fake timers — vi.advanceTimersByTime desynced from preact's microtask-scheduled rerender
 - [Phase ?]: [Phase 14-03]: New Auto-track patterns section placed last (after Appearance) in SettingsPage — purely additive, existing sections' order/layout untouched
 - [Phase ?]: [Phase 14-03]: SettingsPage's pattern-filter save() guarded by loadSensors('') on mount (D-07) — preservation regression test proves the full tracked set survives a pattern-filter-only edit
+- [Phase ?]: 14-04: Omitted assigned-detector badge on sensor list row (DetectorRow lacks detector data; plan marked it optional)
+- [Phase ?]: 14-04: Left SensorsPage.tsx on disk unreferenced (copy-source for 14-02/14-03 excerpts) instead of deleting
 
 ### Blockers
 
@@ -259,11 +261,12 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 | Phase 14 P01 | 5min | 3 tasks | 6 files |
 | Phase 14 P02 | 5min | 3 tasks | 6 files |
 | Phase 14 P03 | 6min | 2 tasks | 2 files |
+| Phase 14 P04 | 12min | 3 tasks | 7 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-21T18:41:48.926Z
-**Stopped at:** Completed 14-03-PLAN.md
+**Last session:** 2026-07-21T18:49:11.695Z
+**Stopped at:** Completed 14-04-PLAN.md
 **Resume file:** None
 
 ## Operator Next Steps
@@ -274,5 +277,5 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 Phase: 14 (unified-detectors-screen-add-detector-wizard) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-21 — Phase 14 execution started
