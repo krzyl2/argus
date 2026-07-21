@@ -56,7 +56,7 @@ restructure (no backend changes — D-09); depends on the Phase 10–13 Design S
 - [x] **DET-03**: Editing a single-sensor row navigates to a new dedicated single-sensor detector-edit view/route, preserving hst/mad/stl assignment + inline validation (`detectorParams.ts`) + `DetectorDefaults.cs` defaults
 - [x] **DET-04**: Sidebar "Sensors" and "Groups" nav items removed; "Detectors" + "Add detector" items added, with correct active-route highlighting
 - [x] **DET-05**: `/detectors` is the new default route; bare `/sensors` and bare `/groups` redirect to `/detectors`; `/groups/new` and `/groups/:id` continue to work unchanged for direct deep links
-- [ ] **DET-06**: Pattern Filters (include/exclude auto-track) UI relocated to the Settings screen after the Sensors screen is removed, honoring the full-list-replace save guard (D-07)
+- [x] **DET-06**: Pattern Filters (include/exclude auto-track) UI relocated to the Settings screen after the Sensors screen is removed, honoring the full-list-replace save guard (D-07)
 - [x] **WIZ-01**: Add-detector wizard route with sensor multi-select search that reveals matching rows only once the query is >=3 characters
 - [x] **WIZ-02**: Selecting exactly 1 sensor in the wizard tracks it and opens the single-sensor detector-edit view for it
 - [x] **WIZ-03**: Selecting >=2 sensors in the wizard pre-fills them into a new group draft (`#/groups/new`) via the existing `pendingPrefillMembers` handoff, then continues through the existing, unchanged guided algorithm-chooser flow
