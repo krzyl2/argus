@@ -5,15 +5,15 @@ milestone_name: Admin UI Rebuild (Design System)
 current_phase: 14
 current_phase_name: unified-detectors-screen-add-detector-wizard
 status: executing
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-07-21T18:29:59.527Z"
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-07-21T18:37:22.566Z"
 last_activity: 2026-07-21
 last_activity_desc: Phase 14 execution started
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 22
-  completed_plans: 19
+  completed_plans: 20
   percent: 80
 ---
 
@@ -79,7 +79,7 @@ See: .planning/PROJECT.md
 | 13 | Groups Screen Rebuild | Not started |
 
 ```
-Progress: [█████████░] 86%
+Progress: [█████████░] 91%
 ```
 
 v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -202,6 +202,8 @@ v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/
 - [Phase ?]: [Phase 13-03]: AttributionBar.tsx received no production change — its accent-vs-neutral fill contract already matched the D-05 spec since its Phase 8 build; only a new regression test file was added
 - [Phase ?]: [Phase 14-01]: normalizeHash/parseSensorEntityId exported from router.ts (were module-internal) so router.test.ts can import them directly
 - [Phase ?]: [Phase 14-01]: detectorRows returns groups-first then sensors (Claude's discretion per 14-CONTEXT.md)
+- [Phase ?]: [Phase 14-02]: MemberPicker minQueryLength defaulted via destructure to the named MIN_QUERY_LENGTH constant, not a second inline 2 — single source of truth for the default (D-06)
+- [Phase ?]: [Phase 14-02]: AddDetectorWizard tests use real debounce + findByLabelText instead of fake timers — vi.advanceTimersByTime desynced from preact's microtask-scheduled rerender
 
 ### Blockers
 
@@ -253,11 +255,12 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 | Phase 13 P02 | 3min | 3 tasks | 7 files |
 | Phase 13 P03 | 4min | 3 tasks | 3 files |
 | Phase 14 P01 | 5min | 3 tasks | 6 files |
+| Phase 14 P02 | 5min | 3 tasks | 6 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-21T18:29:59.515Z
-**Stopped at:** Completed 14-01-PLAN.md
+**Last session:** 2026-07-21T18:37:22.555Z
+**Stopped at:** Completed 14-02-PLAN.md
 **Resume file:** None
 
 ## Operator Next Steps
@@ -267,6 +270,6 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 ## Current Position
 
 Phase: 14 (unified-detectors-screen-add-detector-wizard) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-07-21 — Phase 14 execution started

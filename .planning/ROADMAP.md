@@ -266,7 +266,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 5/5 | Complete    | 2026-07-08 |
 | 12. Sensors Screen Rebuild | v4.1 | 3/3 | Complete    | 2026-07-17 |
 | 13. Groups Screen Rebuild | v4.1 | 3/3 | In Progress|  |
-| 14. Unified Detectors Screen + Add-Detector Wizard | v4.1 | 1/4 | In Progress|  |
+| 14. Unified Detectors Screen + Add-Detector Wizard | v4.1 | 2/4 | In Progress|  |
 
 ### Phase 14: Unified Detectors Screen + Add-Detector Wizard
 
@@ -289,13 +289,13 @@ Sidebar: remove Sensors and Groups items; add Detectors + an Add-detector entry.
 
 **Requirements**: DET-01, DET-02, DET-03, DET-04, DET-05, DET-06, WIZ-01, WIZ-02, WIZ-03, WIZ-04
 **Depends on:** Phases 10–13 (Design System foundation + rebuilt Sensors/Groups components to reuse)
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 **Wave 1** *(independent client plumbing — no file overlap, fully parallel)*
 
 - [x] 14-01-PLAN.md — Router default→/detectors + legacy redirects + parseSensorEntityId, Sidebar nav restructure, merged `state/detectors.ts` computed signal (DET-01, DET-04, DET-05)
-- [ ] 14-02-PLAN.md — MemberPicker `minQueryLength` prop, extracted SingleDetectorEditorForm (+Untrack), thin AddDetectorWizard hand-off + CRITICAL D-07 save-safety regression test (DET-03, WIZ-01, WIZ-02, WIZ-03, WIZ-04)
+- [x] 14-02-PLAN.md — MemberPicker `minQueryLength` prop, extracted SingleDetectorEditorForm (+Untrack), thin AddDetectorWizard hand-off + CRITICAL D-07 save-safety regression test (DET-03, WIZ-01, WIZ-02, WIZ-03, WIZ-04)
 - [ ] 14-03-PLAN.md — Relocate PatternFiltersPanel into Settings with its own D-07-guarded save (DET-06)
 
 **Wave 2** *(blocked on 14-01 + 14-02)*
