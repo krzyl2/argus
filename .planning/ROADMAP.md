@@ -6,7 +6,7 @@
 - ✅ **v2.0 Home Assistant Add-on** — Phases 1-4 (shipped 2026-06-30)
 - ✅ **v3.0 Ingress Configuration UI** — Phases 1-4 (shipped 2026-07-02)
 - ✅ **v4.0 Group & Multivariate Anomaly Detection + UX** — Phases 5-9 (shipped 2026-07-06)
-- 🚧 **v4.1 Admin UI Rebuild (Design System)** — Phases 10-13 (in progress)
+- 🚧 **v4.1 Admin UI Rebuild (Design System)** — Phases 10-14 (in progress)
 
 ## Phases
 
@@ -266,3 +266,37 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 5/5 | Complete    | 2026-07-08 |
 | 12. Sensors Screen Rebuild | v4.1 | 3/3 | Complete    | 2026-07-17 |
 | 13. Groups Screen Rebuild | v4.1 | 3/3 | In Progress|  |
+| 14. Unified Detectors Screen + Add-Detector Wizard | v4.1 | 0/4 | Planned |  |
+
+### Phase 14: Unified Detectors Screen + Add-Detector Wizard
+
+**Goal:** Restructure the admin IA so operators manage all anomaly detection from one place instead of
+two disconnected screens. Replaces the separate **Sensors** and **Groups** nav items with:
+
+1. **Detectors screen** — a single unified list of everything currently tracked: groups (from
+   `api/groups`) and tracked single sensors (from `api/sensors`, `isTracked` entities), shown together
+   as visually-consistent Design System rows. Editing a row reuses the existing editors — group →
+   `GroupEditorForm`; single sensor → a dedicated detector-edit view (analog of the current inline
+   `SensorsPage` per-sensor detector assignment).
+2. **Add-detector wizard** — a separate shared entry/route. Sensor search shows results only after
+   ≥3 typed characters (the sensor set is too large to list in full). Selecting **1** sensor takes the
+   single-sensor detector path; selecting **≥2** takes the group path. Both continue through the full
+   guided flow (algorithm + sensitivity/params), reusing `GuidedFlowStep` / `AlgorithmChooser` /
+   `SensitivityPresetPicker`.
+
+Sidebar: remove Sensors and Groups items; add Detectors + an Add-detector entry.
+
+**Requirements**: DET-01, DET-02, DET-03, DET-04, DET-05, DET-06, WIZ-01, WIZ-02, WIZ-03, WIZ-04
+**Depends on:** Phases 10–13 (Design System foundation + rebuilt Sensors/Groups components to reuse)
+**Plans:** 4 plans
+
+Plans:
+**Wave 1** *(independent client plumbing — no file overlap, fully parallel)*
+
+- [ ] 14-01-PLAN.md — Router default→/detectors + legacy redirects + parseSensorEntityId, Sidebar nav restructure, merged `state/detectors.ts` computed signal (DET-01, DET-04, DET-05)
+- [ ] 14-02-PLAN.md — MemberPicker `minQueryLength` prop, extracted SingleDetectorEditorForm (+Untrack), thin AddDetectorWizard hand-off + CRITICAL D-07 save-safety regression test (DET-03, WIZ-01, WIZ-02, WIZ-03, WIZ-04)
+- [ ] 14-03-PLAN.md — Relocate PatternFiltersPanel into Settings with its own D-07-guarded save (DET-06)
+
+**Wave 2** *(blocked on 14-01 + 14-02)*
+
+- [ ] 14-04-PLAN.md — Unified DetectorsPage + DetectorList + DetectorListRow (navigate-only rows) + main.tsx route wiring / fallback (DET-01, DET-02, DET-03, DET-05)

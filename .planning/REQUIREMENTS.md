@@ -46,6 +46,22 @@
 - [x] **A11Y-01**: Focus always visible (2px accent outline, 2px offset) on all interactive elements, all screens
 - [x] **A11Y-02**: Radio-card selection = 2px accent border, never color alone (Groups wizard + Sensors detector picker)
 
+### Detectors IA restructure (Phase 14 — added 2026-07-21)
+
+Minted during Phase 14 planning from `14-RESEARCH.md`'s Derived Requirements table. Client-only IA
+restructure (no backend changes — D-09); depends on the Phase 10–13 Design System + rebuilt components.
+
+- [ ] **DET-01**: Detectors screen shows one unified, DS-consistent list merging groups (`GET /api/groups`) and tracked single sensors (`GET /api/sensors`, `isTracked` entries only)
+- [ ] **DET-02**: Editing a group row navigates to the existing, unchanged `/groups/:id` `GroupEditorForm`
+- [ ] **DET-03**: Editing a single-sensor row navigates to a new dedicated single-sensor detector-edit view/route, preserving hst/mad/stl assignment + inline validation (`detectorParams.ts`) + `DetectorDefaults.cs` defaults
+- [ ] **DET-04**: Sidebar "Sensors" and "Groups" nav items removed; "Detectors" + "Add detector" items added, with correct active-route highlighting
+- [ ] **DET-05**: `/detectors` is the new default route; bare `/sensors` and bare `/groups` redirect to `/detectors`; `/groups/new` and `/groups/:id` continue to work unchanged for direct deep links
+- [ ] **DET-06**: Pattern Filters (include/exclude auto-track) UI relocated to the Settings screen after the Sensors screen is removed, honoring the full-list-replace save guard (D-07)
+- [ ] **WIZ-01**: Add-detector wizard route with sensor multi-select search that reveals matching rows only once the query is >=3 characters
+- [ ] **WIZ-02**: Selecting exactly 1 sensor in the wizard tracks it and opens the single-sensor detector-edit view for it
+- [ ] **WIZ-03**: Selecting >=2 sensors in the wizard pre-fills them into a new group draft (`#/groups/new`) via the existing `pendingPrefillMembers` handoff, then continues through the existing, unchanged guided algorithm-chooser flow
+- [ ] **WIZ-04**: Any save triggered from the wizard, the single-sensor editor, or the relocated Settings pattern-filters loads the complete current tracked-sensor set first, so the full-list-replace `POST /api/sensors/save` never silently drops previously tracked sensors (Pitfall 1 / D-07)
+
 ## Future Requirements
 
 Deferred, not in this milestone's roadmap.
@@ -87,13 +103,23 @@ Deferred, not in this milestone's roadmap.
 | GRP-12 | Phase 13 | Complete |
 | GRP-13 | Phase 13 | Complete |
 | GRP-14 | Phase 13 | Complete |
+| DET-01 | Phase 14 | Planned |
+| DET-02 | Phase 14 | Planned |
+| DET-03 | Phase 14 | Planned |
+| DET-04 | Phase 14 | Planned |
+| DET-05 | Phase 14 | Planned |
+| DET-06 | Phase 14 | Planned |
+| WIZ-01 | Phase 14 | Planned |
+| WIZ-02 | Phase 14 | Planned |
+| WIZ-03 | Phase 14 | Planned |
+| WIZ-04 | Phase 14 | Planned |
 
 **Coverage:**
 
-- v4.1 requirements: 16 total
-- Mapped to phases: 16 (Phase 10: 5, Phase 11: 6, Phase 12: 2, Phase 13: 3)
+- v4.1 requirements: 26 total (16 original + 10 Phase 14 IA restructure)
+- Mapped to phases: 26 (Phase 10: 5, Phase 11: 6, Phase 12: 2, Phase 13: 3, Phase 14: 10)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-07-08*
-*Last updated: 2026-07-08 after ROADMAP.md creation — 4 phases (10-13), 100% coverage*
+*Last updated: 2026-07-21 — Phase 14 added 10 Detectors-IA requirements (DET-01..06, WIZ-01..04), 100% coverage*
