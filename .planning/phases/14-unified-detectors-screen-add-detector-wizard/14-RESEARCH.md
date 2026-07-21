@@ -272,9 +272,14 @@ the single-sensor path.
 Question 1 the operator does want a literal single-sensor guided flow, it needs its own parallel
 state module (not `state/groupEditor.ts`), not a shared mount of the existing component.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does "full guided flow" for the single-sensor path mean literal reuse of
+> **All three resolved by operator decision during `/gsd-plan-phase 14` (recorded in `14-CONTEXT.md`).**
+> Q1 → **D-05** (hand-off + simple hst/mad/stl editor; literal single-sensor guided flow deferred);
+> Q2 → **D-08b** (relocate Pattern Filters to Settings); Q3 → **D-08a** (untrack only inside the editor).
+> Each individual recommendation below was accepted as-is.
+
+1. **[RESOLVED → D-05] Does "full guided flow" for the single-sensor path mean literal reuse of
    `GuidedFlowStep`/`SensitivityPresetPicker`, or reuse of the existing (simpler) hst/mad/stl
    `AlgorithmCard` grid + `DetectorParamGrid`?**
    - What we know: `GuidedFlowStep`/`SensitivityPresetPicker`/the "what are you monitoring?" question
@@ -288,7 +293,7 @@ state module (not `state/groupEditor.ts`), not a shared mount of the existing co
      surface this explicitly in `/gsd-discuss-phase` or the plan's assumptions so the operator can
      override if they actually want single-sensor sensitivity presets built now.
 
-2. **Where does Pattern Filters (`PatternFiltersPanel`) live after the Sensors screen is removed?**
+2. **[RESOLVED → D-08b] Where does Pattern Filters (`PatternFiltersPanel`) live after the Sensors screen is removed?**
    - What we know: it's a global include/exclude auto-track config, orthogonal to per-sensor/per-group
      detector assignment, currently only rendered inside `SensorsPage`.
    - What's unclear: ROADMAP doesn't mention it at all — silence, not an explicit decision to drop it.
@@ -297,7 +302,7 @@ state module (not `state/groupEditor.ts`), not a shared mount of the existing co
      (`includePatterns`/`excludePatterns` in `state/sensors.ts`, bundled into `POST /api/sensors/save`)
      need no change, only where the `<PatternFiltersPanel>` JSX is mounted.
 
-3. **Does the unified Detectors list need a destructive "untrack sensor" action analogous to
+3. **[RESOLVED → D-08a] Does the unified Detectors list need a destructive "untrack sensor" action analogous to
    `GroupListRow`'s "Delete group" two-step confirm?**
    - What we know: today, untracking a sensor is done via the checkbox inside the full `SensorsPage`
      browse view (no confirm step). The unified list's sensor row (per Row Model Decision) no longer

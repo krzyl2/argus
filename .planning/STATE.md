@@ -4,9 +4,9 @@ milestone: v4.1
 milestone_name: Admin UI Rebuild (Design System)
 current_phase: 13
 current_phase_name: groups-screen-rebuild
-status: verifying
+status: executing
 stopped_at: Completed 13-03-PLAN.md (phase 13 groups-screen-rebuild complete)
-last_updated: "2026-07-20T07:10:23.754Z"
+last_updated: "2026-07-21T18:21:06.701Z"
 last_activity: 2026-07-20
 last_activity_desc: Phase 13 execution resumed (wave continue)
 progress:
@@ -207,6 +207,7 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 ### Roadmap Evolution
 
+- **2026-07-21**: Phase 14 added — Unified Detectors Screen + Add-Detector Wizard. IA restructure (beyond v4.1's screen-rebuild scope): replace the separate Sensors and Groups nav items with one unified "Detectors" list (groups from `api/groups` + tracked single sensors from `api/sensors`) plus a separate shared Add-detector wizard (sensor search reveals results only after ≥3 chars; 1 sensor → single-sensor path, ≥2 → group path; both continue through the full guided flow). Editing reuses existing editors (GroupEditorForm for groups; dedicated single-sensor detector-edit view). Depends on Phases 10–13. Raised 2026-07-21 by operator.
 - **2026-07-08**: v4.1 ROADMAP.md created — 4 phases (10 Design System Foundation, 11 New Standalone Screens [Dashboard/Algorithms/Settings], 12 Sensors Rebuild, 13 Groups Rebuild), continuing numbering from v4.0's Phase 9. THEME-01/02 + COMP-01 grouped as the foundation phase (every screen depends on tokens + shared components existing first); A11Y-01/02 folded into the same foundation phase since both rules are properties of the shared components (focus-visible baked into all interactive components; radio-card border-not-color baked into AlgorithmCard/SensitivityPreset) rather than separate late-phase verification work. Dashboard/Algorithms/Settings (all new, lower-complexity screens — mocked data, read-only catalog, simple config form) grouped into one phase per coarse-granularity guidance rather than three thin single-purpose phases. Sensors and Groups kept as separate phases since both are logic-preserving rebuilds of existing functional screens with real refactoring scope, not restyle-only work. 16/16 requirements mapped, 0 orphans.
 - Phase 9 added (v4.0): 2-Member Groups + Algorithm Guidance Correction — lower the joint-mode member floor to 2, add a pairwise-delta path (existing single-entity MAD detector on member_a − member_b) for 2-member peer_divergence, switch the guided chooser's "together" default from ecod to copod, and rewrite DetectorCatalog.cs BestFor copy. Raised 2026-07-03 during live verification of Phase 8, from two operator use cases (2 front-tire pressures; 2-sensor water pressure+temperature pair) plus empirical PyOD testing that found the existing "together" guidance produces ~90% false positives on correlated-pair relationship-break scenarios. See `.planning/milestones/v4.0-ROADMAP.md` Phase 9 section for full research context.
 
@@ -264,5 +265,5 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 Phase: 13 (groups-screen-rebuild) — EXECUTING
 Plan: 3 of 3
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Last activity: 2026-07-20 — Phase 13 execution resumed (wave continue)
