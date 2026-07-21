@@ -1,11 +1,21 @@
 import { useEffect } from 'preact/hooks';
 import { settings, loadError, loadSettings } from '../state/settings';
 import { theme, setTheme, type Theme } from '../state/theme';
+import {
+  includePatterns,
+  excludePatterns,
+  saveState,
+  loadSensors,
+  save,
+} from '../state/sensors';
 import { Card } from './Card';
 import { Badge } from './Badge';
 import { Banner } from './Banner';
 import { Input } from './Input';
 import { Select } from './Select';
+import { PatternFiltersPanel } from './PatternFiltersPanel';
+import { SaveBar } from './SaveBar';
+import { SaveResultBanner } from './SaveResultBanner';
 
 const THEME_OPTIONS: { value: Theme; label: string }[] = [
   { value: 'light', label: 'Light' },
@@ -35,9 +45,15 @@ function noop(): void {}
 export function SettingsPage() {
   useEffect(() => {
     void loadSettings();
+    // D-07 (Pitfall 1, CRITICAL): this section's Save reuses state/sensors.ts's
+    // full-list-replace save() — load the FULL tracked-sensor set on mount so a
+    // pattern-filter-only edit here can never silently untrack every other sensor.
+    loadSensors('');
   }, []);
 
   const s = settings.value;
+  const patternsSaving = saveState.value === 'saving';
+  const patternsResult = typeof saveState.value === 'object' ? saveState.value.result : null;
 
   return (
     <>
@@ -164,6 +180,20 @@ export function SettingsPage() {
                 ))}
               </div>
             </div>
+          </Card>
+        </section>
+
+        <section>
+          <h2 class="argus-section-label">Auto-track patterns</h2>
+          <Card padding="sm">
+            <PatternFiltersPanel
+              include={includePatterns.value}
+              exclude={excludePatterns.value}
+              onIncludeChange={(v) => (includePatterns.value = v)}
+              onExcludeChange={(v) => (excludePatterns.value = v)}
+            />
+            <SaveBar saving={patternsSaving} disabled={patternsSaving} onSave={save} />
+            {patternsResult && <SaveResultBanner result={patternsResult} />}
           </Card>
         </section>
       </div>
