@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v4.1
 milestone_name: Admin UI Rebuild (Design System)
-current_phase: 13
-current_phase_name: groups-screen-rebuild
+current_phase: 14
+current_phase_name: unified-detectors-screen-add-detector-wizard
 status: executing
-stopped_at: Completed 13-03-PLAN.md (phase 13 groups-screen-rebuild complete)
-last_updated: "2026-07-21T18:21:06.701Z"
-last_activity: 2026-07-20
-last_activity_desc: Phase 13 execution resumed (wave continue)
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-07-21T18:29:59.527Z"
+last_activity: 2026-07-21
+last_activity_desc: Phase 14 execution started
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 4
-  total_plans: 18
-  completed_plans: 18
-  percent: 100
+  total_plans: 22
+  completed_plans: 19
+  percent: 80
 ---
 
 # Project State: Argus
@@ -67,7 +67,7 @@ these UI flows (Phases 10-13).
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
-**Current focus:** Phase 13 — groups-screen-rebuild
+**Current focus:** Phase 14 — unified-detectors-screen-add-detector-wizard
 
 ## Phase Status (v4.1)
 
@@ -79,7 +79,7 @@ See: .planning/PROJECT.md
 | 13 | Groups Screen Rebuild | Not started |
 
 ```
-Progress: [██████████] 100%
+Progress: [█████████░] 86%
 ```
 
 v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -200,6 +200,8 @@ v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/
 - [Phase ?]: [Phase 13-02]: AlgorithmChooser section-label text is "Algorithm", copied verbatim from the DS reference's SectionLabel usage in Groups.jsx
 - [Phase ?]: [Phase 13-03]: AttributionPanel unsupported-state copy rewritten to a two-line message naming status.detector, matching 13-RESEARCH.md Pattern 5's example (test assertion updated to match)
 - [Phase ?]: [Phase 13-03]: AttributionBar.tsx received no production change — its accent-vs-neutral fill contract already matched the D-05 spec since its Phase 8 build; only a new regression test file was added
+- [Phase ?]: [Phase 14-01]: normalizeHash/parseSensorEntityId exported from router.ts (were module-internal) so router.test.ts can import them directly
+- [Phase ?]: [Phase 14-01]: detectorRows returns groups-first then sensors (Claude's discretion per 14-CONTEXT.md)
 
 ### Blockers
 
@@ -250,11 +252,12 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 | Phase 13 P01 | 4min | 3 tasks | 9 files |
 | Phase 13 P02 | 3min | 3 tasks | 7 files |
 | Phase 13 P03 | 4min | 3 tasks | 3 files |
+| Phase 14 P01 | 5min | 3 tasks | 6 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-20T07:10:23.743Z
-**Stopped at:** Completed 13-03-PLAN.md (phase 13 groups-screen-rebuild complete)
+**Last session:** 2026-07-21T18:29:59.515Z
+**Stopped at:** Completed 14-01-PLAN.md
 **Resume file:** None
 
 ## Operator Next Steps
@@ -263,7 +266,7 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 ## Current Position
 
-Phase: 13 (groups-screen-rebuild) — EXECUTING
-Plan: 3 of 3
+Phase: 14 (unified-detectors-screen-add-detector-wizard) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-07-20 — Phase 13 execution resumed (wave continue)
+Last activity: 2026-07-21 — Phase 14 execution started

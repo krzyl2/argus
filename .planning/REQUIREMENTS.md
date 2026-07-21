@@ -51,11 +51,11 @@
 Minted during Phase 14 planning from `14-RESEARCH.md`'s Derived Requirements table. Client-only IA
 restructure (no backend changes — D-09); depends on the Phase 10–13 Design System + rebuilt components.
 
-- [ ] **DET-01**: Detectors screen shows one unified, DS-consistent list merging groups (`GET /api/groups`) and tracked single sensors (`GET /api/sensors`, `isTracked` entries only)
+- [x] **DET-01**: Detectors screen shows one unified, DS-consistent list merging groups (`GET /api/groups`) and tracked single sensors (`GET /api/sensors`, `isTracked` entries only)
 - [ ] **DET-02**: Editing a group row navigates to the existing, unchanged `/groups/:id` `GroupEditorForm`
 - [ ] **DET-03**: Editing a single-sensor row navigates to a new dedicated single-sensor detector-edit view/route, preserving hst/mad/stl assignment + inline validation (`detectorParams.ts`) + `DetectorDefaults.cs` defaults
-- [ ] **DET-04**: Sidebar "Sensors" and "Groups" nav items removed; "Detectors" + "Add detector" items added, with correct active-route highlighting
-- [ ] **DET-05**: `/detectors` is the new default route; bare `/sensors` and bare `/groups` redirect to `/detectors`; `/groups/new` and `/groups/:id` continue to work unchanged for direct deep links
+- [x] **DET-04**: Sidebar "Sensors" and "Groups" nav items removed; "Detectors" + "Add detector" items added, with correct active-route highlighting
+- [x] **DET-05**: `/detectors` is the new default route; bare `/sensors` and bare `/groups` redirect to `/detectors`; `/groups/new` and `/groups/:id` continue to work unchanged for direct deep links
 - [ ] **DET-06**: Pattern Filters (include/exclude auto-track) UI relocated to the Settings screen after the Sensors screen is removed, honoring the full-list-replace save guard (D-07)
 - [ ] **WIZ-01**: Add-detector wizard route with sensor multi-select search that reveals matching rows only once the query is >=3 characters
 - [ ] **WIZ-02**: Selecting exactly 1 sensor in the wizard tracks it and opens the single-sensor detector-edit view for it
