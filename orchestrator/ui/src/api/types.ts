@@ -153,3 +153,33 @@ export interface SettingsResponse {
   nightlyFitHour: number;
   logLevel: string | null;
 }
+
+// GET /api/health response (QUICK-dashboard-real-data) — matches HealthProjection.cs exactly
+// (allowlist boundary, D-07 — no secrets ever appear here).
+export type HealthStatus = 'ok' | 'warn' | 'error' | 'idle';
+
+export interface HealthComponent {
+  key: string;
+  label: string;
+  status: HealthStatus;
+  detail: string;
+}
+
+export interface HealthResponse {
+  homeAssistant: { connected: boolean; entityCount: number };
+  components: HealthComponent[];
+}
+
+// GET /api/anomalies/recent response (QUICK-dashboard-real-data) — matches the ring-buffer
+// projection in Program.cs exactly (newest-first).
+export interface RecentAnomaly {
+  entityId: string | null;
+  groupId: string | null;
+  score: number;
+  detector: string;
+  detectedAtUtc: string;
+}
+
+export interface RecentAnomaliesResponse {
+  anomalies: RecentAnomaly[];
+}
