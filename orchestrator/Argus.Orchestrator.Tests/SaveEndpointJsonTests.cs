@@ -242,6 +242,92 @@ public class SaveEndpointJsonTests
     }
 
     // -----------------------------------------------------------------------
+    // G-14-1 regression — sensors save must NOT wipe pre-existing groups
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task SavePipeline_PreservesPreExistingGroups()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), $"argus-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+        var entitiesPath = Path.Combine(tmpDir, "entities.yaml");
+        try
+        {
+            // Seed an existing entities.yaml with one entity + one pre-existing 2-member group.
+            // 2 members satisfies the floor (Load's shared-unit check is skipped without a
+            // registry, so a peer_divergence pair is degrade-safe here — no registry arg added).
+            var seedSerializer = new YamlDotNet.Serialization.SerializerBuilder()
+                .WithNamingConvention(YamlDotNet.Serialization.NamingConventions.UnderscoredNamingConvention.Instance)
+                .Build();
+            var seedRoot = new Dictionary<string, object>
+            {
+                ["_patterns"] = new Dictionary<string, object> { ["include"] = new List<string>(), ["exclude"] = new List<string>() },
+                ["entities"] = new List<EntityConfig>
+                {
+                    new() { EntityId = "sensor.existing", FriendlyName = "", Detectors = [new DetectorConfig { Name = "hst" }] },
+                },
+                ["groups"] = new List<GroupConfig>
+                {
+                    new()
+                    {
+                        GroupId = "group.tire_pressure",
+                        FriendlyName = "Ciśnienie w oponach",
+                        Members = ["sensor.tire_a", "sensor.tire_b"],
+                        Mode = "peer_divergence",
+                        Detector = "peer_divergence",
+                        Params = new Dictionary<string, string>(),
+                    },
+                },
+            };
+            await File.WriteAllTextAsync(entitiesPath, seedSerializer.Serialize(seedRoot));
+
+            var live = new LiveEntitiesConfig(EntitiesConfigLoader.Load(entitiesPath,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<EntitiesConfigLoader>.Instance));
+
+            var registry = new FakeRegistry(MakeEntry("sensor.new"));
+            var body = new SaveRequest
+            {
+                Entities =
+                [
+                    new SaveEntity
+                    {
+                        EntityId = "sensor.new",
+                        Detectors = [new SaveDetector
+                        {
+                            Name = "hst",
+                            Params = new()
+                            {
+                                ["window"] = "250",
+                                ["n_trees"] = "25",
+                                ["high_threshold"] = "0.7",
+                                ["low_threshold"] = "0.3",
+                                ["min_consecutive"] = "3",
+                                ["frozen_window"] = "10",
+                                ["frozen_variance_threshold"] = "0.001",
+                            }
+                        }]
+                    }
+                ],
+                Include = "",
+                Exclude = "",
+            };
+
+            await RunSavePipelineAsync(registry, body, entitiesPath, live);
+
+            // Live config still holds the pre-existing group after the sensors save.
+            Assert.Contains(live.Get().Groups, g => g.GroupId == "group.tire_pressure");
+
+            // On-disk YAML still contains the group id (not wiped).
+            var finalYaml = await File.ReadAllTextAsync(entitiesPath);
+            Assert.Contains("group.tire_pressure", finalYaml);
+        }
+        finally
+        {
+            Directory.Delete(tmpDir, recursive: true);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Error path — exception mapped to generic reason, never raw exception text
     // -----------------------------------------------------------------------
 
@@ -321,6 +407,7 @@ public class SaveEndpointJsonTests
             {
                 ["_patterns"] = new Dictionary<string, object> { ["include"] = include.ToList(), ["exclude"] = exclude.ToList() },
                 ["entities"] = entities,
+                ["groups"] = liveCfg is not null ? liveCfg.Get().Groups : new List<GroupConfig>(),
             };
             var yaml = serializer.Serialize(root);
 

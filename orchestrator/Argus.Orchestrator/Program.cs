@@ -406,11 +406,16 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
             ["exclude"] = exclude.ToList(),
         };
 
-        // Use an ordered dictionary to ensure _patterns appears before entities
+        // Use an ordered dictionary to ensure _patterns appears before entities.
+        // T-14-01 / G-14-1 fix: preserve pre-existing groups via read-modify-write — liveCfg
+        // still holds the pre-save config here (Swap happens below), so its Groups are the
+        // current on-disk groups. Symmetric with /api/groups/save (Program.cs:521-556), which
+        // preserves entities:/_patterns: the same way.
         var root = new Dictionary<string, object>
         {
             ["_patterns"] = patternsMap,
             ["entities"] = entities,
+            ["groups"] = liveCfg.Get().Groups,
         };
 
         var fullYaml = serializer.Serialize(root);
