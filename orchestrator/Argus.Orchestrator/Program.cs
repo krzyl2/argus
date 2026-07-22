@@ -652,6 +652,36 @@ app.MapGet("/api/groups/{id}/status", (HttpRequest req, string id, IGroupStatusC
     });
 });
 
+// [10b] GET /api/health — composite liveness + HA entity count (QUICK-dashboard-real-data).
+// HealthProjection is the sole allowlist boundary (D-07) — see HealthProjection.cs.
+app.MapGet("/api/health", (
+    HttpRequest req, ArgusHealthSignals signals, MqttConnection mqtt, IHaSensorRegistry registry,
+    ConnectionSettings settings, IBatchRunStatus batchRunStatus) =>
+{
+    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
+
+    return Results.Json(HealthProjection.Build(
+        signals, mqtt.IsConnected, registry.GetAll().Count, settings, batchRunStatus.LastRunUtc, DateTimeOffset.UtcNow));
+});
+
+// [10c] GET /api/anomalies/recent — last N anomalies newest-first (QUICK-dashboard-real-data).
+app.MapGet("/api/anomalies/recent", (HttpRequest req, IRecentAnomaliesCache cache) =>
+{
+    if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
+
+    return Results.Json(new
+    {
+        anomalies = cache.GetRecent().Select(a => new
+        {
+            entityId = a.EntityId,
+            groupId = a.GroupId,
+            score = a.Score,
+            detector = a.Detector,
+            detectedAtUtc = a.DetectedAtUtc,
+        }),
+    });
+});
+
 // [11] SPA fallback — serves index.html for any unmatched, extensionless path (root and any
 // client-side hash routes). Never intercepts /api/* (explicit routes win) or real static
 // files (UseStaticFiles already served above). Must be registered last.
