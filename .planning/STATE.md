@@ -215,6 +215,12 @@ v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/
 
 None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's own Phase 11-13 live-HA re-verification (see Deferred Items).
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260722-ltt | Detector warm-up status indicator in the UI detector list (MVP) | 2026-07-22 | 96d994d | [260722-ltt-detector-warm-up-status-indicator-in-the](./quick/260722-ltt-detector-warm-up-status-indicator-in-the/) |
+
 ### Roadmap Evolution
 
 - **2026-07-21**: Phase 14 added — Unified Detectors Screen + Add-Detector Wizard. IA restructure (beyond v4.1's screen-rebuild scope): replace the separate Sensors and Groups nav items with one unified "Detectors" list (groups from `api/groups` + tracked single sensors from `api/sensors`) plus a separate shared Add-detector wizard (sensor search reveals results only after ≥3 chars; 1 sensor → single-sensor path, ≥2 → group path; both continue through the full guided flow). Editing reuses existing editors (GroupEditorForm for groups; dedicated single-sensor detector-edit view). Depends on Phases 10–13. Raised 2026-07-21 by operator.
@@ -281,4 +287,4 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 Phase: 999.1 — Algorithm tester/simulator in group config UI (BACKLOG)
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-07-22 — Phase 14 complete, transitioned to Phase 999.1
+Last activity: 2026-07-22 — Completed quick task 260722-ltt: Detector warm-up status indicator in the UI detector list
