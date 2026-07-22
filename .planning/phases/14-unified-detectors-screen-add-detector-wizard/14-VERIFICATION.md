@@ -1,8 +1,15 @@
 ---
 phase: 14-unified-detectors-screen-add-detector-wizard
-verified: 2026-07-21T18:54:54Z
-status: human_needed
+verified: 2026-07-22T13:03:20Z
+status: passed
 score: 17/17 truths verified (0 failed); 3 backstop items abstained to human review
+human_verified: 2026-07-22T13:03:20Z
+human_verification_result: "Tests 1 & 2 PASS — live-verified on add-on 2.1.5 via browser (wizard 1-sensor + >=2-sensor exits). Test 3 (visual/DS fidelity) DEFERRED to /gsd-ui-review per operator decision — NOT verified against the reference kit, recorded as acknowledged gap, not a pass."
+re_verification:
+  previous_status: human_needed
+  note: "UAT test 1 initially FAILED (blocker G-14-1, silent data loss: single-sensor save wiped groups + saved sensor not durable across refresh). Closed by gap-closure plan 14-05 (commits dda65e7 groups-preservation + 02e1ae0 config-sourced isTracked; 391/391 tests). Re-verified live end-to-end on 2.1.5."
+acknowledged_gaps:
+  - "Test 3 — visual/Design-System fidelity: deferred to /gsd-ui-review, not verified against ui_kits/admin reference."
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:

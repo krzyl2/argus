@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v4.1
 milestone_name: Admin UI Rebuild (Design System)
-current_phase: 14
-current_phase_name: unified-detectors-screen-add-detector-wizard
-status: verifying
+current_phase: 999.1
+current_phase_name: BACKLOG
+status: planning
 stopped_at: Completed 14-05-PLAN.md (gap closure G-14-1)
-last_updated: "2026-07-22T12:31:47.755Z"
-last_activity: 2026-07-21
-last_activity_desc: Phase 14 execution started
+last_updated: "2026-07-22T13:07:12.812Z"
+last_activity: 2026-07-22
+last_activity_desc: Phase 14 complete, transitioned to Phase 999.1
 progress:
   total_phases: 5
   completed_phases: 5
@@ -278,7 +278,7 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 ## Current Position
 
-Phase: 14 (unified-detectors-screen-add-detector-wizard) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
-Last activity: 2026-07-21 — Phase 14 execution started
+Phase: 999.1 — Algorithm tester/simulator in group config UI (BACKLOG)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-22 — Phase 14 complete, transitioned to Phase 999.1

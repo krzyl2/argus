@@ -266,7 +266,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 11. New Standalone Screens (Dashboard, Algorithms, Settings) | v4.1 | 5/5 | Complete    | 2026-07-08 |
 | 12. Sensors Screen Rebuild | v4.1 | 3/3 | Complete    | 2026-07-17 |
 | 13. Groups Screen Rebuild | v4.1 | 3/3 | In Progress|  |
-| 14. Unified Detectors Screen + Add-Detector Wizard | v4.1 | 5/5 | In Progress|  |
+| 14. Unified Detectors Screen + Add-Detector Wizard | v4.1 | 5/5 | Complete    | 2026-07-22 |
 
 ### Phase 14: Unified Detectors Screen + Add-Detector Wizard
 
@@ -289,7 +289,7 @@ Sidebar: remove Sensors and Groups items; add Detectors + an Add-detector entry.
 
 **Requirements**: DET-01, DET-02, DET-03, DET-04, DET-05, DET-06, WIZ-01, WIZ-02, WIZ-03, WIZ-04
 **Depends on:** Phases 10–13 (Design System foundation + rebuilt Sensors/Groups components to reuse)
-**Plans:** 5/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 **Wave 1** *(independent client plumbing — no file overlap, fully parallel)*
