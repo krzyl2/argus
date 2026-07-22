@@ -220,6 +220,7 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260722-ltt | Detector warm-up status indicator in the UI detector list (MVP) | 2026-07-22 | 96d994d | [260722-ltt-detector-warm-up-status-indicator-in-the](./quick/260722-ltt-detector-warm-up-status-indicator-in-the/) |
+| 260722-mbx | Replace mocked dashboard data with real data (KPI, System health, Recent anomalies) + GET /api/health, /api/anomalies/recent | 2026-07-22 | 7a013ec | [260722-mbx-dashboard-real-data](./quick/260722-mbx-dashboard-real-data/) |
 
 ### Roadmap Evolution
 
@@ -287,4 +288,4 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 Phase: 999.1 — Algorithm tester/simulator in group config UI (BACKLOG)
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-07-22 — Completed quick task 260722-ltt: Detector warm-up status indicator in the UI detector list
+Last activity: 2026-07-22 — Completed quick task 260722-mbx: Replace mocked dashboard data with real data
