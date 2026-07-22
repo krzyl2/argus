@@ -5,15 +5,15 @@ milestone_name: Admin UI Rebuild (Design System)
 current_phase: 14
 current_phase_name: unified-detectors-screen-add-detector-wizard
 status: verifying
-stopped_at: Completed 14-04-PLAN.md
-last_updated: "2026-07-21T18:49:11.706Z"
+stopped_at: Completed 14-05-PLAN.md (gap closure G-14-1)
+last_updated: "2026-07-22T12:31:47.755Z"
 last_activity: 2026-07-21
 last_activity_desc: Phase 14 execution started
 progress:
   total_phases: 5
   completed_phases: 5
-  total_plans: 22
-  completed_plans: 22
+  total_plans: 23
+  completed_plans: 23
   percent: 100
 ---
 
@@ -208,6 +208,8 @@ v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/
 - [Phase ?]: [Phase 14-03]: SettingsPage's pattern-filter save() guarded by loadSensors('') on mount (D-07) — preservation regression test proves the full tracked set survives a pattern-filter-only edit
 - [Phase ?]: 14-04: Omitted assigned-detector badge on sensor list row (DetectorRow lacks detector data; plan marked it optional)
 - [Phase ?]: 14-04: Left SensorsPage.tsx on disk unreferenced (copy-source for 14-02/14-03 excerpts) instead of deleting
+- [Phase ?]: [Phase 14-05]: POST /api/sensors/save reads liveCfg.Get().Groups (pre-Swap reference) to populate the root dict's groups: key, preserving pre-existing groups (G-14-1 fix #1)
+- [Phase ?]: [Phase 14-05]: SensorTracking.TrackedIds(EntitiesConfig) is the single tracked-id source for GET /api/sensors isTracked, replacing the stale HA registry snapshot (G-14-1 fix #2)
 
 ### Blockers
 
@@ -262,11 +264,12 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 | Phase 14 P02 | 5min | 3 tasks | 6 files |
 | Phase 14 P03 | 6min | 2 tasks | 2 files |
 | Phase 14 P04 | 12min | 3 tasks | 7 files |
+| Phase 14 P05 | 20min | 2 tasks | 4 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-21T18:49:11.695Z
-**Stopped at:** Completed 14-04-PLAN.md
+**Last session:** 2026-07-22T12:31:47.744Z
+**Stopped at:** Completed 14-05-PLAN.md (gap closure G-14-1)
 **Resume file:** None
 
 ## Operator Next Steps
