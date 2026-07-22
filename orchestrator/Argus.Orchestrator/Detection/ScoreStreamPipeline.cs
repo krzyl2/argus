@@ -36,6 +36,7 @@ public sealed class ScoreStreamPipeline
     private readonly ILogger<ScoreStreamPipeline> _logger;
     private readonly ILiveEntitiesConfig _liveConfig;
     private readonly DetectionGateway? _gateway;
+    private readonly IEntityStatusCache? _statusCache;
 
     /// <summary>
     /// Production constructor — includes DetectionGateway for opening live streams.
@@ -44,12 +45,14 @@ public sealed class ScoreStreamPipeline
         IStatePublisher publisher,
         ILogger<ScoreStreamPipeline> logger,
         ILiveEntitiesConfig liveConfig,
-        DetectionGateway gateway)
+        DetectionGateway gateway,
+        IEntityStatusCache? statusCache = null)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
+        _statusCache = statusCache;
     }
 
     /// <summary>
@@ -58,12 +61,14 @@ public sealed class ScoreStreamPipeline
     public ScoreStreamPipeline(
         IStatePublisher publisher,
         ILogger<ScoreStreamPipeline> logger,
-        ILiveEntitiesConfig liveConfig)
+        ILiveEntitiesConfig liveConfig,
+        IEntityStatusCache? statusCache = null)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
         _gateway = null;
+        _statusCache = statusCache;
     }
 
     /// <summary>
@@ -147,6 +152,11 @@ public sealed class ScoreStreamPipeline
             entityState.FrozenDetector.AddReading(reading.Value);
             entityState.RecordReading();
             entityState.SuppressBinarySensor = reading.SuppressBinarySensor;
+
+            // QUICK-warmup-status: publish a warm-up snapshot per reading so GET /api/sensors
+            // can surface live warm-up progress. Null-conditional keeps existing tests that
+            // construct the pipeline without a cache working unchanged.
+            _statusCache?.Set(new EntityStatusEntry(entityId, entityState.WarmedUp, entityState.ReadingCount, entityState.WarmUpWindow));
 
             if (entityState.FrozenDetector.IsFrozen)
             {

@@ -21,6 +21,12 @@ public sealed class EntityRuntimeState
     /// </summary>
     public bool WarmedUp => _readingCount >= _warmUpWindow;
 
+    /// <summary>Current reading count fed to this entity's detector (warm-up progress numerator).</summary>
+    public int ReadingCount => _readingCount;
+
+    /// <summary>Configured HST warm-up window (readings required before WarmedUp is true).</summary>
+    public int WarmUpWindow => _warmUpWindow;
+
     /// <summary>Last flag value published to MQTT (for change detection).</summary>
     public bool LastPublishedFlag { get; set; }
 
