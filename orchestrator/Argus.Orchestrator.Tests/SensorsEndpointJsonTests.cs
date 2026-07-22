@@ -1,5 +1,6 @@
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Ha;
+using Argus.Orchestrator.Web;
 using Xunit;
 
 namespace Argus.Orchestrator.Tests;
@@ -42,9 +43,14 @@ public class SensorsEndpointJsonTests
 
     /// <summary>
     /// Mirrors the exact projection performed inline in Program.cs's GET /api/sensors handler.
+    /// G-14-1 fix #2: isTracked is now config-sourced via SensorTracking.TrackedIds (not
+    /// e.IsTracked, the stale HA registry snapshot) — pass the EntitiesConfig liveCfg.Get()
+    /// would return, exactly like the handler does.
     /// </summary>
-    private static IEnumerable<object> ProjectEntries(IReadOnlyList<HaSensorEntry> entries)
+    private static IEnumerable<object> ProjectEntries(IReadOnlyList<HaSensorEntry> entries, EntitiesConfig config)
     {
+        var trackedIds = SensorTracking.TrackedIds(config);
+
         return entries.Select(e =>
         {
             var showFriendlyName = !string.IsNullOrEmpty(e.FriendlyName) &&
@@ -56,7 +62,7 @@ public class SensorsEndpointJsonTests
                 friendlyName = showFriendlyName ? e.FriendlyName : null,
                 currentValue = e.CurrentValue.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
                 unitOfMeasurement = e.UnitOfMeasurement,
-                isTracked = e.IsTracked,
+                isTracked = trackedIds.Contains(e.EntityId),
             };
         });
     }
@@ -66,11 +72,17 @@ public class SensorsEndpointJsonTests
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void ProjectEntries_TrackedEntry_IsTrackedTrue()
+    public void ProjectEntries_TrackedInConfig_IsTrackedTrue()
     {
-        var registry = new FakeRegistry(MakeEntry("sensor.living_room_temp", isTracked: true));
+        // G-14-1 regression: registry snapshot is deliberately stale (isTracked: false) — proves
+        // the projection is config-sourced, not the HA registry snapshot (fix #2).
+        var registry = new FakeRegistry(MakeEntry("sensor.living_room_temp", isTracked: false));
+        var config = new EntitiesConfig
+        {
+            Entities = [new EntityConfig { EntityId = "sensor.living_room_temp", FriendlyName = "", Detectors = [] }],
+        };
 
-        var result = ProjectEntries(registry.GetFiltered("")).Cast<dynamic>().ToList();
+        var result = ProjectEntries(registry.GetFiltered(""), config).Cast<dynamic>().ToList();
 
         Assert.Single(result);
         Assert.True((bool)result[0].isTracked);
@@ -78,11 +90,13 @@ public class SensorsEndpointJsonTests
     }
 
     [Fact]
-    public void ProjectEntries_UntrackedEntry_IsTrackedFalse()
+    public void ProjectEntries_NotInConfig_IsTrackedFalse()
     {
-        var registry = new FakeRegistry(MakeEntry("sensor.outdoor_humidity", isTracked: false));
+        // Registry snapshot says tracked, but the entity is absent from the live config —
+        // config is authoritative, so isTracked must be false.
+        var registry = new FakeRegistry(MakeEntry("sensor.outdoor_humidity", isTracked: true));
 
-        var result = ProjectEntries(registry.GetFiltered("")).Cast<dynamic>().ToList();
+        var result = ProjectEntries(registry.GetFiltered(""), new EntitiesConfig()).Cast<dynamic>().ToList();
 
         Assert.False((bool)result[0].isTracked);
     }
@@ -97,7 +111,7 @@ public class SensorsEndpointJsonTests
         var registry = new FakeRegistry(
             MakeEntry("sensor.salon_temperatura", friendlyName: "Salon temperatura"));
 
-        var result = ProjectEntries(registry.GetFiltered("")).Cast<dynamic>().ToList();
+        var result = ProjectEntries(registry.GetFiltered(""), new EntitiesConfig()).Cast<dynamic>().ToList();
 
         Assert.Equal("Salon temperatura", (string)result[0].friendlyName);
     }
@@ -108,7 +122,7 @@ public class SensorsEndpointJsonTests
         var registry = new FakeRegistry(
             MakeEntry("sensor.temp", friendlyName: "sensor.temp"));
 
-        var result = ProjectEntries(registry.GetFiltered("")).Cast<dynamic>().ToList();
+        var result = ProjectEntries(registry.GetFiltered(""), new EntitiesConfig()).Cast<dynamic>().ToList();
 
         Assert.Null(result[0].friendlyName);
     }
@@ -119,7 +133,7 @@ public class SensorsEndpointJsonTests
         var registry = new FakeRegistry(
             MakeEntry("sensor.outdoor_temp", friendlyName: null));
 
-        var result = ProjectEntries(registry.GetFiltered("")).Cast<dynamic>().ToList();
+        var result = ProjectEntries(registry.GetFiltered(""), new EntitiesConfig()).Cast<dynamic>().ToList();
 
         Assert.Null(result[0].friendlyName);
     }
@@ -130,7 +144,7 @@ public class SensorsEndpointJsonTests
         var registry = new FakeRegistry(
             MakeEntry("sensor.outdoor_temp", friendlyName: ""));
 
-        var result = ProjectEntries(registry.GetFiltered("")).Cast<dynamic>().ToList();
+        var result = ProjectEntries(registry.GetFiltered(""), new EntitiesConfig()).Cast<dynamic>().ToList();
 
         Assert.Null(result[0].friendlyName);
     }
@@ -144,7 +158,7 @@ public class SensorsEndpointJsonTests
     {
         var registry = new FakeRegistry(MakeEntry("sensor.outdoor_temp", value: 18.5, unit: "°C"));
 
-        var result = ProjectEntries(registry.GetFiltered("")).Cast<dynamic>().ToList();
+        var result = ProjectEntries(registry.GetFiltered(""), new EntitiesConfig()).Cast<dynamic>().ToList();
 
         Assert.Equal("18.5", (string)result[0].currentValue);
         Assert.Equal("°C", (string)result[0].unitOfMeasurement);
@@ -155,7 +169,7 @@ public class SensorsEndpointJsonTests
     {
         var registry = new FakeRegistry(MakeEntry("sensor.outdoor_temp", unit: null));
 
-        var result = ProjectEntries(registry.GetFiltered("")).Cast<dynamic>().ToList();
+        var result = ProjectEntries(registry.GetFiltered(""), new EntitiesConfig()).Cast<dynamic>().ToList();
 
         Assert.Null(result[0].unitOfMeasurement);
     }
@@ -171,7 +185,7 @@ public class SensorsEndpointJsonTests
             MakeEntry("sensor.living_room_temp"),
             MakeEntry("sensor.outdoor_humidity"));
 
-        var result = ProjectEntries(registry.GetFiltered("living")).Cast<dynamic>().ToList();
+        var result = ProjectEntries(registry.GetFiltered("living"), new EntitiesConfig()).Cast<dynamic>().ToList();
 
         Assert.Single(result);
         Assert.Equal("sensor.living_room_temp", (string)result[0].entityId);
@@ -183,7 +197,7 @@ public class SensorsEndpointJsonTests
         var registry = new FakeRegistry(
             MakeEntry("sensor.a"), MakeEntry("sensor.b"));
 
-        var result = ProjectEntries(registry.GetFiltered("")).ToList();
+        var result = ProjectEntries(registry.GetFiltered(""), new EntitiesConfig()).ToList();
 
         Assert.Equal(2, result.Count);
     }
@@ -193,7 +207,7 @@ public class SensorsEndpointJsonTests
     {
         var registry = new FakeRegistry();
 
-        var result = ProjectEntries(registry.GetFiltered("")).ToList();
+        var result = ProjectEntries(registry.GetFiltered(""), new EntitiesConfig()).ToList();
 
         Assert.Empty(result);
     }

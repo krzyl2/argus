@@ -252,6 +252,11 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
     var q = req.Query["q"].FirstOrDefault() ?? "";
     var entries = registry.GetFiltered(q);
 
+    // G-14-1 fix #2: derive isTracked from the live config (always fresh after a save's Swap),
+    // not the HA registry snapshot (e.IsTracked), which only refreshes on an HA WebSocket
+    // reconnect and is not reconciled by Swap — see SensorTracking.cs.
+    var trackedIds = SensorTracking.TrackedIds(liveCfg.Get());
+
     var payload = entries.Select(e =>
     {
         // Friendly name: only surfaced when present and differs from entity_id (exact v3.0 rule)
@@ -264,7 +269,7 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
             friendlyName = showFriendlyName ? e.FriendlyName : null,
             currentValue = e.CurrentValue.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
             unitOfMeasurement = e.UnitOfMeasurement,
-            isTracked = e.IsTracked,
+            isTracked = trackedIds.Contains(e.EntityId),
             areaName = e.AreaName,
             domain = e.Domain,
         };

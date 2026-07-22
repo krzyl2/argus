@@ -328,6 +328,34 @@ public class SaveEndpointJsonTests
     }
 
     // -----------------------------------------------------------------------
+    // G-14-1 regression — GET /api/sensors isTracked must be config-sourced, not the
+    // (stale, reconnect-only) HA registry snapshot
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void SensorTracking_IsTracked_DerivedFromConfigIgnoresStaleRegistrySnapshot()
+    {
+        var config = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig { EntityId = "sensor.kurnik_temperature", FriendlyName = "", Detectors = [new DetectorConfig { Name = "hst" }] },
+            ],
+        };
+
+        var trackedIds = SensorTracking.TrackedIds(config);
+
+        // Simulates the lagging HA registry snapshot: IsTracked=false even though the entity
+        // is present in the live config (i.e. just saved, no HA reconnect has happened yet).
+        var entry = MakeEntry("sensor.kurnik_temperature") with { IsTracked = false };
+
+        Assert.Contains(entry.EntityId, trackedIds);
+        Assert.Contains(entry.EntityId.ToUpperInvariant(), trackedIds); // must be case-insensitive
+        Assert.False(entry.IsTracked); // documents the divergence the fix relies on
+        Assert.DoesNotContain("sensor.not_configured", trackedIds);
+    }
+
+    // -----------------------------------------------------------------------
     // Error path — exception mapped to generic reason, never raw exception text
     // -----------------------------------------------------------------------
 
