@@ -92,6 +92,11 @@ builder.Services.AddSingleton<IHaSensorRegistry, HaSensorRegistry>();
 // GET /api/groups/{id}/status.
 builder.Services.AddSingleton<IGroupStatusCache, GroupStatusCache>();
 
+// Register entity status cache singleton (QUICK-warmup-status): last per-entity warm-up
+// snapshot, written by ScoreStreamPipeline's write loop, read by GET /api/sensors so the
+// SPA can show live HST warm-up progress.
+builder.Services.AddSingleton<IEntityStatusCache, EntityStatusCache>();
+
 // Register HA event source (NetDaemon.Client WebSocket subscription — STRM-01/STRM-02)
 // ArgusHealthSignals + IHaSensorRegistry are resolved automatically from DI.
 builder.Services.AddSingleton<IHaEventSource, NetDaemonHaEventSource>();
@@ -245,7 +250,7 @@ bool IsAuthorizedRequest(HttpContext ctx)
 // [4] GET /api/sensors — JSON sensor list (SPA fetch target, replaces htmx HTML fragment)
 // CFG-04: pass liveCfg.Get() so friendlyName/isTracked reflect the current config, not a
 // captured stale EntitiesConfig reference (WR-01 fix carried forward).
-app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEntitiesConfig liveCfg) =>
+app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEntitiesConfig liveCfg, IEntityStatusCache statusCache) =>
 {
     if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
 
@@ -263,15 +268,24 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
         var showFriendlyName = !string.IsNullOrEmpty(e.FriendlyName) &&
             !string.Equals(e.FriendlyName, e.EntityId, StringComparison.Ordinal);
 
+        var tracked = trackedIds.Contains(e.EntityId);
+        // QUICK-warmup-status: warm-up status is surfaced for tracked entities only — null
+        // (never populated) for untracked, and null for a tracked entity that has not yet
+        // received its first reading (pipeline hasn't scored it — acceptable MVP behavior).
+        var status = tracked ? statusCache.Get(e.EntityId) : null;
+
         return new
         {
             entityId = e.EntityId,
             friendlyName = showFriendlyName ? e.FriendlyName : null,
             currentValue = e.CurrentValue.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
             unitOfMeasurement = e.UnitOfMeasurement,
-            isTracked = trackedIds.Contains(e.EntityId),
+            isTracked = tracked,
             areaName = e.AreaName,
             domain = e.Domain,
+            warmedUp = status?.WarmedUp,
+            readingCount = status?.ReadingCount,
+            warmUpWindow = status?.WarmUpWindow,
         };
     });
 

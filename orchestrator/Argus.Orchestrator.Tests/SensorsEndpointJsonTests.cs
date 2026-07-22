@@ -1,4 +1,5 @@
 using Argus.Orchestrator.Config;
+using Argus.Orchestrator.Detection;
 using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Web;
 using Xunit;
@@ -46,8 +47,11 @@ public class SensorsEndpointJsonTests
     /// G-14-1 fix #2: isTracked is now config-sourced via SensorTracking.TrackedIds (not
     /// e.IsTracked, the stale HA registry snapshot) — pass the EntitiesConfig liveCfg.Get()
     /// would return, exactly like the handler does.
+    /// QUICK-warmup-status: cache is optional (defaults null) so existing 2-arg call sites
+    /// keep compiling; warm-up status is looked up for tracked entities only.
     /// </summary>
-    private static IEnumerable<object> ProjectEntries(IReadOnlyList<HaSensorEntry> entries, EntitiesConfig config)
+    private static IEnumerable<object> ProjectEntries(
+        IReadOnlyList<HaSensorEntry> entries, EntitiesConfig config, IEntityStatusCache? cache = null)
     {
         var trackedIds = SensorTracking.TrackedIds(config);
 
@@ -56,13 +60,19 @@ public class SensorsEndpointJsonTests
             var showFriendlyName = !string.IsNullOrEmpty(e.FriendlyName) &&
                 !string.Equals(e.FriendlyName, e.EntityId, StringComparison.Ordinal);
 
+            var tracked = trackedIds.Contains(e.EntityId);
+            var status = tracked ? cache?.Get(e.EntityId) : null;
+
             return new
             {
                 entityId = e.EntityId,
                 friendlyName = showFriendlyName ? e.FriendlyName : null,
                 currentValue = e.CurrentValue.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
                 unitOfMeasurement = e.UnitOfMeasurement,
-                isTracked = trackedIds.Contains(e.EntityId),
+                isTracked = tracked,
+                warmedUp = status?.WarmedUp,
+                readingCount = status?.ReadingCount,
+                warmUpWindow = status?.WarmUpWindow,
             };
         });
     }
@@ -231,5 +241,76 @@ public class SensorsEndpointJsonTests
 
         Assert.Same(updated, live.Get());
         Assert.Single(live.Get().Entities);
+    }
+
+    // -----------------------------------------------------------------------
+    // Warm-up status projection (QUICK-warmup-status)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void ProjectEntries_TrackedWithCachedWarmingStatus_ProjectsWarmUpFields()
+    {
+        var registry = new FakeRegistry(MakeEntry("sensor.living_room_temp"));
+        var config = new EntitiesConfig
+        {
+            Entities = [new EntityConfig { EntityId = "sensor.living_room_temp", FriendlyName = "", Detectors = [] }],
+        };
+        var cache = new EntityStatusCache();
+        cache.Set(new EntityStatusEntry("sensor.living_room_temp", WarmedUp: false, ReadingCount: 100, WarmUpWindow: 250));
+
+        var result = ProjectEntries(registry.GetFiltered(""), config, cache).Cast<dynamic>().ToList();
+
+        Assert.False((bool)result[0].warmedUp);
+        Assert.Equal(100, (int)result[0].readingCount);
+        Assert.Equal(250, (int)result[0].warmUpWindow);
+    }
+
+    [Fact]
+    public void ProjectEntries_TrackedWithCachedWarmedUpStatus_ProjectsWarmedUpTrue()
+    {
+        var registry = new FakeRegistry(MakeEntry("sensor.living_room_temp"));
+        var config = new EntitiesConfig
+        {
+            Entities = [new EntityConfig { EntityId = "sensor.living_room_temp", FriendlyName = "", Detectors = [] }],
+        };
+        var cache = new EntityStatusCache();
+        cache.Set(new EntityStatusEntry("sensor.living_room_temp", WarmedUp: true, ReadingCount: 250, WarmUpWindow: 250));
+
+        var result = ProjectEntries(registry.GetFiltered(""), config, cache).Cast<dynamic>().ToList();
+
+        Assert.True((bool)result[0].warmedUp);
+    }
+
+    [Fact]
+    public void ProjectEntries_UntrackedWithCachedEntry_WarmUpFieldsAreNull()
+    {
+        // Entity absent from config (untracked) — warm-up fields must be null even when
+        // a cache entry exists for it (status is only surfaced for tracked entities).
+        var registry = new FakeRegistry(MakeEntry("sensor.outdoor_humidity"));
+        var cache = new EntityStatusCache();
+        cache.Set(new EntityStatusEntry("sensor.outdoor_humidity", WarmedUp: true, ReadingCount: 250, WarmUpWindow: 250));
+
+        var result = ProjectEntries(registry.GetFiltered(""), new EntitiesConfig(), cache).Cast<dynamic>().ToList();
+
+        Assert.Null(result[0].warmedUp);
+        Assert.Null(result[0].readingCount);
+        Assert.Null(result[0].warmUpWindow);
+    }
+
+    [Fact]
+    public void ProjectEntries_TrackedWithEmptyCache_WarmUpFieldsAreNull()
+    {
+        var registry = new FakeRegistry(MakeEntry("sensor.living_room_temp"));
+        var config = new EntitiesConfig
+        {
+            Entities = [new EntityConfig { EntityId = "sensor.living_room_temp", FriendlyName = "", Detectors = [] }],
+        };
+        var cache = new EntityStatusCache();
+
+        var result = ProjectEntries(registry.GetFiltered(""), config, cache).Cast<dynamic>().ToList();
+
+        Assert.Null(result[0].warmedUp);
+        Assert.Null(result[0].readingCount);
+        Assert.Null(result[0].warmUpWindow);
     }
 }
