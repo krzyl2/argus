@@ -289,7 +289,7 @@ Sidebar: remove Sensors and Groups items; add Detectors + an Add-detector entry.
 
 **Requirements**: DET-01, DET-02, DET-03, DET-04, DET-05, DET-06, WIZ-01, WIZ-02, WIZ-03, WIZ-04
 **Depends on:** Phases 10–13 (Design System foundation + rebuilt Sensors/Groups components to reuse)
-**Plans:** 4/4 plans executed
+**Plans:** 4/4 plans executed + 1 gap-closure plan
 
 Plans:
 **Wave 1** *(independent client plumbing — no file overlap, fully parallel)*
@@ -301,3 +301,7 @@ Plans:
 **Wave 2** *(blocked on 14-01 + 14-02)*
 
 - [x] 14-04-PLAN.md — Unified DetectorsPage + DetectorList + DetectorListRow (navigate-only rows) + main.tsx route wiring / fallback (DET-01, DET-02, DET-03, DET-05)
+
+**Gap closure** *(G-14-1 blocker — data loss)*
+
+- [ ] 14-05-PLAN.md — Fix /api/sensors/save wiping groups (read-modify-write groups: key) + GET /api/sensors config-sourced isTracked (SensorTracking helper) + 2 regression tests (DET-01, DET-02, DET-03)
