@@ -9,6 +9,11 @@ export interface SensorEntry {
   // SRCH-02/03 (08-02): HA area name (null if unresolved) + entity_id domain, e.g. "sensor".
   areaName: string | null;
   domain: string;
+  // QUICK-warmup-status: HST warm-up progress, tracked entities only (null otherwise, and
+  // null for a tracked entity the pipeline has not yet scored).
+  warmedUp?: boolean | null;
+  readingCount?: number | null;
+  warmUpWindow?: number | null;
 }
 
 export interface SensorsResponse {

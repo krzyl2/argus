@@ -81,4 +81,26 @@ describe('DetectorsPage', () => {
       expect(cta).not.toBeNull();
     });
   });
+
+  // QUICK-warmup-status: verifies the polling wiring deterministically without fake timers
+  // (vi.advanceTimersByTime desyncs from preact's microtask-scheduled rerender — 14-02
+  // precedent). apiGet is already mocked above so no real fetch ever fires; this just
+  // spies on the interval scheduling itself.
+  describe('warm-up polling (QUICK-warmup-status)', () => {
+    it('sets a 5s loadSensors("") interval on mount and clears it on unmount', async () => {
+      const apiSpy = mockApiGet([], []);
+      const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+      const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+
+      const { unmount } = render(<DetectorsPage />);
+
+      await waitFor(() => expect(apiSpy).toHaveBeenCalledWith('api/sensors?q='));
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 5000);
+      const intervalId = setIntervalSpy.mock.results[0]?.value;
+
+      unmount();
+
+      expect(clearIntervalSpy).toHaveBeenCalledWith(intervalId);
+    });
+  });
 });

@@ -42,6 +42,10 @@ function GroupRow({ group }: { group: NonNullable<DetectorRow['group']> }) {
 
 function SensorRow({ entry }: { entry: NonNullable<DetectorRow['entry']> }) {
   const showFriendlyName = !!entry.friendlyName && entry.friendlyName !== entry.entityId;
+  // QUICK-warmup-status: chip renders only once the pipeline has scored this entity at
+  // least once (readingCount/warmUpWindow both present) — untracked and no-status rows
+  // never show a warm-up chip.
+  const hasWarmUpStatus = entry.readingCount != null && entry.warmUpWindow != null;
 
   return (
     <li class="argus-list-row">
@@ -50,6 +54,14 @@ function SensorRow({ entry }: { entry: NonNullable<DetectorRow['entry']> }) {
         {showFriendlyName && <span class="argus-row-friendly-name">{entry.friendlyName}</span>}
       </div>
       <div class="argus-row-meta">
+        {hasWarmUpStatus &&
+          (entry.warmedUp ? (
+            <Badge tone="ok">Działa</Badge>
+          ) : (
+            <Badge tone="warn">
+              Rozgrzewka {entry.readingCount}/{entry.warmUpWindow}
+            </Badge>
+          ))}
         <Badge tone="tracked">tracked</Badge>
         <a class="argus-label" href={`#/detectors/sensor/${encodeURIComponent(entry.entityId)}`}>
           Edit

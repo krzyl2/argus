@@ -75,4 +75,60 @@ describe('DetectorListRow', () => {
     expect(screen.queryByText(/untrack/i)).toBeNull();
     expect(screen.queryByText(/delete/i)).toBeNull();
   });
+
+  it('sensor variant: warming shows "Rozgrzewka N/window" and not Działa (QUICK-warmup-status)', () => {
+    const row: DetectorRow = {
+      key: 'sensor:sensor.living_room_temp',
+      kind: 'sensor',
+      entry: makeSensor({ warmedUp: false, readingCount: 100, warmUpWindow: 250 }),
+    };
+    render(
+      <ul>
+        <DetectorListRow row={row} />
+      </ul>
+    );
+    expect(screen.getByText(/Rozgrzewka\s*100\/250/)).not.toBeNull();
+    expect(screen.queryByText('Działa')).toBeNull();
+  });
+
+  it('sensor variant: warmed up shows "Działa" and not Rozgrzewka (QUICK-warmup-status)', () => {
+    const row: DetectorRow = {
+      key: 'sensor:sensor.living_room_temp',
+      kind: 'sensor',
+      entry: makeSensor({ warmedUp: true, readingCount: 250, warmUpWindow: 250 }),
+    };
+    render(
+      <ul>
+        <DetectorListRow row={row} />
+      </ul>
+    );
+    expect(screen.getByText('Działa')).not.toBeNull();
+    expect(screen.queryByText(/Rozgrzewka/)).toBeNull();
+  });
+
+  it('sensor variant: no status data renders neither chip (QUICK-warmup-status)', () => {
+    const row: DetectorRow = {
+      key: 'sensor:sensor.living_room_temp',
+      kind: 'sensor',
+      entry: makeSensor(),
+    };
+    render(
+      <ul>
+        <DetectorListRow row={row} />
+      </ul>
+    );
+    expect(screen.queryByText(/Rozgrzewka/)).toBeNull();
+    expect(screen.queryByText('Działa')).toBeNull();
+  });
+
+  it('group variant: never renders a warm-up chip (QUICK-warmup-status)', () => {
+    const row: DetectorRow = { key: 'group:living_room', kind: 'group', group: makeGroup() };
+    render(
+      <ul>
+        <DetectorListRow row={row} />
+      </ul>
+    );
+    expect(screen.queryByText(/Rozgrzewka/)).toBeNull();
+    expect(screen.queryByText('Działa')).toBeNull();
+  });
 });

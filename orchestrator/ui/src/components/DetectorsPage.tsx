@@ -17,6 +17,14 @@ export function DetectorsPage() {
     // any downstream editor that tracks/saves after visiting this list. Mirrors
     // GroupsPage's existing mount-load precedent.
     loadSensors('');
+
+    // QUICK-warmup-status: light 5s polling so warm-up reading counts advance live
+    // with no manual refresh. Sensors only (full-set, empty query) — loadGroups is
+    // out of scope for this indicator.
+    const id = setInterval(() => {
+      loadSensors('');
+    }, 5000);
+    return () => clearInterval(id);
   }, []);
 
   return (
