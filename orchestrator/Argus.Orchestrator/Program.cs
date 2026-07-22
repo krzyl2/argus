@@ -97,6 +97,14 @@ builder.Services.AddSingleton<IGroupStatusCache, GroupStatusCache>();
 // SPA can show live HST warm-up progress.
 builder.Services.AddSingleton<IEntityStatusCache, EntityStatusCache>();
 
+// Register recent-anomalies ring buffer + last-batch-run tracker (QUICK-dashboard-real-data):
+// written by ScoreStreamPipeline (streaming) and BatchSchedulerWorker (joint-group batch),
+// read by GET /api/anomalies/recent and GET /api/health. Registered unconditionally — the
+// streaming path records anomalies regardless of InfluxDB, and IBatchRunStatus.LastRunUtc
+// stays null when the batch worker never runs.
+builder.Services.AddSingleton<IRecentAnomaliesCache, RecentAnomaliesCache>();
+builder.Services.AddSingleton<IBatchRunStatus, BatchRunStatus>();
+
 // Register HA event source (NetDaemon.Client WebSocket subscription — STRM-01/STRM-02)
 // ArgusHealthSignals + IHaSensorRegistry are resolved automatically from DI.
 builder.Services.AddSingleton<IHaEventSource, NetDaemonHaEventSource>();
@@ -172,7 +180,9 @@ if (!string.IsNullOrWhiteSpace(connectionSettings.InfluxUrl))
         sp.GetRequiredService<IGroupInfluxDataSource>(),
         sp.GetRequiredService<DetectionGateway>(),
         sp.GetRequiredService<ILogger<BatchSchedulerWorker>>(),
-        sp.GetRequiredService<IGroupStatusCache>()));
+        sp.GetRequiredService<IGroupStatusCache>(),
+        sp.GetRequiredService<IRecentAnomaliesCache>(),
+        sp.GetRequiredService<IBatchRunStatus>()));
 }
 else
 {

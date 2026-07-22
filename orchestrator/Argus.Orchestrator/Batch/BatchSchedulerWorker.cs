@@ -39,6 +39,8 @@ public sealed class BatchSchedulerWorker : BackgroundService
     private readonly DetectionGateway? _gateway;
     private readonly ILogger<BatchSchedulerWorker> _logger;
     private readonly IGroupStatusCache? _groupStatusCache;
+    private readonly IRecentAnomaliesCache? _recentAnomalies;
+    private readonly IBatchRunStatus? _batchRunStatus;
 
     // Defaults applied when a group's Params dictionary omits these keys.
     private static readonly TimeSpan DefaultStalenessCap = TimeSpan.FromMinutes(30);
@@ -57,7 +59,9 @@ public sealed class BatchSchedulerWorker : BackgroundService
         ILiveEntitiesConfig liveConfig,
         IGroupInfluxDataSource groupInfluxReader,
         ILogger<BatchSchedulerWorker> logger,
-        IGroupStatusCache? groupStatusCache = null)
+        IGroupStatusCache? groupStatusCache = null,
+        IRecentAnomaliesCache? recentAnomalies = null,
+        IBatchRunStatus? batchRunStatus = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _influxReader = influxReader ?? throw new ArgumentNullException(nameof(influxReader));
@@ -67,6 +71,8 @@ public sealed class BatchSchedulerWorker : BackgroundService
         _groupInfluxReader = groupInfluxReader ?? throw new ArgumentNullException(nameof(groupInfluxReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _groupStatusCache = groupStatusCache;
+        _recentAnomalies = recentAnomalies;
+        _batchRunStatus = batchRunStatus;
     }
 
     /// <summary>
@@ -81,8 +87,10 @@ public sealed class BatchSchedulerWorker : BackgroundService
         IGroupInfluxDataSource groupInfluxReader,
         DetectionGateway gateway,
         ILogger<BatchSchedulerWorker> logger,
-        IGroupStatusCache? groupStatusCache = null)
-        : this(settings, influxReader, detectorClient, statePublisher, liveConfig, groupInfluxReader, logger, groupStatusCache)
+        IGroupStatusCache? groupStatusCache = null,
+        IRecentAnomaliesCache? recentAnomalies = null,
+        IBatchRunStatus? batchRunStatus = null)
+        : this(settings, influxReader, detectorClient, statePublisher, liveConfig, groupInfluxReader, logger, groupStatusCache, recentAnomalies, batchRunStatus)
     {
         _gateway = gateway;
     }
@@ -171,6 +179,8 @@ public sealed class BatchSchedulerWorker : BackgroundService
                     "Group batch failed for {GroupId}", group.GroupId);
             }
         }
+
+        _batchRunStatus?.MarkRun(DateTimeOffset.UtcNow);
     }
 
     // ─── Group batch loop (GRP-02/GRP-08) ───────────────────────────────────
@@ -266,6 +276,10 @@ public sealed class BatchSchedulerWorker : BackgroundService
                 group.Detector,
                 DateTimeOffset.UtcNow,
                 sorted.Select(c => new FeatureContributionDto(c.MemberId, c.Contribution)).ToList()));
+
+            // MVP: joint GroupVerdict anomalies only; per-member peer flags intentionally not recorded
+            if (v.IsAnomaly)
+                _recentAnomalies?.Record(new RecentAnomaly(null, group.GroupId, v.Score ?? 0.0, group.Detector, DateTimeOffset.UtcNow));
 
             // Contributions are carried through the RPC response for HA surfacing (GRP-09) —
             // logged here at info level only, no MQTT publish this phase.

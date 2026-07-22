@@ -156,6 +156,85 @@ public class ScoreStreamPipelineTests
         Assert.False(publisher.FlagPublished, "Flag must be suppressed during warm-up");
     }
 
+    // ─── Recording-gate tests (QUICK-dashboard-real-data) ────────────────────
+
+    [Fact]
+    public async Task OnVerdict_PublishedAndAnomalous_RecordsRecentAnomaly()
+    {
+        var publisher = new FakeStatePublisher();
+        var cfg = new EntitiesConfig();
+        cfg.Entities.Add(new EntityConfig
+        {
+            EntityId = "sensor.test",
+            FriendlyName = "Test",
+            Detectors = new List<DetectorConfig>
+            {
+                new DetectorConfig
+                {
+                    Name = "hst",
+                    Params = new Dictionary<string, string>
+                    {
+                        ["window"] = "1",
+                        ["min_consecutive"] = "1",
+                    }
+                }
+            }
+        });
+
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        entityState.RecordReading();
+
+        var recentAnomalies = new RecentAnomaliesCache();
+        var pipeline = new ScoreStreamPipeline(
+            publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), recentAnomalies: recentAnomalies);
+        var reading = MakeReading(suppress: false);
+        var verdict = MakeVerdict(score: 0.9);
+
+        await pipeline.ProcessVerdictAsync(reading, verdict, entityState, CancellationToken.None);
+
+        var recorded = recentAnomalies.GetRecent();
+        var entry = Assert.Single(recorded);
+        Assert.Equal("sensor.test", entry.EntityId);
+        Assert.Null(entry.GroupId);
+    }
+
+    [Fact]
+    public async Task OnVerdict_Suppressed_DoesNotRecordRecentAnomaly()
+    {
+        var publisher = new FakeStatePublisher();
+        var cfg = new EntitiesConfig();
+        cfg.Entities.Add(new EntityConfig
+        {
+            EntityId = "sensor.test",
+            FriendlyName = "Test",
+            Detectors = new List<DetectorConfig>
+            {
+                new DetectorConfig
+                {
+                    Name = "hst",
+                    Params = new Dictionary<string, string>
+                    {
+                        ["window"] = "1",
+                        ["min_consecutive"] = "1",
+                    }
+                }
+            }
+        });
+
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        entityState.RecordReading();
+
+        var recentAnomalies = new RecentAnomaliesCache();
+        var pipeline = new ScoreStreamPipeline(
+            publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), recentAnomalies: recentAnomalies);
+        var reading = MakeReading(suppress: true); // SUPPRESSED
+        var verdict = MakeVerdict(score: 0.9);
+
+        await pipeline.ProcessVerdictAsync(reading, verdict, entityState, CancellationToken.None);
+
+        Assert.Empty(recentAnomalies.GetRecent());
+    }
+
     // ─── Test 2: Frozen branch publishes flag ON, still sends score ──────────
 
     [Fact]

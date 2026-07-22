@@ -1,6 +1,7 @@
 using Argus.Detector.V1;
 using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
+using Argus.Orchestrator.Detection;
 using Argus.Orchestrator.Mqtt;
 using Microsoft.Extensions.Logging.Abstractions;
 using System;
@@ -509,6 +510,46 @@ public class GroupBatchSchedulerTests
         var flagCall = Assert.Single(publisher.GroupFlagCalls);
         Assert.Equal(group.GroupId, flagCall.GroupId);
         Assert.Null(flagCall.MemberId);
+    }
+
+    [Fact]
+    public async Task JointGroup_IsAnomalyTrue_RecordsRecentAnomalyWithGroupId()
+    {
+        // QUICK-dashboard-real-data: joint GroupVerdict anomalies are recorded to the
+        // ring buffer with GroupId set and EntityId null.
+        var members = new[] { "sensor.a", "sensor.b", "sensor.c" };
+        var group = MakeJointGroup(members);
+        var utcNow = DateTime.UtcNow;
+        var data = FreshData(members, 3, utcNow);
+
+        var response = new GroupScoreResponse
+        {
+            Ok = true,
+            GroupVerdict = new Verdict { Score = 0.9, IsAnomaly = true },
+        };
+
+        var groupInflux = new FakeGroupInfluxDataSource { Data = data };
+        var detector = new FakeGroupDetectorClient { ScoreGroupResponse = response };
+        var publisher = new FakeStatePublisher();
+        var cfg = new EntitiesConfig { Groups = [group] };
+        var recentAnomalies = new RecentAnomaliesCache();
+
+        var worker = new BatchSchedulerWorker(
+            DefaultSettings(),
+            new FakeInfluxDbReader(),
+            detector,
+            publisher,
+            MakeLive(cfg),
+            groupInflux,
+            NullLogger<BatchSchedulerWorker>.Instance,
+            groupStatusCache: null,
+            recentAnomalies: recentAnomalies);
+
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        var entry = Assert.Single(recentAnomalies.GetRecent());
+        Assert.Equal(group.GroupId, entry.GroupId);
+        Assert.Null(entry.EntityId);
     }
 
     [Fact]

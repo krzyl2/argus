@@ -37,6 +37,7 @@ public sealed class ScoreStreamPipeline
     private readonly ILiveEntitiesConfig _liveConfig;
     private readonly DetectionGateway? _gateway;
     private readonly IEntityStatusCache? _statusCache;
+    private readonly IRecentAnomaliesCache? _recentAnomalies;
 
     /// <summary>
     /// Production constructor — includes DetectionGateway for opening live streams.
@@ -46,13 +47,15 @@ public sealed class ScoreStreamPipeline
         ILogger<ScoreStreamPipeline> logger,
         ILiveEntitiesConfig liveConfig,
         DetectionGateway gateway,
-        IEntityStatusCache? statusCache = null)
+        IEntityStatusCache? statusCache = null,
+        IRecentAnomaliesCache? recentAnomalies = null)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
         _statusCache = statusCache;
+        _recentAnomalies = recentAnomalies;
     }
 
     /// <summary>
@@ -62,13 +65,15 @@ public sealed class ScoreStreamPipeline
         IStatePublisher publisher,
         ILogger<ScoreStreamPipeline> logger,
         ILiveEntitiesConfig liveConfig,
-        IEntityStatusCache? statusCache = null)
+        IEntityStatusCache? statusCache = null,
+        IRecentAnomaliesCache? recentAnomalies = null)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
         _gateway = null;
         _statusCache = statusCache;
+        _recentAnomalies = recentAnomalies;
     }
 
     /// <summary>
@@ -203,6 +208,12 @@ public sealed class ScoreStreamPipeline
         {
             await _publisher.PublishFlagAsync(reading.EntityId, isAnomalous, ct);
             entityState.LastPublishedFlag = isAnomalous;
+
+            // QUICK-dashboard-real-data: record only when the flag was actually published AND
+            // the reading is anomalous — warm-up/cooldown-suppressed readings must never appear
+            // in the Dashboard's "Recent anomalies" list.
+            if (isAnomalous)
+                _recentAnomalies?.Record(new RecentAnomaly(reading.EntityId, null, score, "hst", DateTimeOffset.UtcNow));
         }
 
         // OBS-01/STRM-04: structured per-verdict latency log
