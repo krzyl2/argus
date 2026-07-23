@@ -32,10 +32,14 @@ function makeSensor(overrides: Partial<SensorEntry> = {}): SensorEntry {
 }
 
 // Routes the shared apiGet mock to the right fixture by URL, mirroring the real
-// orchestrator: GET /api/groups + GET /api/sensors?q= (D-07 full-set mount guard).
+// orchestrator: GET /api/groups + GET /api/groups/{id}/status + GET /api/sensors?q=
+// (D-07 full-set mount guard).
 function mockApiGet(groupList: GroupConfig[], sensorEntries: SensorEntry[]) {
   return vi.spyOn(client, 'apiGet').mockImplementation(async (url: string) => {
     if (url === 'api/groups') return { groups: groupList } as unknown;
+    if (url.startsWith('api/groups/') && url.endsWith('/status')) {
+      return { status: null } as unknown;
+    }
     return { entries: sensorEntries } as unknown;
   });
 }
@@ -69,6 +73,19 @@ describe('DetectorsPage', () => {
     const { container } = render(<DetectorsPage />);
 
     await waitFor(() => expect(container.querySelectorAll('.argus-list-row').length).toBe(2));
+  });
+
+  // Intent: group rows must show a live status, which requires DetectorsPage to fetch
+  // each group's status (GET api/groups/{id}/status) after loading the groups list.
+  it('fetches each group status after loading groups on mount', async () => {
+    const spy = mockApiGet([makeGroup({ groupId: 'living_room' })], []);
+
+    render(<DetectorsPage />);
+
+    await waitFor(() => expect(spy).toHaveBeenCalledWith('api/groups'));
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith('api/groups/living_room/status')
+    );
   });
 
   it('renders the Add detector primary CTA to #/detectors/add', async () => {

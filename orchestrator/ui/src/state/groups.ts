@@ -6,6 +6,8 @@ import type {
   GroupDetectorName,
   GroupSaveRequest,
   GroupSaveResponse,
+  GroupStatus,
+  GroupStatusResponse,
   SensorEntry,
 } from '../api/types';
 import { validateGroupMembers, validateUnitConsistency } from '../validation/groupParams';
@@ -15,6 +17,11 @@ export type SaveState = 'idle' | 'saving' | { result: GroupSaveResponse };
 export const groups = signal<GroupConfig[]>([]);
 export const loading = signal(false);
 export const saveState = signal<SaveState>('idle');
+
+// Last-known status per group id for the Detectors list (id -> GroupStatus | null).
+// null means the backend returned 200 with no score yet ("Oczekuje"); a missing key
+// means status has not been fetched at all (the row renders no status badge).
+export const groupStatuses = signal<Record<string, GroupStatus | null>>({});
 
 // Draft signals for the group editor (create + edit) — mirrors state/sensors.ts's
 // entityEdits pattern, but a single group is edited at a time (one screen).
@@ -76,6 +83,34 @@ export async function loadGroups(): Promise<void> {
   } finally {
     if (seq === loadGroupsSeq) loading.value = false;
   }
+}
+
+/**
+ * Fetches each currently-loaded group's status in parallel and updates groupStatuses.
+ * Per-group failures are tolerated: a failed fetch leaves that group's previous value
+ * untouched (never overwrites a good status with an error). The new map is merged onto
+ * the previous one so partial failures preserve earlier successful reads.
+ */
+export async function loadGroupStatuses(): Promise<void> {
+  const current = groups.value;
+  const results = await Promise.all(
+    current.map(async (g) => {
+      try {
+        const res = await apiGet<GroupStatusResponse>(
+          `api/groups/${encodeURIComponent(g.groupId)}/status`
+        );
+        return { groupId: g.groupId, status: res.status };
+      } catch {
+        // Tolerate a single group's failure — skip it (keep the previous value).
+        return null;
+      }
+    })
+  );
+  const next: Record<string, GroupStatus | null> = { ...groupStatuses.value };
+  for (const r of results) {
+    if (r) next[r.groupId] = r.status;
+  }
+  groupStatuses.value = next;
 }
 
 /** Looks up a single group by id from the currently loaded list, or undefined if not found. */

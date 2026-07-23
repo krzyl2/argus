@@ -11,13 +11,19 @@ interface DetectorListRowProps {
 // their respective editors, never on this list row.
 export function DetectorListRow({ row }: DetectorListRowProps) {
   return row.kind === 'group' ? (
-    <GroupRow group={row.group as NonNullable<DetectorRow['group']>} />
+    <GroupRow group={row.group as NonNullable<DetectorRow['group']>} status={row.status} />
   ) : (
     <SensorRow entry={row.entry as NonNullable<DetectorRow['entry']>} />
   );
 }
 
-function GroupRow({ group }: { group: NonNullable<DetectorRow['group']> }) {
+function GroupRow({
+  group,
+  status,
+}: {
+  group: NonNullable<DetectorRow['group']>;
+  status?: DetectorRow['status'];
+}) {
   const modeLabel = group.mode === 'peer_divergence' ? 'peer' : 'joint';
   const memberWord = group.members.length === 1 ? 'member' : 'members';
 
@@ -29,6 +35,14 @@ function GroupRow({ group }: { group: NonNullable<DetectorRow['group']> }) {
         <Badge tone="accent">{group.detector}</Badge>
       </div>
       <div class="argus-row-meta">
+        {status !== undefined &&
+          (status === null ? (
+            <Badge tone="warn">Oczekuje</Badge>
+          ) : status.isAnomaly === true ? (
+            <Badge tone="error">Anomalia</Badge>
+          ) : (
+            <Badge tone="ok">Działa</Badge>
+          ))}
         <span class="argus-label">
           {group.members.length} {memberWord}
         </span>

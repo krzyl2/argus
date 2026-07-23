@@ -21,6 +21,8 @@ import { FieldValidationError } from './FieldValidationError';
 import { Input } from './Input';
 import { Select } from './Select';
 import { Button } from './Button';
+import { Card } from './Card';
+import { Badge } from './Badge';
 
 interface GroupEditorFormProps {
   groupId: string | null; // null = /groups/new
@@ -70,6 +72,10 @@ export function GroupEditorForm({ groupId, sensors }: GroupEditorFormProps) {
       : draftMembers.value.filter((id) => id !== entityId);
   }
 
+  // Always-visible list of the draft's current members, so the operator sees which
+  // sensors belong to the group without first typing a search query into MemberPicker.
+  const selectedMembers = sensors.filter((s) => draftMembers.value.includes(s.entityId));
+
   return (
     <div>
       <header class="argus-page-header">
@@ -116,6 +122,42 @@ export function GroupEditorForm({ groupId, sensors }: GroupEditorFormProps) {
       </div>
 
       <p class="argus-section-label">Members</p>
+      {selectedMembers.length > 0 && (
+        <>
+          <p class="argus-section-label">Selected ({selectedMembers.length})</p>
+          <Card padding="none">
+            <ul class="argus-list">
+              {selectedMembers.map((entry) => {
+                const showFriendlyName =
+                  !!entry.friendlyName && entry.friendlyName !== entry.entityId;
+                return (
+                  <li key={entry.entityId} class="argus-list-row argus-list-row--tracked">
+                    <div class="argus-row-content">
+                      <span class="argus-row-entity-id">{entry.entityId}</span>
+                      {showFriendlyName && (
+                        <span class="argus-row-friendly-name">{entry.friendlyName}</span>
+                      )}
+                    </div>
+                    <div class="argus-row-meta">
+                      {entry.unitOfMeasurement && (
+                        <span class="argus-row-value">{entry.unitOfMeasurement}</span>
+                      )}
+                      <Badge tone="member">member</Badge>
+                      <Button
+                        variant="destructive-ghost"
+                        size="xs"
+                        onClick={() => toggleMember(entry.entityId, false)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        </>
+      )}
       <MemberPicker
         sensors={sensors}
         selectedIds={draftMembers.value}

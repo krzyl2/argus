@@ -1,5 +1,5 @@
 import { useEffect } from 'preact/hooks';
-import { loadGroups } from '../state/groups';
+import { loadGroups, loadGroupStatuses } from '../state/groups';
 import { loadSensors } from '../state/sensors';
 import { detectorRows } from '../state/detectors';
 import { DetectorList } from './DetectorList';
@@ -11,7 +11,12 @@ import { DetectorList } from './DetectorList';
 // editor branch here (unlike GroupsPage).
 export function DetectorsPage() {
   useEffect(() => {
-    loadGroups();
+    // Load groups first, then their statuses (loadGroupStatuses reads the just-loaded
+    // groups list). loadGroups isn't awaited at the top level, so wrap in an async IIFE.
+    (async () => {
+      await loadGroups();
+      loadGroupStatuses();
+    })();
     // D-07: load the full sensor set (empty query), never a partial one — this both
     // feeds the unified merge and satisfies the full-list-replace save guard for
     // any downstream editor that tracks/saves after visiting this list. Mirrors
@@ -21,10 +26,23 @@ export function DetectorsPage() {
     // QUICK-warmup-status: light 5s polling so warm-up reading counts advance live
     // with no manual refresh. Sensors only (full-set, empty query) — loadGroups is
     // out of scope for this indicator.
-    const id = setInterval(() => {
+    const sensorPollId = setInterval(() => {
       loadSensors('');
     }, 5000);
-    return () => clearInterval(id);
+
+    // Group status poll: separate, slower cadence (~30s) — refresh the groups list and
+    // their statuses so group rows reflect the latest verdict without a manual reload.
+    const groupPollId = setInterval(() => {
+      (async () => {
+        await loadGroups();
+        loadGroupStatuses();
+      })();
+    }, 30000);
+
+    return () => {
+      clearInterval(sensorPollId);
+      clearInterval(groupPollId);
+    };
   }, []);
 
   return (

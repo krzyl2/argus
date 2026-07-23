@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { detectorRows } from './detectors';
-import { groups } from './groups';
+import { groups, groupStatuses } from './groups';
 import { sensors, entityEdits } from './sensors';
-import type { GroupConfig } from '../api/types';
+import type { GroupConfig, GroupStatus } from '../api/types';
 import type { SensorEntry } from '../api/types';
 
 function makeGroup(groupId: string): GroupConfig {
@@ -28,11 +28,24 @@ function makeSensor(entityId: string, isTracked: boolean): SensorEntry {
   };
 }
 
+function makeStatus(overrides: Partial<GroupStatus> = {}): GroupStatus {
+  return {
+    groupId: 'group_1',
+    score: 0.5,
+    isAnomaly: false,
+    detector: 'peer_divergence',
+    scoredAtUtc: '2026-07-23T00:00:00Z',
+    contributions: [],
+    ...overrides,
+  };
+}
+
 describe('detectorRows (D-03/DET-01 merge)', () => {
   beforeEach(() => {
     groups.value = [];
     sensors.value = [];
     entityEdits.value = {};
+    groupStatuses.value = {};
   });
 
   it('merges groups + tracked-only sensors into 4 rows (2 groups + 2 of 3 tracked sensors)', () => {
@@ -85,5 +98,30 @@ describe('detectorRows (D-03/DET-01 merge)', () => {
 
     expect(detectorRows.value).toHaveLength(1);
     expect(detectorRows.value[0].key).toBe('sensor:sensor.client_tracked');
+  });
+
+  // Intent: a group row must carry the last-known status from groupStatuses so the
+  // Detectors list can render its verdict badge; an unfetched group carries `undefined`.
+  it('a group row status is undefined when no status has been fetched', () => {
+    groups.value = [makeGroup('group_1')];
+
+    const groupRow = detectorRows.value.find((r) => r.kind === 'group');
+    expect(groupRow?.status).toBeUndefined();
+  });
+
+  it('a group row carries a null status (fetched but never scored)', () => {
+    groups.value = [makeGroup('group_1')];
+    groupStatuses.value = { group_1: null };
+
+    const groupRow = detectorRows.value.find((r) => r.kind === 'group');
+    expect(groupRow?.status).toBeNull();
+  });
+
+  it('a group row carries its scored GroupStatus (isAnomaly flag preserved)', () => {
+    groups.value = [makeGroup('group_1')];
+    groupStatuses.value = { group_1: makeStatus({ groupId: 'group_1', isAnomaly: true }) };
+
+    const groupRow = detectorRows.value.find((r) => r.kind === 'group');
+    expect(groupRow?.status?.isAnomaly).toBe(true);
   });
 });
