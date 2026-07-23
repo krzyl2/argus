@@ -5,6 +5,7 @@ import {
   includePatterns,
   excludePatterns,
   saveState,
+  hasValidationErrors,
   loadSensors,
   save,
 } from '../state/sensors';
@@ -192,7 +193,11 @@ export function SettingsPage() {
               onIncludeChange={(v) => (includePatterns.value = v)}
               onExcludeChange={(v) => (excludePatterns.value = v)}
             />
-            <SaveBar saving={patternsSaving} disabled={patternsSaving} onSave={save} />
+            <SaveBar
+              saving={patternsSaving}
+              disabled={patternsSaving || hasValidationErrors.value}
+              onSave={save}
+            />
             {patternsResult && <SaveResultBanner result={patternsResult} />}
           </Card>
         </section>
