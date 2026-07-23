@@ -57,15 +57,19 @@ export function SingleDetectorEditorForm({ entityId }: SingleDetectorEditorFormP
         </Button>
       </header>
 
-      <DetectorDisclosure
-        entityId={entityId}
-        entityIdx={0}
-        detectors={detectors}
-        onTypeChange={(detIdx, name) => updateDetectorName(entityId, detIdx, name)}
-        onParamChange={(detIdx, key, value) => updateDetectorParam(entityId, detIdx, key, value)}
-        onRemove={(detIdx) => removeDetector(entityId, detIdx)}
-        onAdd={() => addDetector(entityId)}
-      />
+      {edit?.isTracked ? (
+        <DetectorDisclosure
+          entityId={entityId}
+          entityIdx={0}
+          detectors={detectors}
+          onTypeChange={(detIdx, name) => updateDetectorName(entityId, detIdx, name)}
+          onParamChange={(detIdx, key, value) => updateDetectorParam(entityId, detIdx, key, value)}
+          onRemove={(detIdx) => removeDetector(entityId, detIdx)}
+          onAdd={() => addDetector(entityId)}
+        />
+      ) : (
+        <p class="argus-label">This sensor will be untracked on next save.</p>
+      )}
 
       <Button
         variant="destructive-ghost"
