@@ -22,8 +22,11 @@ function App() {
     page = <SettingsPage />;
   } else if (route.value === '/detectors/add') {
     page = <AddDetectorWizard />;
+  } else if (route.value.startsWith('/detectors/sensor/') && routeSensorEntityId.value) {
+    page = <SingleDetectorEditorForm entityId={routeSensorEntityId.value} />;
   } else if (route.value.startsWith('/detectors/sensor/')) {
-    page = <SingleDetectorEditorForm entityId={routeSensorEntityId.value ?? ''} />;
+    // Parse failure (malformed/truncated id) — defensive fallback per D-01/T-14-01-01.
+    page = <DetectorsPage />;
   } else if (route.value === '/detectors') {
     page = <DetectorsPage />;
   } else if (isGroupsRoute) {
