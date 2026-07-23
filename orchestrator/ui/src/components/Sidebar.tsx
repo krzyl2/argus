@@ -24,7 +24,12 @@ const NAV_ITEMS: NavItem[] = [
 function isActive(item: NavItem, currentRoute: string): boolean {
   if (item.id === 'dashboard') return currentRoute === '/dashboard';
   if (item.id === 'algorithms') return currentRoute === '/algorithms';
-  if (item.id === 'detectors') return currentRoute === '/detectors' || currentRoute.startsWith('/detectors/');
+  if (item.id === 'detectors') {
+    return (
+      currentRoute === '/detectors' ||
+      (currentRoute.startsWith('/detectors/') && currentRoute !== '/detectors/add')
+    );
+  }
   if (item.id === 'add-detector') return currentRoute === '/detectors/add';
   if (item.id === 'settings') return currentRoute === '/settings';
   return false;

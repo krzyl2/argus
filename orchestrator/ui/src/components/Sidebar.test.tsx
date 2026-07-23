@@ -45,6 +45,21 @@ describe('Sidebar (D-02 nav items + THEME-02 toggle)', () => {
     expect(detectorsItem?.classList.contains('argus-sidebar__item--active')).toBe(true);
   });
 
+  it('WR-03: highlights only Add detector (not Detectors) on /detectors/add', () => {
+    route.value = '/detectors/add';
+    const { container } = render(<Sidebar />);
+    const items = Array.from(container.querySelectorAll('.argus-sidebar__item'));
+    const detectorsItem = items.find((el) =>
+      el.querySelector('.argus-sidebar__label')?.textContent === 'Detectors'
+    );
+    const addDetectorItem = items.find((el) =>
+      el.querySelector('.argus-sidebar__label')?.textContent === 'Add detector'
+    );
+
+    expect(detectorsItem?.classList.contains('argus-sidebar__item--active')).toBe(false);
+    expect(addDetectorItem?.classList.contains('argus-sidebar__item--active')).toBe(true);
+  });
+
   it('clicking the theme toggle sets data-theme and localStorage["argus-theme"]', () => {
     document.documentElement.removeAttribute('data-theme');
     const { container } = render(<Sidebar />);
