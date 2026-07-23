@@ -60,6 +60,24 @@ describe('AddDetectorWizard', () => {
     expect(entityEdits.value['sensor.living_room_temp'].isTracked).toBe(true);
   });
 
+  it('WR-01: does not render the group-only "needs at least 2 members" message when exactly 1 sensor is selected', async () => {
+    vi.spyOn(client, 'apiGet').mockResolvedValue({
+      entries: [makeSensor({ entityId: 'sensor.living_room_temp' })],
+    });
+
+    const { container } = render(<AddDetectorWizard />);
+    await waitFor(() => expect(sensors.value).toHaveLength(1));
+
+    const input = container.querySelector('input.argus-search__input') as HTMLInputElement;
+    fireEvent.input(input, { target: { value: 'living' } });
+
+    const checkbox = await screen.findByLabelText('sensor.living_room_temp');
+    fireEvent.click(checkbox);
+
+    expect(screen.queryByText(/needs at least 2 members/)).toBeNull();
+    expect(screen.getByText('Configure detector')).toBeTruthy();
+  });
+
   it('WIZ-03: selecting >=2 sensors and continuing pre-fills the group draft and navigates to /groups/new', async () => {
     vi.spyOn(client, 'apiGet').mockResolvedValue({
       entries: [

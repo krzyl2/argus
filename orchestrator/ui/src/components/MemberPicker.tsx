@@ -16,6 +16,11 @@ interface MemberPickerProps {
   onQueryChange: (q: string) => void;
   onToggleMember: (entityId: string, checked: boolean) => void;
   minQueryLength?: number;
+  // WR-01: GroupEditorForm's own group-only validation (member-floor/unit-mismatch) is
+  // correct there but actively misleading when a dual-purpose caller like
+  // AddDetectorWizard reuses this picker for a valid 1-sensor selection. Defaults to
+  // true so GroupEditorForm's existing behavior is unchanged.
+  showGroupValidation?: boolean;
 }
 
 // Wraps sensor rows in multi-select mode (checkbox semantics identical to the
@@ -34,6 +39,7 @@ export function MemberPicker({
   onQueryChange,
   onToggleMember,
   minQueryLength = MIN_QUERY_LENGTH,
+  showGroupValidation = true,
 }: MemberPickerProps) {
   const queryTooShort = query.trim().length < minQueryLength;
   const filtered = queryTooShort ? [] : sensors.filter((s) => matchesSensorQuery(s, query));
@@ -83,8 +89,8 @@ export function MemberPicker({
           </ul>
         </Card>
       )}
-      <FieldValidationError message={memberFloorError ?? undefined} />
-      <FieldValidationError message={unitMismatchError ?? undefined} />
+      {showGroupValidation && <FieldValidationError message={memberFloorError ?? undefined} />}
+      {showGroupValidation && <FieldValidationError message={unitMismatchError ?? undefined} />}
     </div>
   );
 }

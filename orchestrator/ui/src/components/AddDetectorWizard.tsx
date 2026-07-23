@@ -67,6 +67,7 @@ export function AddDetectorWizard() {
         onQueryChange={setQuery}
         onToggleMember={toggleMember}
         minQueryLength={3}
+        showGroupValidation={false}
       />
 
       <p class="argus-label">
