@@ -61,6 +61,7 @@ export function SingleDetectorEditorForm({ entityId }: SingleDetectorEditorFormP
         <DetectorDisclosure
           entityId={entityId}
           entityIdx={0}
+          entityLabel={entityId}
           detectors={detectors}
           onTypeChange={(detIdx, name) => updateDetectorName(entityId, detIdx, name)}
           onParamChange={(detIdx, key, value) => updateDetectorParam(entityId, detIdx, key, value)}

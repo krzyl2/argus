@@ -10,6 +10,9 @@ interface DetectorDisclosureProps {
   onParamChange: (detIdx: number, key: string, value: string) => void;
   onRemove: (detIdx: number) => void;
   onAdd: () => void;
+  // WR-06: forwarded to DetectorEntry's ARIA label; entityIdx is kept for DOM-id
+  // uniqueness only.
+  entityLabel?: string;
 }
 
 // Replaces <details class="argus-detectors-details"> / BuildDetectorDisclosure.
@@ -22,6 +25,7 @@ export function DetectorDisclosure({
   onParamChange,
   onRemove,
   onAdd,
+  entityLabel,
 }: DetectorDisclosureProps) {
   const summaryText = detectors.length > 0 ? `Detectors (${detectors.length})` : 'Detectors (none)';
 
@@ -35,6 +39,7 @@ export function DetectorDisclosure({
             entityIdx={entityIdx}
             detIdx={detIdx}
             detector={detector}
+            entityLabel={entityLabel}
             onTypeChange={(name) => onTypeChange(detIdx, name)}
             onParamChange={(key, value) => onParamChange(detIdx, key, value)}
             onRemove={() => onRemove(detIdx)}

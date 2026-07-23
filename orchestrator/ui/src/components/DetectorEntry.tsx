@@ -18,6 +18,9 @@ interface DetectorEntryProps {
   onTypeChange: (name: 'hst' | 'mad' | 'stl') => void;
   onParamChange: (key: string, value: string) => void;
   onRemove: () => void;
+  // WR-06: identifies the entity in the ARIA label (e.g. entityId). Falls back to
+  // `entity ${entityIdx}` when omitted, preserving prior callers' behavior.
+  entityLabel?: string;
 }
 
 // Replaces .argus-detector-entry / BuildDetectorEntry.
@@ -28,6 +31,7 @@ export function DetectorEntry({
   onTypeChange,
   onParamChange,
   onRemove,
+  entityLabel,
 }: DetectorEntryProps) {
   return (
     <div class="argus-detector-entry">
@@ -35,7 +39,7 @@ export function DetectorEntry({
         <div
           class="argus-algorithm-chooser__grid"
           role="radiogroup"
-          aria-label={`Detector type for entity ${entityIdx}`}
+          aria-label={`Detector type for ${entityLabel ?? `entity ${entityIdx}`}`}
         >
           {DETECTOR_TYPES.map((t) => (
             <AlgorithmCard
