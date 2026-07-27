@@ -224,11 +224,27 @@ public sealed class ScoreStreamPipeline
     }
 
     /// <summary>
-    /// Publishes a frozen sensor detection result: binary_sensor ON + availability online (FAULT-02).
-    /// Called when FrozenSensorDetector.IsFrozen for an entity's reading.
+    /// Score published on the frozen branch. Frozen forces the flag ON, so the paired score
+    /// entity must report a coherent max-anomaly value (a 0.0 would read as a false positive).
+    /// A fixed sentinel is used because no last-known score is retained per entity and an
+    /// entity frozen from the start never produced a verdict-based score.
+    /// </summary>
+    private const double FrozenScore = 1.0;
+
+    /// <summary>
+    /// Publishes a frozen sensor detection result: score (max-anomaly) + binary_sensor ON +
+    /// availability online (FAULT-02). Called when FrozenSensorDetector.IsFrozen for a reading.
+    ///
+    /// Publishes a score here so the "Score is always published" invariant holds on the frozen
+    /// branch too: the frozen branch is the only guaranteed publish path for a frozen entity
+    /// (the verdict path depends on the detector returning a verdict for near-constant input),
+    /// so without this the score entity stays `unknown` in HA while the flag reads ON.
     /// </summary>
     public async Task PublishFrozenAsync(string entityId, EntityRuntimeState entityState, CancellationToken ct)
     {
+        // Keep the flag/score pair coherent — publish the score before the forced-ON flag
+        await _publisher.PublishScoreAsync(entityId, FrozenScore, ct);
+
         // Frozen is an anomaly — force binary_sensor ON regardless of warm-up/suppression
         await _publisher.PublishFlagAsync(entityId, on: true, ct);
         entityState.LastPublishedFlag = true;

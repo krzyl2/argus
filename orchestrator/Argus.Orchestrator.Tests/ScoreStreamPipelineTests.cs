@@ -235,10 +235,10 @@ public class ScoreStreamPipelineTests
         Assert.Empty(recentAnomalies.GetRecent());
     }
 
-    // ─── Test 2: Frozen branch publishes flag ON, still sends score ──────────
+    // ─── Test 2: Frozen branch publishes flag ON, score, and availability ────
 
     [Fact]
-    public async Task FrozenReading_PublishesFrozenFlag_AndAvailability()
+    public async Task FrozenReading_PublishesFrozenFlag_ScoreAndAvailability()
     {
         var publisher = new FakeStatePublisher();
         var cfg = MakeEntitiesConfig();
@@ -253,6 +253,65 @@ public class ScoreStreamPipelineTests
         Assert.True(publisher.FlagPublished);
         Assert.True(publisher.LastFlagValue, "Frozen flag should be ON");
         Assert.True(publisher.AvailabilityPublished, "Availability should be published (online) for frozen");
+
+        // Assert: frozen ALSO publishes a score (invariant "Score is always published"),
+        // otherwise the score entity stays `unknown` in HA while the flag reads ON.
+        // WHY this matters: the frozen branch is the only guaranteed publish path for a
+        // frozen entity — regressing this leaves the flag/score pair incoherent (the
+        // original bug: frozen-flag-no-score on sensor.load_5m).
+        Assert.True(publisher.ScorePublished, "Frozen branch must publish a score (flag/score coherence)");
+        Assert.Equal(1.0, publisher.LastScoreValue);
+    }
+
+    // ─── Test 2b: flag-implies-score coherence invariant (generic) ───────────
+
+    [Fact]
+    public async Task PublishedFlag_AlwaysAccompaniedByScore_AcrossFrozenAndVerdictPaths()
+    {
+        // Encodes the class-level invariant generically: whenever a flag is published for
+        // an entity, a score must also have been published for that entity. Exercises BOTH
+        // the frozen branch and the verdict branch so any future path that publishes a flag
+        // without a score is caught here.
+        var publisher = new CoherenceTrackingPublisher();
+
+        var cfg = new EntitiesConfig();
+        cfg.Entities.Add(new EntityConfig
+        {
+            EntityId = "sensor.verdict",
+            FriendlyName = "Verdict",
+            Detectors = new List<DetectorConfig>
+            {
+                new DetectorConfig
+                {
+                    Name = "hst",
+                    Params = new Dictionary<string, string>
+                    {
+                        ["window"] = "1",
+                        ["min_consecutive"] = "1",
+                    }
+                }
+            }
+        });
+
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        // Frozen path — forces flag ON for a distinct entity
+        var frozenState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        await pipeline.PublishFrozenAsync("sensor.frozen", frozenState, CancellationToken.None);
+
+        // Verdict path — warmed up (window=1), not suppressed, high score → flag ON
+        var verdictState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        verdictState.RecordReading();
+        await pipeline.ProcessVerdictAsync(
+            MakeReading("sensor.verdict", suppress: false),
+            MakeVerdict("sensor.verdict", score: 0.9),
+            verdictState,
+            CancellationToken.None);
+
+        // Both entities had a flag published — assert both also had a score published.
+        Assert.Contains("sensor.frozen", publisher.FlaggedEntities);
+        Assert.Contains("sensor.verdict", publisher.FlaggedEntities);
+        Assert.Empty(publisher.FlaggedEntitiesWithoutScore());
     }
 
     // ─── Test 3: RpcException → availability offline (RES-01) ────────────────
@@ -313,6 +372,7 @@ internal sealed class FakeStatePublisher : IStatePublisher
     public bool FlagPublished { get; private set; }
     public bool LastFlagValue { get; private set; }
     public bool ScorePublished { get; private set; }
+    public double LastScoreValue { get; private set; }
     public bool AvailabilityPublished { get; private set; }
     public bool LastAvailabilityOnline { get; private set; }
 
@@ -326,6 +386,7 @@ internal sealed class FakeStatePublisher : IStatePublisher
     public Task PublishScoreAsync(string entityId, double score, CancellationToken ct)
     {
         ScorePublished = true;
+        LastScoreValue = score;
         return Task.CompletedTask;
     }
 
@@ -335,6 +396,42 @@ internal sealed class FakeStatePublisher : IStatePublisher
         LastAvailabilityOnline = online;
         return Task.CompletedTask;
     }
+
+    public Task PublishGroupFlagAsync(string groupId, string? memberId, bool on, CancellationToken ct)
+        => Task.CompletedTask;
+
+    public Task PublishGroupScoreAsync(string groupId, string? memberId, double score, CancellationToken ct)
+        => Task.CompletedTask;
+}
+
+/// <summary>
+/// Fake publisher that tracks, per entity, whether a flag and/or a score was published.
+/// Used to assert the class invariant: any entity with a published flag must also have a
+/// published score (flag/score coherence). Catches paths that publish a flag without a score.
+/// </summary>
+internal sealed class CoherenceTrackingPublisher : IStatePublisher
+{
+    public HashSet<string> FlaggedEntities { get; } = new();
+    public HashSet<string> ScoredEntities { get; } = new();
+
+    /// <summary>Entities that had a flag published but never a score — must be empty.</summary>
+    public IReadOnlyCollection<string> FlaggedEntitiesWithoutScore()
+        => FlaggedEntities.Where(e => !ScoredEntities.Contains(e)).ToList();
+
+    public Task PublishFlagAsync(string entityId, bool on, CancellationToken ct)
+    {
+        FlaggedEntities.Add(entityId);
+        return Task.CompletedTask;
+    }
+
+    public Task PublishScoreAsync(string entityId, double score, CancellationToken ct)
+    {
+        ScoredEntities.Add(entityId);
+        return Task.CompletedTask;
+    }
+
+    public Task PublishAvailabilityAsync(string entityId, bool online, CancellationToken ct)
+        => Task.CompletedTask;
 
     public Task PublishGroupFlagAsync(string groupId, string? memberId, bool on, CancellationToken ct)
         => Task.CompletedTask;
