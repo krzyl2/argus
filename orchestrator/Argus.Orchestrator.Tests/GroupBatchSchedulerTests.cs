@@ -28,6 +28,10 @@ public class GroupBatchSchedulerTests
         public Task<IReadOnlyList<(DateTime Timestamp, double Value)>> QueryAsync(
             string entityId, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<(DateTime, double)>>(Array.Empty<(DateTime, double)>());
+
+        public Task<IReadOnlyList<(DateTime Timestamp, double Value)>> QueryHistoryAsync(
+            string entityId, string lookback, int limit, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<(DateTime, double)>>(Array.Empty<(DateTime, double)>());
     }
 
     private sealed class FakeGroupInfluxDataSource : IGroupInfluxDataSource
@@ -67,6 +71,9 @@ public class GroupBatchSchedulerTests
             FitGroupCallCount++;
             return Task.FromResult(FitGroupResponse);
         }
+
+        public Task<WarmupResponse> WarmupAsync(WarmupRequest request, CancellationToken ct)
+            => Task.FromResult(new WarmupResponse { Ok = true });
     }
 
     private sealed class FakeStatePublisher : IStatePublisher

@@ -30,6 +30,10 @@ public class BatchSchedulerWorkerTests
         public Task<IReadOnlyList<(DateTime Timestamp, double Value)>> QueryAsync(
             string entityId, CancellationToken ct)
             => Task.FromResult(_rows);
+
+        public Task<IReadOnlyList<(DateTime Timestamp, double Value)>> QueryHistoryAsync(
+            string entityId, string lookback, int limit, CancellationToken ct)
+            => Task.FromResult(_rows);
     }
 
     private sealed class FakeBatchDetectorClient : IBatchDetectorClient
@@ -76,6 +80,9 @@ public class BatchSchedulerWorkerTests
 
         public Task<FitGroupResponse> FitGroupAsync(FitGroupRequest request, CancellationToken ct)
             => Task.FromResult(new FitGroupResponse { Ok = true });
+
+        public Task<WarmupResponse> WarmupAsync(WarmupRequest request, CancellationToken ct)
+            => Task.FromResult(new WarmupResponse { Ok = true });
     }
 
     private sealed class FakeStatePublisher : IStatePublisher
