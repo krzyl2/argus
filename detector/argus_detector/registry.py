@@ -14,9 +14,13 @@ MDL-04: per-entity locks for Fit vs ScoreStream concurrency.
 from __future__ import annotations
 
 import copy
+import logging
 import threading
+import time
 
 from argus_detector.hst_detector import EntityDetector
+
+logger = logging.getLogger(__name__)
 
 
 class DetectorRegistry:
@@ -112,6 +116,27 @@ class DetectorRegistry:
             return False
         return det.is_warmed_up
 
+    def get_warmup_state(
+        self, entity_id: str, detector: str = "hst"
+    ) -> tuple[bool, int, int]:
+        """Return (warmed_up, n_seen, window) for (entity_id, detector).
+
+        Returns (False, 0, 0) when no entry exists — the 0 window is
+        deliberate (RESEARCH.md Pitfall 4): the caller (15-02's Verdict
+        population) treats 0 as "detector has no opinion yet" rather than
+        inventing a 250 default.
+
+        Read under the per-(entity_id, detector) lock the way get_model does,
+        so this cannot race a concurrent fit_one/checkpoint_dirty swap.
+        """
+        key = (entity_id, detector)
+        lock = self._entity_lock(key)
+        with lock:
+            det = self._detectors.get(key)
+            if det is None:
+                return (False, 0, 0)
+            return (det.is_warmed_up, det.n_seen, det.window)
+
     # -------------------------------------------------------------------------
     # Batch methods (Phase 2 — MDL-04)
     # -------------------------------------------------------------------------
@@ -125,6 +150,74 @@ class DetectorRegistry:
             if key not in self._entity_locks:
                 self._entity_locks[key] = threading.Lock()
             return self._entity_locks[key]
+
+    def _hst_keys(self) -> list[tuple[str, str]]:
+        """Snapshot list of registry keys whose detector is "hst".
+
+        Taken under self._lock so the checkpoint sweep never iterates a dict
+        another thread may resize.
+        """
+        with self._lock:
+            return [key for key in self._detectors if key[1] == "hst"]
+
+    def checkpoint_dirty(self, model_store: object) -> int:
+        """Write a checkpoint for every dirty "hst" entity (D-05/D-06).
+
+        Dirty = current n_seen differs from the value recorded at the last
+        successful checkpoint. For each dirty entity: snapshot (deepcopy)
+        under the entity lock, then pickle + atomic write OUTSIDE the lock —
+        never hold _entity_lock across file I/O (D-06). A per-entity yield
+        (time.sleep(0)) follows each write: the measured 56-96ms deepcopy
+        cost at defaults means N dirty entities in one tick would otherwise
+        show up as cumulative lock-holding / a periodic ScoreStream latency
+        spike (RESEARCH.md Pitfall 1) — this is baseline design, not a
+        conditional optimization.
+
+        A save_checkpoint failure for one entity is logged (WARN,
+        exc_info=True) and does not prevent the remaining dirty entities from
+        being written, mirroring load_all_into's fault-isolation shape; the
+        failing entity's _last_checkpointed is not advanced, so it is retried
+        on the next tick.
+
+        Args:
+            model_store: Object with a save_checkpoint(entity_slug, detector,
+                model, entity_id, n_seen) method.
+
+        Returns:
+            Count of entities actually written this call.
+        """
+        written = 0
+        for key in self._hst_keys():
+            entity_id, detector = key
+            lock = self._entity_lock(key)
+
+            with lock:
+                det = self._detectors.get(key)
+                if det is None:
+                    continue
+                current_n_seen = det.n_seen
+                if current_n_seen == self._last_checkpointed.get(key):
+                    continue  # D-05: not dirty — skip
+                snapshot = copy.deepcopy(det)  # under lock (D-06) — MEASURED 56-96ms
+
+            # Pickle + atomic write happen OUTSIDE the lock (D-06).
+            try:
+                model_store.save_checkpoint(
+                    entity_id.replace(".", "_"), detector, snapshot, entity_id, current_n_seen
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to write checkpoint for entity_id=%s detector=%s; skipping",
+                    entity_id, detector,
+                    exc_info=True,
+                )
+                continue
+
+            self._last_checkpointed[key] = current_n_seen
+            written += 1
+            time.sleep(0)  # Pitfall 1: yield between entities — deepcopy is 56-96ms at defaults
+
+        return written
 
     def fit_one(
         self,
