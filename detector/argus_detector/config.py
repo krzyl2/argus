@@ -12,6 +12,14 @@ Environment variables:
   ARGUS_TLS_CA       Path to CA cert for mTLS client auth (default: None)
   ARGUS_LOG_LEVEL    Logging level              (default: INFO)
   ARGUS_MODEL_ROOT   Root directory for model storage (default: /var/argus/models)
+  ARGUS_CHECKPOINT_INTERVAL_SEC  Streaming checkpoint sweep interval, seconds
+                                 (default: 300; 0 disables the writer, D-05)
+  ARGUS_CHECKPOINT_ENABLED       Enable the streaming checkpoint writer
+                                 (default: true, D-05)
+
+Note: ARGUS_BACKFILL_ENABLED/ARGUS_BACKFILL_LOOKBACK are orchestrator-side
+(.NET ConnectionSettings) knobs, not detector-side — see 15-RESEARCH.md
+Pitfall 3. They deliberately do NOT appear here.
 """
 
 import os
@@ -28,6 +36,12 @@ class DetectorConfig:
         self.tls_ca: str | None = os.environ.get("ARGUS_TLS_CA") or None
         self.log_level: str = os.environ.get("ARGUS_LOG_LEVEL", "INFO")
         self.model_root: str = os.environ.get("ARGUS_MODEL_ROOT", "/var/argus/models")
+        self.checkpoint_interval_sec: int = int(
+            os.environ.get("ARGUS_CHECKPOINT_INTERVAL_SEC", "300")
+        )
+        self.checkpoint_enabled: bool = (
+            os.environ.get("ARGUS_CHECKPOINT_ENABLED", "true").lower() == "true"
+        )
 
     @property
     def mtls_enabled(self) -> bool:

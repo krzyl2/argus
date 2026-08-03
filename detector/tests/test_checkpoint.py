@@ -368,4 +368,3 @@ class TestCreateServerAttachesWriter:
         writer = server._argus_checkpoint_writer
         assert writer is not None
         assert writer.is_running is False
-        t2.join(timeout=5)

@@ -122,6 +122,23 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "Windows has no catchable SIGTERM delivery from another process — "
+        "Popen.send_signal(SIGTERM)/os.kill(pid, SIGTERM) both call "
+        "TerminateProcess() directly on Windows, bypassing Python signal "
+        "handlers entirely (CPython's own implementation). The production "
+        "target is the Linux s6-overlay add-on container "
+        "(argus/rootfs/etc/services.d/detector/run uses `exec`), where a "
+        "real SIGTERM is delivered to the Python process and this test's "
+        "assumption holds. _install_sigterm_handler's underlying "
+        "signal.signal(SIGTERM, ...) call is exercised for real registration "
+        "by TestCreateServerAttachesWriter and CheckpointWriter's own unit "
+        "tests on every platform; only the OS-level delivery is unverifiable "
+        "here."
+    ),
+)
 class TestSigtermFlush:
     """PERSIST-03/SC-3: SIGTERM to the detector flushes every dirty entity to
     disk before the process exits — a clean add-on restart loses zero readings."""
