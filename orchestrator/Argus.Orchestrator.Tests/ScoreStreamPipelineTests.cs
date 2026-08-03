@@ -756,6 +756,68 @@ public class ScoreStreamPipelineTests
         Assert.Equal(1, detectorClient.WarmupCallCount);
     }
 
+    // ─── 15-04 Task 1: cross-plan restart/crash cases (SC-8) ──────────────────
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_CalledTwiceWithSkippedResponse_NoAdditionalPrimingAttempts()
+    {
+        // SC-8: an orchestrator restart against an already-checkpointed detector must not
+        // re-backfill. Simulated here by running PrimeFromHistoryAsync twice against the same
+        // fakes (two stream-open attempts) while the detector-side gate reports skipped both
+        // times — each run issues exactly one Warmup call (no internal retry/compensation
+        // loop), and the response's own counters (n_seen) never grow between runs because the
+        // detector never actually re-primed.
+        var cfg = MakeEntitiesConfig("sensor.skip_twice");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var historySource = new FakeInfluxHistorySource(MakeHistory(250));
+        var detectorClient = new FakeWarmupDetectorClient
+        {
+            WarmupResponse = new WarmupResponse { Ok = true, Skipped = true, NSeen = 300, WarmedUp = true },
+        };
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient, connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.skip_twice", entityState, CancellationToken.None);
+        Assert.Equal(1, detectorClient.WarmupCallCount);
+        var firstNSeen = detectorClient.LastWarmupRequest is not null ? detectorClient.WarmupResponse.NSeen : 0;
+
+        // Second run — e.g. a second stream-open attempt after an orchestrator restart.
+        await pipeline.PrimeFromHistoryAsync("sensor.skip_twice", entityState, CancellationToken.None);
+
+        Assert.Equal(2, detectorClient.WarmupCallCount); // +1 for this run — not a retry loop
+        Assert.True(detectorClient.WarmupResponse.Skipped, "second run must also report skipped");
+        Assert.Equal(firstNSeen, detectorClient.WarmupResponse.NSeen); // no growth — no re-backfill happened
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_SkippedResponse_FrozenDetectorStillPrimed()
+    {
+        // SC-8 variant: FrozenDetector priming happens in the same loop that builds the
+        // WarmupRequest, BEFORE the (possibly skipped) WarmupAsync response is known — so a
+        // detector-side skip must never suppress the orchestrator's own frozen-window priming.
+        var cfg = MakeEntitiesConfig("sensor.skip_frozen");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        Assert.False(entityState.FrozenDetector.IsFrozen);
+
+        // Constant-value history longer than the default frozen window (10).
+        var history = MakeHistory(20, value: 21.0);
+        var historySource = new FakeInfluxHistorySource(history);
+        var detectorClient = new FakeWarmupDetectorClient
+        {
+            WarmupResponse = new WarmupResponse { Ok = true, Skipped = true, NSeen = 300, WarmedUp = true },
+        };
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient, connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.skip_frozen", entityState, CancellationToken.None);
+
+        Assert.True(
+            entityState.FrozenDetector.IsFrozen,
+            "Frozen detector must be primed from history even when the detector-side Warmup RPC reports skipped");
+    }
+
     [Fact]
     public void ScoreStreamPipeline_ResolvesFromDI_WithNoInfluxConfigured()
     {
