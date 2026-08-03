@@ -1,9 +1,13 @@
 using Argus.Detector.V1;
+using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Detection;
 using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Mqtt;
 using Grpc.Core;
+using Grpc.Net.Client;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.Generic;
 using System.Threading;
@@ -23,6 +27,24 @@ public class ScoreStreamPipelineTests
 
     /// <summary>Wraps a static EntitiesConfig in a LiveEntitiesConfig for injection (CFG-04 test pattern).</summary>
     private static ILiveEntitiesConfig MakeLive(EntitiesConfig cfg) => new LiveEntitiesConfig(cfg);
+
+    /// <summary>
+    /// A DetectionGateway backed by a lazily-connecting channel to a nonexistent address.
+    /// GrpcChannel.ForAddress never actually dials until an RPC is issued, so this is safe
+    /// to construct in unit tests that only exercise PrimeFromHistoryAsync (which never
+    /// touches _gateway) via the production constructor.
+    /// </summary>
+    private static DetectionGateway MakeGateway()
+        => new(GrpcChannel.ForAddress("http://localhost:1"), NullLogger<DetectionGateway>.Instance);
+
+    private static IReadOnlyList<(DateTime Timestamp, double Value)> MakeHistory(int count, double value = 20.0)
+    {
+        var baseTime = DateTime.UtcNow.AddDays(-30);
+        var rows = new List<(DateTime, double)>();
+        for (int i = 0; i < count; i++)
+            rows.Add((baseTime.AddMinutes(i), value));
+        return rows;
+    }
 
     private static HaReading MakeReading(string entityId = "sensor.test", double value = 21.0, bool suppress = false)
         => new HaReading(entityId, value, DateTimeOffset.UtcNow, suppress);
@@ -483,6 +505,289 @@ public class ScoreStreamPipelineTests
         Assert.Equal("77", point.Params["window"]);
         Assert.Equal("9", point.Params["n_trees"]);
     }
+
+    // ─── Task 3: PrimeFromHistoryAsync (Phase 15-03, BACKFILL-01..04) ─────────
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_250Rows_SendsOneWarmupRequestWithMatchingFields()
+    {
+        var cfg = new EntitiesConfig();
+        cfg.Entities.Add(new EntityConfig
+        {
+            EntityId = "sensor.prime",
+            FriendlyName = "Prime",
+            Detectors = new List<DetectorConfig>
+            {
+                new DetectorConfig { Name = "hst", Params = new Dictionary<string, string> { ["window"] = "250" } }
+            }
+        });
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var history = MakeHistory(250);
+        var historySource = new FakeInfluxHistorySource(history);
+        var detectorClient = new FakeWarmupDetectorClient();
+        var settings = new ConnectionSettings { BackfillEnabled = true, BackfillLookback = "30d" };
+
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient, connectionSettings: settings);
+
+        await pipeline.PrimeFromHistoryAsync("sensor.prime", entityState, CancellationToken.None);
+
+        Assert.Equal(1, detectorClient.WarmupCallCount);
+        var request = detectorClient.LastWarmupRequest!;
+        Assert.Equal("sensor.prime", request.EntityId);
+        Assert.Equal("hst", request.Detector);
+        Assert.Equal(250, request.History.Count);
+        Assert.Equal("250", request.Params["window"]);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_HistoryPointTimestamps_AreAscending()
+    {
+        var cfg = MakeEntitiesConfig("sensor.asc");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var history = MakeHistory(10);
+        var detectorClient = new FakeWarmupDetectorClient();
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: new FakeInfluxHistorySource(history), detectorClient: detectorClient,
+            connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.asc", entityState, CancellationToken.None);
+
+        var timestamps = detectorClient.LastWarmupRequest!.History
+            .Select(p => p.Timestamp.ToDateTime())
+            .ToList();
+        var sorted = timestamps.OrderBy(t => t).ToList();
+        Assert.Equal(sorted, timestamps);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_LongerThanFrozenWindow_MarksFrozenDetectorFrozen()
+    {
+        var cfg = MakeEntitiesConfig("sensor.frozen_prime");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        Assert.False(entityState.FrozenDetector.IsFrozen);
+
+        // Constant-value history longer than the default frozen window (10) — proves the
+        // rows reached FrozenDetector.AddReading (D-14).
+        var history = MakeHistory(20, value: 21.0);
+        var detectorClient = new FakeWarmupDetectorClient();
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: new FakeInfluxHistorySource(history), detectorClient: detectorClient,
+            connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.frozen_prime", entityState, CancellationToken.None);
+
+        Assert.True(entityState.FrozenDetector.IsFrozen);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_NullHistorySource_NoExceptionAndNoWarmupCall()
+    {
+        var cfg = MakeEntitiesConfig("sensor.degrade1");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var detectorClient = new FakeWarmupDetectorClient();
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: null, detectorClient: detectorClient, connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.degrade1", entityState, CancellationToken.None);
+
+        Assert.Equal(0, detectorClient.WarmupCallCount);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_NullDetectorClient_NoExceptionAndNoQuery()
+    {
+        var cfg = MakeEntitiesConfig("sensor.degrade2");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var historySource = new FakeInfluxHistorySource(MakeHistory(250));
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: null, connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.degrade2", entityState, CancellationToken.None);
+
+        Assert.Equal(0, historySource.QueryHistoryCallCount);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_BackfillDisabled_NoExceptionAndNoQuery()
+    {
+        var cfg = MakeEntitiesConfig("sensor.degrade3");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var historySource = new FakeInfluxHistorySource(MakeHistory(250));
+        var detectorClient = new FakeWarmupDetectorClient();
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient,
+            connectionSettings: new ConnectionSettings { BackfillEnabled = false });
+
+        await pipeline.PrimeFromHistoryAsync("sensor.degrade3", entityState, CancellationToken.None);
+
+        Assert.Equal(0, historySource.QueryHistoryCallCount);
+        Assert.Equal(0, detectorClient.WarmupCallCount);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_ZeroRowQuery_NoExceptionAndNoWarmupCall()
+    {
+        var cfg = MakeEntitiesConfig("sensor.degrade4");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var historySource = new FakeInfluxHistorySource(Array.Empty<(DateTime, double)>());
+        var detectorClient = new FakeWarmupDetectorClient();
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient, connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.degrade4", entityState, CancellationToken.None);
+
+        Assert.Equal(0, detectorClient.WarmupCallCount);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_QueryThrows_NoExceptionEscapes()
+    {
+        var cfg = MakeEntitiesConfig("sensor.degrade5");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var historySource = new FakeInfluxHistorySource(
+            Array.Empty<(DateTime, double)>(), throwOnHistory: new InvalidOperationException("influx down"));
+        var detectorClient = new FakeWarmupDetectorClient();
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient, connectionSettings: new ConnectionSettings());
+
+        // Must not throw.
+        await pipeline.PrimeFromHistoryAsync("sensor.degrade5", entityState, CancellationToken.None);
+
+        Assert.Equal(0, detectorClient.WarmupCallCount);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_WarmupAsyncThrowsRpcException_NoExceptionEscapes()
+    {
+        var cfg = MakeEntitiesConfig("sensor.degrade6");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var historySource = new FakeInfluxHistorySource(MakeHistory(250));
+        var detectorClient = new FakeWarmupDetectorClient
+        {
+            ThrowOnWarmup = new RpcException(new Status(StatusCode.Unavailable, "detector down")),
+        };
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient, connectionSettings: new ConnectionSettings());
+
+        // Must not throw — the stream open path (caller) proceeds normally.
+        await pipeline.PrimeFromHistoryAsync("sensor.degrade6", entityState, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_SkippedResponse_ResultsInNoFurtherWarmupCalls()
+    {
+        var cfg = MakeEntitiesConfig("sensor.skipped");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var historySource = new FakeInfluxHistorySource(MakeHistory(250));
+        var detectorClient = new FakeWarmupDetectorClient
+        {
+            WarmupResponse = new WarmupResponse { Ok = true, Skipped = true, NSeen = 300, WarmedUp = true },
+        };
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient, connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.skipped", entityState, CancellationToken.None);
+        // Calling again (e.g. a second stream-open attempt) must not pile up calls beyond
+        // what each individual PrimeFromHistoryAsync invocation issues (one call each) —
+        // this test's focus is that a skipped response does not trigger a retry loop.
+        Assert.Equal(1, detectorClient.WarmupCallCount);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_PartialPrime_40Of250_AllRowsSent()
+    {
+        var cfg = new EntitiesConfig();
+        cfg.Entities.Add(new EntityConfig
+        {
+            EntityId = "sensor.partial",
+            FriendlyName = "Partial",
+            Detectors = new List<DetectorConfig>
+            {
+                new DetectorConfig { Name = "hst", Params = new Dictionary<string, string> { ["window"] = "250" } }
+            }
+        });
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var historySource = new FakeInfluxHistorySource(MakeHistory(40));
+        var detectorClient = new FakeWarmupDetectorClient();
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient, connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.partial", entityState, CancellationToken.None);
+
+        Assert.Equal(40, detectorClient.LastWarmupRequest!.History.Count);
+        Assert.Equal(1, detectorClient.WarmupCallCount);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistoryAsync_ThenMultipleReadings_ExactlyOneWarmupCall()
+    {
+        // BACKFILL: backfill runs once per stream open, not per reading. PrimeFromHistoryAsync
+        // is the only call site that invokes WarmupAsync; RunAsync's write loop never does.
+        var cfg = MakeEntitiesConfig("sensor.once");
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var historySource = new FakeInfluxHistorySource(MakeHistory(250));
+        var detectorClient = new FakeWarmupDetectorClient();
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient, connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.once", entityState, CancellationToken.None);
+
+        var callOrder = new List<string>();
+        var fakeCall = new OrderTrackingDuplexCall(callOrder);
+        using var cts = new CancellationTokenSource();
+        var readings = AsyncEnumerableHelper.FromItems(
+            Enumerable.Range(0, 5).Select(i => MakeReading("sensor.once", 20.0 + i)),
+            cancellationToken: cts.Token);
+        await pipeline.RunAsync(fakeCall, "sensor.once", readings, entityState, cts.Token);
+
+        Assert.Equal(1, detectorClient.WarmupCallCount);
+    }
+
+    [Fact]
+    public void ScoreStreamPipeline_ResolvesFromDI_WithNoInfluxConfigured()
+    {
+        // Proves the no-Influx streaming-only deployment (a real supported configuration,
+        // per 15-CONTEXT.md D-15) still resolves ScoreStreamPipeline end-to-end: neither
+        // IInfluxDataSource nor IBatchDetectorClient is registered, mirroring Program.cs's
+        // Influx-conditional DI block never running.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IStatePublisher>(new FakeStatePublisher());
+        services.AddSingleton<ILiveEntitiesConfig>(MakeLive(MakeEntitiesConfig()));
+        services.AddSingleton(GrpcChannel.ForAddress("http://localhost:1"));
+        services.AddSingleton<DetectionGateway>();
+        services.AddSingleton(new ConnectionSettings());
+        // Deliberately NOT registering IInfluxDataSource / IBatchDetectorClient.
+
+        services.AddSingleton<ScoreStreamPipeline>(sp => new ScoreStreamPipeline(
+            sp.GetRequiredService<IStatePublisher>(),
+            sp.GetRequiredService<ILogger<ScoreStreamPipeline>>(),
+            sp.GetRequiredService<ILiveEntitiesConfig>(),
+            sp.GetRequiredService<DetectionGateway>(),
+            sp.GetService<IEntityStatusCache>(),
+            sp.GetService<IRecentAnomaliesCache>(),
+            sp.GetService<IInfluxDataSource>(),
+            sp.GetService<IBatchDetectorClient>(),
+            sp.GetRequiredService<ConnectionSettings>()));
+
+        using var provider = services.BuildServiceProvider();
+        var pipeline = provider.GetRequiredService<ScoreStreamPipeline>();
+
+        Assert.NotNull(pipeline);
+    }
 }
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
@@ -597,6 +902,71 @@ internal sealed class OrderTrackingDuplexCall : IScoreStreamCall
         await foreach (var v in _verdicts.Reader.ReadAllAsync(ct))
             yield return v;
         _order.Add("ReadTaskDone");
+    }
+}
+
+/// <summary>
+/// Fake history source for PrimeFromHistoryAsync tests (Phase 15-03). Mirrors
+/// BatchSchedulerWorkerTests.FakeInfluxDbReader's constructor-injected-rows shape.
+/// </summary>
+internal sealed class FakeInfluxHistorySource : IInfluxDataSource
+{
+    private readonly IReadOnlyList<(DateTime Timestamp, double Value)> _rows;
+    private readonly Exception? _throwOnHistory;
+
+    public FakeInfluxHistorySource(
+        IReadOnlyList<(DateTime Timestamp, double Value)> rows, Exception? throwOnHistory = null)
+    {
+        _rows = rows;
+        _throwOnHistory = throwOnHistory;
+    }
+
+    public int QueryHistoryCallCount { get; private set; }
+
+    public Task<IReadOnlyList<(DateTime Timestamp, double Value)>> QueryAsync(
+        string entityId, CancellationToken ct)
+        => Task.FromResult(_rows);
+
+    public Task<IReadOnlyList<(DateTime Timestamp, double Value)>> QueryHistoryAsync(
+        string entityId, string lookback, int limit, CancellationToken ct)
+    {
+        QueryHistoryCallCount++;
+        if (_throwOnHistory is not null)
+            throw _throwOnHistory;
+        return Task.FromResult(_rows);
+    }
+}
+
+/// <summary>
+/// Fake detector client for PrimeFromHistoryAsync tests (Phase 15-03). Mirrors
+/// BatchSchedulerWorkerTests.FakeBatchDetectorClient's call-counting shape.
+/// </summary>
+internal sealed class FakeWarmupDetectorClient : IBatchDetectorClient
+{
+    public int WarmupCallCount { get; private set; }
+    public WarmupRequest? LastWarmupRequest { get; private set; }
+    public WarmupResponse WarmupResponse { get; init; } = new() { Ok = true };
+    public Exception? ThrowOnWarmup { get; init; }
+
+    public Task<ScoreBatchResponse> ScoreBatchAsync(ScoreBatchRequest request, CancellationToken ct)
+        => Task.FromResult(new ScoreBatchResponse { Ok = true });
+
+    public Task<FitResponse> FitAsync(FitRequest request, CancellationToken ct)
+        => Task.FromResult(new FitResponse { Ok = true });
+
+    public Task<GroupScoreResponse> ScoreGroupBatchAsync(GroupScoreRequest request, CancellationToken ct)
+        => Task.FromResult(new GroupScoreResponse { Ok = true });
+
+    public Task<FitGroupResponse> FitGroupAsync(FitGroupRequest request, CancellationToken ct)
+        => Task.FromResult(new FitGroupResponse { Ok = true });
+
+    public Task<WarmupResponse> WarmupAsync(WarmupRequest request, CancellationToken ct)
+    {
+        WarmupCallCount++;
+        LastWarmupRequest = request;
+        if (ThrowOnWarmup is not null)
+            throw ThrowOnWarmup;
+        return Task.FromResult(WarmupResponse);
     }
 }
 
