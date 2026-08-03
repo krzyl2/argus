@@ -267,7 +267,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 12. Sensors Screen Rebuild | v4.1 | 3/3 | Complete    | 2026-07-17 |
 | 13. Groups Screen Rebuild | v4.1 | 3/3 | In Progress|  |
 | 14. Unified Detectors Screen + Add-Detector Wizard | v4.1 | 5/5 | Complete    | 2026-07-22 |
-| 15. Streaming State Persistence + Warm-up Backfill | v4.1 | 1/4 | In Progress|  |
+| 15. Streaming State Persistence + Warm-up Backfill | v4.1 | 2/4 | In Progress|  |
 
 ### Phase 14: Unified Detectors Screen + Add-Detector Wizard
 
@@ -363,7 +363,7 @@ backfill pass for ~15 lines.
   8. Orchestrator restart with an existing checkpoint → **no** re-backfill (`n_seen` does not jump)
   9. InfluxDB unavailable or unconfigured → startup succeeds, normal warm-up, WARN log only
 
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 
@@ -374,7 +374,7 @@ Plans:
       `river_version` sidecar validation, `load_all_into` extended to `*/*/checkpoint.pkl` with an
       explicit checkpoint-wins ordering guarantee
 
-- [ ] 15-02-PLAN.md — Proto + orchestrator warm-up-from-verdict (wave 2, depends 15-01; WARM-01,
+- [x] 15-02-PLAN.md — Proto + orchestrator warm-up-from-verdict (wave 2, depends 15-01; WARM-01,
       WARM-02): `Point.params = 4`, `Verdict.warmed_up = 9`/`n_seen = 10`/`window = 11`, stub
       regeneration verified on BOTH sides, `servicer.ScoreStream` forwards params (D3 fix),
       `EntityRuntimeState.RecordReading` deleted and warm-up read from the verdict,
