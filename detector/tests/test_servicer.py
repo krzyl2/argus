@@ -57,6 +57,14 @@ def _make_window(values: list[float]) -> list[argus_pb2.Point]:
     ]
 
 
+def _make_point(entity_id: str, value: float, params: dict[str, str] | None = None) -> argus_pb2.Point:
+    return argus_pb2.Point(
+        entity_id=entity_id,
+        value=wrappers_pb2.DoubleValue(value=value),
+        params=params or {},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -174,6 +182,117 @@ class TestScoreBatchGuards:
         import grpc
         assert ctx.abort_code == grpc.StatusCode.INVALID_ARGUMENT
         assert result is None, "After abort, return value must be None (gRPC ignores it)"
+
+
+# ---------------------------------------------------------------------------
+# ScoreStream tests (Phase 15-02 — WARM-01/WARM-02: params forwarding + verdict warm-up fields)
+# ---------------------------------------------------------------------------
+
+class TestScoreStreamParams:
+    """WARM-02/D3: Point.params must reach EntityDetector.from_params via
+    registry.score_one, and Verdict.window must report what the detector is
+    actually using. Window 3 (not 250) keeps these tests fast."""
+
+    def test_params_window_reaches_verdict_window(self, servicer):
+        svc, _, _ = servicer
+        ctx = _FakeContext()
+        points = iter([_make_point("sensor.w3", 20.0, {"window": "3"})])
+        verdicts = list(svc.ScoreStream(points, ctx))
+        assert len(verdicts) == 1
+        assert verdicts[0].window == 3
+
+    def test_three_points_with_window_3_warms_up_at_n_seen_3(self, servicer):
+        svc, _, _ = servicer
+        ctx = _FakeContext()
+        points = iter(
+            [_make_point("sensor.w3b", 20.0 + i, {"window": "3"}) for i in range(3)]
+        )
+        verdicts = list(svc.ScoreStream(points, ctx))
+        assert len(verdicts) == 3
+        assert verdicts[2].n_seen == 3
+        assert verdicts[2].warmed_up is True
+        # Not warmed up before the third point
+        assert verdicts[0].warmed_up is False
+        assert verdicts[1].warmed_up is False
+
+    def test_empty_params_defaults_window_to_250(self, servicer):
+        svc, _, _ = servicer
+        ctx = _FakeContext()
+        points = iter([_make_point("sensor.default", 20.0)])
+        verdicts = list(svc.ScoreStream(points, ctx))
+        assert verdicts[0].window == 250
+
+    def test_params_honored_at_creation_time_only(self, servicer):
+        """A second point with a different window for the same entity must NOT
+        change Verdict.window — params are only applied when the detector is
+        first created (matches existing registry semantics)."""
+        svc, _, _ = servicer
+        ctx = _FakeContext()
+        points = iter(
+            [
+                _make_point("sensor.fixed", 20.0, {"window": "3"}),
+                _make_point("sensor.fixed", 21.0, {"window": "50"}),
+            ]
+        )
+        verdicts = list(svc.ScoreStream(points, ctx))
+        assert verdicts[0].window == 3
+        assert verdicts[1].window == 3  # unchanged despite the second point's params
+
+
+class TestScoreStreamCheckpointRestore:
+    """WARM-01: an entity restored from a 15-01 checkpoint must report its
+    restored n_seen on the very first live Verdict — no reset to 1."""
+
+    def test_restored_checkpoint_n_seen_continues_from_seed(self, servicer):
+        svc, registry, _ = servicer
+        from argus_detector.hst_detector import EntityDetector
+
+        restored = EntityDetector.from_params({"window": "250"})
+        for i in range(100):
+            restored.score_one(20.0 + i)
+        assert restored.n_seen == 100
+        registry.register_checkpoint("sensor.restored", "hst", restored, n_seen=100)
+
+        ctx = _FakeContext()
+        points = iter([_make_point("sensor.restored", 20.0)])
+        verdicts = list(svc.ScoreStream(points, ctx))
+        assert len(verdicts) == 1
+        assert verdicts[0].n_seen == 101
+
+
+class TestScoreStreamExistingBehaviorUnchanged:
+    """Confirms Task 2 changed nothing about ScoreStream's pre-existing
+    control flow (empty entity_id skip, inactive context, scoring exception)."""
+
+    def test_empty_entity_id_is_skipped_not_yielded(self, servicer):
+        svc, _, _ = servicer
+        ctx = _FakeContext()
+        points = iter([argus_pb2.Point(entity_id="", value=wrappers_pb2.DoubleValue(value=1.0))])
+        verdicts = list(svc.ScoreStream(points, ctx))
+        assert verdicts == []
+
+    def test_inactive_context_stops_stream(self, servicer):
+        svc, _, _ = servicer
+        ctx = _FakeContext()
+        ctx.aborted = True  # is_active() returns False
+        points = iter([_make_point("sensor.inactive", 1.0)])
+        verdicts = list(svc.ScoreStream(points, ctx))
+        assert verdicts == []
+
+    def test_scoring_exception_aborts_internal(self, servicer, monkeypatch):
+        svc, registry, _ = servicer
+
+        def _raise(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(registry, "score_one", _raise)
+        ctx = _FakeContext()
+        points = iter([_make_point("sensor.boom", 1.0)])
+        verdicts = list(svc.ScoreStream(points, ctx))
+        assert verdicts == []
+        assert ctx.aborted
+        import grpc
+        assert ctx.abort_code == grpc.StatusCode.INTERNAL
 
 
 # ---------------------------------------------------------------------------

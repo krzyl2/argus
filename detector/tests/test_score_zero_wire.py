@@ -63,3 +63,23 @@ class TestScoreZeroWire:
         parsed.ParseFromString(data)
         assert parsed.HasField("score")
         assert abs(parsed.score.value - 0.75) < 1e-9
+
+    def test_warmup_zero_n_seen_survives_roundtrip(self):
+        """Phase 15-02/WARM-01: n_seen=0/warmed_up=False (scalar proto3 fields,
+        not wrapper types) must round-trip identically to a Verdict that never
+        set them — proto3 scalar defaults are indistinguishable from unset,
+        which is fine here since n_seen=0/warmed_up=False IS the correct
+        pre-first-verdict-ever meaning (D-01: no fabricated non-zero guess)."""
+        verdict = argus_pb2.Verdict(
+            entity_id="sensor.cold",
+            score=wrappers_pb2.DoubleValue(value=0.0),
+            warmed_up=False,
+            n_seen=0,
+            window=250,
+        )
+        data = verdict.SerializeToString()
+        parsed = argus_pb2.Verdict()
+        parsed.ParseFromString(data)
+        assert parsed.warmed_up is False
+        assert parsed.n_seen == 0
+        assert parsed.window == 250
