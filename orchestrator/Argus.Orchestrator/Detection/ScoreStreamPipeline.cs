@@ -1,4 +1,5 @@
 using Argus.Detector.V1;
+using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Logging;
@@ -38,9 +39,17 @@ public sealed class ScoreStreamPipeline
     private readonly DetectionGateway? _gateway;
     private readonly IEntityStatusCache? _statusCache;
     private readonly IRecentAnomaliesCache? _recentAnomalies;
+    private readonly IInfluxDataSource? _historySource;
+    private readonly IBatchDetectorClient? _detectorClient;
+    private readonly ConnectionSettings? _connectionSettings;
 
     /// <summary>
     /// Production constructor — includes DetectionGateway for opening live streams.
+    /// The three trailing backfill dependencies (Phase 15-03/D-15) are optional: when
+    /// InfluxDB is unconfigured, Program.cs's DI registration leaves <paramref name="historySource"/>
+    /// and <paramref name="detectorClient"/> null, which disables backfill priming with no
+    /// separate feature check — the no-Influx streaming-only deployment keeps working exactly
+    /// as before this phase.
     /// </summary>
     public ScoreStreamPipeline(
         IStatePublisher publisher,
@@ -48,7 +57,10 @@ public sealed class ScoreStreamPipeline
         ILiveEntitiesConfig liveConfig,
         DetectionGateway gateway,
         IEntityStatusCache? statusCache = null,
-        IRecentAnomaliesCache? recentAnomalies = null)
+        IRecentAnomaliesCache? recentAnomalies = null,
+        IInfluxDataSource? historySource = null,
+        IBatchDetectorClient? detectorClient = null,
+        ConnectionSettings? connectionSettings = null)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -56,6 +68,9 @@ public sealed class ScoreStreamPipeline
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
         _statusCache = statusCache;
         _recentAnomalies = recentAnomalies;
+        _historySource = historySource;
+        _detectorClient = detectorClient;
+        _connectionSettings = connectionSettings;
     }
 
     /// <summary>
@@ -281,6 +296,11 @@ public sealed class ScoreStreamPipeline
     {
         try
         {
+            // BACKFILL-01..04/D-15: one bounded, ascending, idempotent prime attempt before
+            // every stream open. Bails out early (no-op) when backfill is unavailable/disabled,
+            // and never lets a failure here prevent the stream from opening below.
+            await PrimeFromHistoryAsync(entityId, entityState, ct);
+
             var call = new LiveScoreStreamCall(_gateway!.DetectorClient.ScoreStream(cancellationToken: ct));
             await RunAsync(call, entityId, readings, entityState, ct);
         }
@@ -296,6 +316,92 @@ public sealed class ScoreStreamPipeline
             // Normal shutdown — do not log as error
         }
     }
+
+    /// <summary>
+    /// Primes a cold detector and the frozen-sensor window from InfluxDB history before the
+    /// entity's ScoreStream opens (BACKFILL-01..04). Internal (rather than private) so
+    /// ScoreStreamPipelineTests can exercise it directly via InternalsVisibleTo — the ten
+    /// existing RunAsync(IScoreStreamCall,...) test call sites are the tested surface this
+    /// plan must not disturb, so backfill priming gets its own directly-testable seam instead
+    /// of being folded into RunAsync's control flow.
+    ///
+    /// Wrapped in a single try/catch around everything (D-15): a null history source, a null
+    /// detector client, BackfillEnabled=false, a query returning zero rows, a query throwing,
+    /// or WarmupAsync throwing RpcException all degrade to a silent no-op — none of them can
+    /// prevent the caller (RunEntityStreamAsync) from opening the stream normally afterwards.
+    /// </summary>
+    internal async Task PrimeFromHistoryAsync(
+        string entityId, EntityRuntimeState entityState, CancellationToken ct)
+    {
+        if (_historySource is null || _detectorClient is null || _connectionSettings is null)
+            return;
+        if (!_connectionSettings.BackfillEnabled)
+            return;
+
+        try
+        {
+            // D-13: limit is the entity's configured window — exactly the number of points
+            // needed to reach warmed_up.
+            var history = await _historySource.QueryHistoryAsync(
+                entityId, _connectionSettings.BackfillLookback, entityState.HstParams.Window, ct);
+
+            if (history.Count == 0)
+                return; // InfluxDbReader already logged the WARN for an empty/unconfigured result
+
+            var request = new WarmupRequest { EntityId = entityId, Detector = "hst" };
+            foreach (var kv in BuildHstParamsMap(entityState.HstParams))
+                request.Params[kv.Key] = kv.Value;
+
+            // D-14: history rows are already in hand — feed the frozen detector in the same
+            // loop that builds the WarmupRequest's points, in the ascending order the query
+            // already returns them (BACKFILL-01/D-13).
+            foreach (var row in history)
+            {
+                request.History.Add(new Point
+                {
+                    EntityId = entityId,
+                    Value = row.Value,
+                    Timestamp = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(
+                        DateTime.SpecifyKind(row.Timestamp, DateTimeKind.Utc)),
+                });
+                entityState.FrozenDetector.AddReading(row.Value);
+            }
+
+            var response = await _detectorClient.WarmupAsync(request, ct);
+
+            if (response.Skipped)
+            {
+                _logger.LogInformation(LogEvents.WarmupSkipped,
+                    "Entity {EntityId} already primed (n_seen={NSeen}) — skipping backfill",
+                    entityId, response.NSeen);
+            }
+            else
+            {
+                _logger.LogInformation(LogEvents.WarmupPrimed,
+                    "Primed {EntityId} with {PointCount} history points -> n_seen={NSeen} warmedUp={WarmedUp}",
+                    entityId, request.History.Count, response.NSeen, response.WarmedUp);
+            }
+        }
+        catch (Exception ex)
+        {
+            // D-15: backfill can never fail startup — log and let the caller open the stream
+            // exactly as if InfluxDB had never been configured.
+            _logger.LogWarning(LogEvents.WarmupFailed, ex,
+                "Backfill priming failed for {EntityId} — proceeding with normal live warm-up", entityId);
+        }
+    }
+
+    /// <summary>
+    /// Shared params-map builder (Window/NTrees) so ToPoint's live-scoring params and
+    /// PrimeFromHistoryAsync's backfill params can never drift apart — a mismatch would
+    /// silently create two differently-configured detectors for the same entity.
+    /// </summary>
+    private static Dictionary<string, string> BuildHstParamsMap(HstParams hstParams)
+        => new()
+        {
+            ["window"] = hstParams.Window.ToString(),
+            ["n_trees"] = hstParams.NTrees.ToString(),
+        };
 
     private Dictionary<string, EntityRuntimeState> BuildEntityStates()
     {
@@ -315,13 +421,17 @@ public sealed class ScoreStreamPipeline
     }
 
     private static Point ToPoint(Ha.HaReading reading, HstParams hstParams)
-        => new Point
+    {
+        var point = new Point
         {
             EntityId = reading.EntityId,
             Value = reading.Value,
             Timestamp = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTimeOffset(reading.LastChanged),
-            Params = { ["window"] = hstParams.Window.ToString(), ["n_trees"] = hstParams.NTrees.ToString() },
         };
+        foreach (var kv in BuildHstParamsMap(hstParams))
+            point.Params[kv.Key] = kv.Value;
+        return point;
+    }
 }
 
 /// <summary>

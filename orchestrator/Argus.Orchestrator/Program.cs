@@ -145,8 +145,24 @@ builder.Services.AddHostedService<HealthPublisherWorker>();
 // ILiveEntitiesConfig and ConnectionSettings are already registered singletons above.
 builder.Services.AddHostedService<ConfigFileWatcherService>();
 
-// Register ScoreStreamPipeline (Plan 08): bidi ScoreStream loop with hysteresis/frozen/MQTT
-builder.Services.AddSingleton<ScoreStreamPipeline>();
+// Register ScoreStreamPipeline (Plan 08; Phase 15-03 backfill deps): bidi ScoreStream loop
+// with hysteresis/frozen/MQTT. Explicit factory (not a bare AddSingleton<T>()) because
+// IInfluxDataSource/IBatchDetectorClient are registered only inside the Influx-configured
+// branch below, THIS registration runs before that branch, and the class has two
+// constructors — an explicit factory removes all constructor-selection ambiguity. GetService
+// (not GetRequiredService) for the two optional deps is what gives D-15's degrade path for
+// free: no InfluxDB configured means both resolve to null means backfill is off, with no
+// separate feature check.
+builder.Services.AddSingleton<ScoreStreamPipeline>(sp => new ScoreStreamPipeline(
+    sp.GetRequiredService<IStatePublisher>(),
+    sp.GetRequiredService<ILogger<ScoreStreamPipeline>>(),
+    sp.GetRequiredService<ILiveEntitiesConfig>(),
+    sp.GetRequiredService<DetectionGateway>(),
+    sp.GetService<IEntityStatusCache>(),
+    sp.GetService<IRecentAnomaliesCache>(),
+    sp.GetService<IInfluxDataSource>(),
+    sp.GetService<IBatchDetectorClient>(),
+    sp.GetRequiredService<ConnectionSettings>()));
 
 // Register ConfigWriter (Plan 02): atomic /data/entities.yaml write seam (temp-then-rename + SemaphoreSlim)
 builder.Services.AddSingleton<Argus.Orchestrator.Config.ConfigWriter>();
