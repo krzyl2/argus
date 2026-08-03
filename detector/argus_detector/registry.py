@@ -56,6 +56,11 @@ class DetectorRegistry:
         self._detectors: dict[tuple[str, str], object] = {}
         # MDL-04: per-(entity_id, detector) locks for fit_one / score_batch concurrency
         self._entity_locks: dict[tuple[str, str], threading.Lock] = {}
+        # D-05: last n_seen written to disk per key — lives on the registry,
+        # never on the pickled EntityDetector (RESEARCH.md anti-pattern note:
+        # storing it on the model would restore a stale baseline on every
+        # restart and corrupt the first dirty check after boot).
+        self._last_checkpointed: dict[tuple[str, str], int] = {}
 
     def _get_or_create(
         self,
@@ -249,6 +254,27 @@ class DetectorRegistry:
         key = (entity_id, detector)
         with self._lock:
             self._detectors[key] = model_obj
+
+    def register_checkpoint(
+        self, entity_id: str, detector: str, model_obj: object, n_seen: int
+    ) -> None:
+        """Directly set a restored checkpoint model in the registry (D-09).
+
+        Like register(), but additionally seeds _last_checkpointed with the
+        checkpoint's saved n_seen, so the checkpoint writer's first dirty
+        check after a restart does not immediately consider this
+        just-restored entity dirty and rewrite it unnecessarily.
+
+        Args:
+            entity_id: HA entity ID (dots intact).
+            detector: Detector name (e.g. "hst").
+            model_obj: Restored, already-fitted detector instance.
+            n_seen: The n_seen recorded in the checkpoint's sidecar at save time.
+        """
+        key = (entity_id, detector)
+        with self._lock:
+            self._detectors[key] = model_obj
+            self._last_checkpointed[key] = n_seen
 
     def swap_model(self, entity_id: str, detector: str, model_obj: object) -> None:
         """Atomically swap in an already-fitted model, under the per-entity lock (WR-02).

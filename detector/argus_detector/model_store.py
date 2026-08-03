@@ -231,6 +231,90 @@ class ModelStore:
             # /var/argus/models is writable only by the detector process. See threat model.
             return pickle.load(f)
 
+    def save_checkpoint(
+        self,
+        entity_slug: str,
+        detector: str,
+        model: object,
+        entity_id: str,
+        n_seen: int,
+    ) -> None:
+        """Persist a streaming detector's checkpoint (pickle) with a JSON sidecar.
+
+        Lives OUTSIDE the versioned v{N} layout (D-02) — a single overwritten
+        checkpoint.pkl/checkpoint.json pair per (slug, detector): no
+        next_version, no version.json, no _prune. Both files are written via
+        .tmp + Path.replace() (D-07), mirroring _update_latest; the two
+        renames are independent — a mismatched pair is caught by
+        river_version validation on load, so cross-file atomicity is not
+        needed (D-03).
+
+        Args:
+            entity_slug: entity_id with '.' replaced by '_'.
+            detector: Detector name (e.g. "hst").
+            model: The (already deep-copied) detector instance to pickle.
+            entity_id: Original entity_id (dots intact) — written into sidecar.
+            n_seen: Current reading count — written into sidecar.
+        """
+        d = self._checkpoint_dir(entity_slug, detector)
+        d.mkdir(parents=True, exist_ok=True)
+
+        tmp_pkl = d / "checkpoint.pkl.tmp"
+        with open(tmp_pkl, "wb") as f:
+            pickle.dump(model, f)
+        tmp_pkl.replace(d / "checkpoint.pkl")  # atomic on POSIX; MoveFileExW on Windows
+
+        sidecar = {
+            "entity_id": entity_id,
+            "detector": detector,
+            "n_seen": n_seen,
+            "river_version": river.__version__,
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }
+        tmp_json = d / "checkpoint.json.tmp"
+        tmp_json.write_text(json.dumps(sidecar))
+        tmp_json.replace(d / "checkpoint.json")
+
+    def load_checkpoint(
+        self,
+        entity_slug: str,
+        detector: str,
+    ) -> tuple[object, dict] | None:
+        """Load a streaming detector's checkpoint (pickle + sidecar) from disk.
+
+        Returns None (not an exception) when no checkpoint exists for
+        (entity_slug, detector), or when the sidecar's river_version does not
+        match the installed river version (D-03) — a version mismatch
+        discards this one checkpoint with a WARN; other entities/checkpoints
+        are unaffected.
+
+        Args:
+            entity_slug: Directory slug.
+            detector: Detector name.
+
+        Returns:
+            (model, sidecar) tuple, or None.
+        """
+        d = self._checkpoint_dir(entity_slug, detector)
+        pkl_path = d / "checkpoint.pkl"
+        json_path = d / "checkpoint.json"
+        if not pkl_path.exists() or not json_path.exists():
+            return None
+
+        sidecar = json.loads(json_path.read_text())
+        if sidecar.get("river_version") != river.__version__:
+            logger.warning(
+                "Checkpoint river_version mismatch for slug=%s detector=%s "
+                "(checkpoint=%s, installed=%s); discarding checkpoint",
+                entity_slug, detector, sidecar.get("river_version"), river.__version__,
+            )
+            return None
+
+        with open(pkl_path, "rb") as f:
+            # T-02-03-01 (accepted risk): see load_river for rationale.
+            model = pickle.load(f)
+        return model, sidecar
+
     def next_version(self, entity_slug: str, detector: str) -> int:
         """Return the next version number for (entity_slug, detector).
 
@@ -294,12 +378,48 @@ class ModelStore:
                     exc_info=True,
                 )
 
+        # D-09 / RESEARCH.md Pitfall 2: this checkpoint glob pass MUST run
+        # strictly AFTER the "latest" glob pass above. registry.register()/
+        # register_checkpoint() unconditionally overwrite the dict entry, so
+        # running this pass second is the ordering mechanism that makes a
+        # checkpoint (D-01's source of truth for streaming state) always win
+        # over any stale versioned artifact for the same (slug, detector) key
+        # — do not leave this implicit in glob call order elsewhere.
+        for checkpoint_file in self._root.glob("*/*/checkpoint.pkl"):
+            slug = checkpoint_file.parent.parent.name
+            detector = checkpoint_file.parent.name
+            try:
+                result = self.load_checkpoint(slug, detector)
+                if result is None:
+                    continue
+                model, sidecar = result
+                entity_id = sidecar.get("entity_id", slug)
+                n_seen = sidecar.get("n_seen", 0)
+                registry.register_checkpoint(entity_id, detector, model, n_seen)
+                logger.info(
+                    "Loaded checkpoint: entity_id=%s detector=%s n_seen=%d",
+                    entity_id, detector, n_seen,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to load checkpoint for slug=%s detector=%s; skipping",
+                    slug, detector,
+                    exc_info=True,
+                )
+
     # -------------------------------------------------------------------------
     # Private helpers
     # -------------------------------------------------------------------------
 
     def _model_dir(self, slug: str, detector: str, version: int) -> pathlib.Path:
         return self._root / slug / detector / f"v{version}"
+
+    def _checkpoint_dir(self, slug: str, detector: str) -> pathlib.Path:
+        """Directory for a streaming checkpoint — deliberately OUTSIDE the
+        versioned v{N} layout (D-02): no next_version, no version.json,
+        no _prune ever runs on this path.
+        """
+        return self._root / slug / detector
 
     def _write_entity_id(self, d: pathlib.Path, entity_id: str) -> None:
         """Write entity_id sidecar for unambiguous key reconstruction on load (CR-02)."""

@@ -91,3 +91,16 @@ class EntityDetector:
     def is_warmed_up(self) -> bool:
         """True when at least window_size readings have been processed."""
         return self._n_seen >= self._model.window_size
+
+    @property
+    def n_seen(self) -> int:
+        """Number of readings processed so far (PERSIST-01/Verdict.n_seen)."""
+        return self._n_seen
+
+    @property
+    def window(self) -> int:
+        """The window_size this instance is actually configured with
+
+        (RESEARCH.md Pitfall 4 — the caller sees the real value, not a guess).
+        """
+        return self._model.window_size
