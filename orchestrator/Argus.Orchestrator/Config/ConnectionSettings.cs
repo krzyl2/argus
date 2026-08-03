@@ -24,6 +24,9 @@ namespace Argus.Orchestrator.Config;
 ///   ARGUS_INFLUX_VALUE_FIELD  -> InfluxValueField (default: value)
 ///   ARGUS_BATCH_INTERVAL_MIN  -> BatchIntervalMinutes (default: 10)
 ///   ARGUS_NIGHTLY_FIT_HOUR    -> NightlyFitHour (default: 2)
+///   ARGUS_BACKFILL_ENABLED    -> BackfillEnabled (default: true) — D-16: orchestrator-only,
+///                                deliberately absent from argus/config.yaml and 10-config-gen.sh
+///   ARGUS_BACKFILL_LOOKBACK   -> BackfillLookback (default: "30d") — same as above
 /// </summary>
 public class ConnectionSettings
 {
@@ -61,4 +64,10 @@ public class ConnectionSettings
     // Batch scheduler (BTCH-03)
     public int BatchIntervalMinutes { get; set; } = 10;
     public int NightlyFitHour { get; set; } = 2;
+
+    // InfluxDB history backfill (D-13/D-15/D-16, BACKFILL-01..04). Orchestrator-side only —
+    // the Python detector has no InfluxDB client (RESEARCH.md Pitfall 3). Defaults are
+    // correct for the operator's deployment and are NOT surfaced in the add-on options UI.
+    public bool BackfillEnabled { get; set; } = true;
+    public string BackfillLookback { get; set; } = "30d";
 }

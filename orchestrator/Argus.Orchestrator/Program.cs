@@ -49,6 +49,10 @@ var connectionSettings = new ConnectionSettings
     InfluxValueField = builder.Configuration["ARGUS_INFLUX_VALUE_FIELD"] ?? "value",
     BatchIntervalMinutes = int.TryParse(builder.Configuration["ARGUS_BATCH_INTERVAL_MIN"], out var bim) ? bim : 10,
     NightlyFitHour = int.TryParse(builder.Configuration["ARGUS_NIGHTLY_FIT_HOUR"], out var nfh) ? nfh : 2,
+    // D-15: a bad/absent backfill value must degrade, not fail startup — no throw-on-invalid
+    // guard like BatchIntervalMinutes/NightlyFitHour get below.
+    BackfillEnabled = !bool.TryParse(builder.Configuration["ARGUS_BACKFILL_ENABLED"], out var backfillEnabled) || backfillEnabled,
+    BackfillLookback = builder.Configuration["ARGUS_BACKFILL_LOOKBACK"] ?? "30d",
 };
 // WR-04: validate BatchIntervalMinutes — zero or negative causes a tight spin loop or crash
 if (connectionSettings.BatchIntervalMinutes <= 0)

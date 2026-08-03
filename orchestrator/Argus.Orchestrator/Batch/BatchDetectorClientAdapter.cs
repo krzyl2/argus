@@ -40,4 +40,10 @@ public sealed class BatchDetectorClientAdapter : IBatchDetectorClient
         var call = _gateway.DetectorClient.FitGroupAsync(request, cancellationToken: ct);
         return await call.ResponseAsync;
     }
+
+    public async Task<WarmupResponse> WarmupAsync(WarmupRequest request, CancellationToken ct)
+    {
+        var call = _gateway.DetectorClient.WarmupAsync(request, cancellationToken: ct);
+        return await call.ResponseAsync;
+    }
 }

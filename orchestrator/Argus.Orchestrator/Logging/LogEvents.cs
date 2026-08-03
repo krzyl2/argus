@@ -78,6 +78,11 @@ public static class LogEvents
     public static readonly EventId GroupNoData              = new(5015, nameof(GroupNoData));
     public static readonly EventId GroupModeDetectorMismatch = new(5016, nameof(GroupModeDetectorMismatch));
 
+    // InfluxDB history backfill (Phase 15-03, BACKFILL-01..04)
+    public static readonly EventId WarmupPrimed             = new(5017, nameof(WarmupPrimed));
+    public static readonly EventId WarmupSkipped            = new(5018, nameof(WarmupSkipped));
+    public static readonly EventId WarmupFailed             = new(5019, nameof(WarmupFailed));
+
     // Phase 8 UI — Group config UI + algorithm chooser (7009)
     public static readonly EventId GroupUiValidationBlocked = new(7009, nameof(GroupUiValidationBlocked));
 }

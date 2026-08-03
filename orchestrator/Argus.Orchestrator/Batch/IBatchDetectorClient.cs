@@ -15,4 +15,7 @@ public interface IBatchDetectorClient
     // Phase 6 (GRP-02/GRP-04): group scoring/fit RPCs
     Task<GroupScoreResponse> ScoreGroupBatchAsync(GroupScoreRequest request, CancellationToken ct);
     Task<FitGroupResponse> FitGroupAsync(FitGroupRequest request, CancellationToken ct);
+
+    // Phase 15-03 (BACKFILL-01..04): prime a cold streaming detector from InfluxDB history.
+    Task<WarmupResponse> WarmupAsync(WarmupRequest request, CancellationToken ct);
 }
