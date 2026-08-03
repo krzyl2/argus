@@ -4,11 +4,11 @@ milestone: v4.1
 milestone_name: Admin UI Rebuild (Design System)
 current_phase: 15
 current_phase_name: Streaming State Persistence + Warm-up Backfill
-status: planning
-stopped_at: Completed 15-03-PLAN.md (InfluxDB backfill)
-last_updated: "2026-08-03T08:59:45.837Z"
+status: blocked
+stopped_at: 15-04 Tasks 1-2 committed (8ec14f1 test coverage, a70eacf version bump + UAT checklist); Task 3 blocking human checkpoint NOT executed - awaiting operator deploy + live UAT
+last_updated: "2026-08-03T09:12:48.580Z"
 last_activity: 2026-08-03
-last_activity_desc: "15-02 executed: proto additive fields (Point.params, Verdict.warmed_up/n_seen/window) regenerated on both sides; servicer.ScoreStream forwards params + populates warm-up; EntityRuntimeState.RecordReading deleted in favor of ApplyVerdictWarmup; detector suite 244 passed/1 skipped, orchestrator suite 429 passed"
+last_activity_desc: "15-04 Tasks 1-2 executed: cross-plan restart/crash tests for SC-1/SC-4/SC-6/SC-8 added (zero production files touched); add-on version bumped to 2.1.9; 15-UAT.md written with nine ROADMAP criterion rows. Task 3 (deploy 2.1.9 to GHCR + live nine-criterion UAT) is a blocking human checkpoint, NOT executed. detector suite 261 passed/1 skipped (pre-existing WINDOWS.md #1), orchestrator suite 457 passed/0 failed/0 skipped"
 progress:
   total_phases: 6
   completed_phases: 5
@@ -216,10 +216,15 @@ v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/
 - [Phase ?]: [Phase 15-02]: ApplyVerdictWarmup ignores a non-positive window argument so WarmUpWindow keeps its constructor-seeded value instead of blanking to 0 for an unknown entity
 - [Phase ?]: Phase 15-03: n_seen==0 idempotency gate lives inside DetectorRegistry.warmup_one (registry owns the gate), entity lock held across the whole check-then-prime feed
 - [Phase ?]: Phase 15-03: ARGUS_BACKFILL_ENABLED/ARGUS_BACKFILL_LOOKBACK deliberately absent from argus/config.yaml and 10-config-gen.sh per D-16
+- [Phase ?]: [Phase 15-04]: Popen.kill() chosen for SC-1's hard-kill test — non-catchable on every platform (SIGKILL/TerminateProcess), no win32 skip needed unlike the SIGTERM test
+- [Phase ?]: [Phase 15-04]: 2s checkpoint interval sized so the SC-1 test's burst-then-kill sequence provably precedes the second tick — deterministic loss bound, not a tolerated race
+- [Phase ?]: [Phase 15-04]: argus/config.yaml bumped to 2.1.9 ahead of the actual GHCR push — repo state must be correct independent of when deploy/build-push.ps1 runs (HA reads master)
 
 ### Blockers
 
-None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's own Phase 11-13 live-HA re-verification (see Deferred Items).
+- Phase 15 Plan 04 Task 3 (blocking human checkpoint): operator must build+push add-on 2.1.9 to GHCR, update live HA, and walk the nine rows of 15-UAT.md against real sensors. Tasks 1-2 (restart/crash test coverage + version bump) are committed (8ec14f1, a70eacf).
+
+(v4.0's 08-04 human-verify checkpoint is superseded by v4.1's own Phase 11-13 live-HA re-verification — see Deferred Items — and is not an active blocker.)
 
 ### Quick Tasks Completed
 
@@ -286,20 +291,31 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 ## Session Continuity
 
-**Last session:** 2026-08-03T08:59:45.822Z
-**Stopped at:** Completed 15-03-PLAN.md (InfluxDB backfill)
-**Resume file:** None
+**Last session:** 2026-08-03T09:12:48.564Z
+**Stopped at:** 15-04 Tasks 1-2 committed (8ec14f1 test coverage, a70eacf version bump + UAT checklist); Task 3 blocking human checkpoint NOT executed - awaiting operator deploy + live UAT
+**Resume file:** .planning/phases/15-streaming-state-persistence-warm-up-backfill/15-UAT.md
 
 ## Operator Next Steps
 
-- Run `/gsd-execute-phase 15` to fix the warm-up-resets-on-restart defect (4 plans, waves 1→2→3→4; 15-04 ends in a blocking human checkpoint for live-HA UAT + GHCR deploy)
+- Build+push add-on 2.1.9 to GHCR (`deploy/build-push.ps1 -Version 2.1.9`), update the live HA add-on,
+  and walk the nine rows of `.planning/phases/15-streaming-state-persistence-warm-up-backfill/15-UAT.md`
+  to close 15-04's Task 3 blocking checkpoint. This is the only remaining step before Phase 15 can be
+  marked shipped.
 
 ## Current Position
 
 Phase: 15 — Streaming State Persistence + Warm-up Backfill
-Plan: 3/4 executed (15-01 detector checkpoints, 15-02 proto + orchestrator warm-up-from-verdict, 15-03 InfluxDB backfill); 15-04 (restart tests/UAT/ship) remains
-Status: Ready to execute 15-04 (`/gsd-execute-phase 15`)
-Last activity: 2026-08-03 — 15-03 executed: WarmupRequest/WarmupResponse RPC + registry.warmup_one n_seen==0 gate; InfluxDbReader.QueryHistoryAsync sibling to the untouched QueryAsync; ScoreStreamPipeline.PrimeFromHistoryAsync primes both the detector and FrozenSensorDetector once per stream open with a full degrade-safe try/catch; detector suite 257 passed/1 skipped, orchestrator suite 455 passed/0 failed (one pre-existing flaky test logged to WINDOWS.md #2)
+Plan: 15-04 Tasks 1-2 committed (8ec14f1 restart/crash test coverage, a70eacf version bump 2.1.9 + UAT
+checklist); Task 3 (deploy 2.1.9 + live nine-criterion UAT) is a blocking human checkpoint, NOT executed
+Status: Blocked on operator action (Task 3) — see 15-04-SUMMARY.md and 15-UAT.md
+Last activity: 2026-08-03 — 15-04 Tasks 1-2: added TestHardKillRestoresCheckpoint (SC-1),
+TestCorruptCheckpointDoesNotBlockStartup + TestBogusRiverVersionSidecarSkipped (SC-6),
+TestIdleEntityNoCheckpointWrites (SC-4) to detector/tests/test_restart_resilience.py; added
+PrimeFromHistoryAsync_CalledTwiceWithSkippedResponse_NoAdditionalPrimingAttempts +
+PrimeFromHistoryAsync_SkippedResponse_FrozenDetectorStillPrimed (SC-8) to ScoreStreamPipelineTests.cs;
+zero production files touched; detector suite 261 passed/1 skipped (pre-existing WINDOWS.md #1),
+orchestrator suite 457 passed/0 failed/0 skipped; version bumped to 2.1.9; 15-UAT.md written with
+nine ROADMAP criterion rows, outcome column empty pending Task 3
 
 **Phase 15 planning notes worth carrying into execution:**
 
