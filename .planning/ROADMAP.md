@@ -267,7 +267,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 12. Sensors Screen Rebuild | v4.1 | 3/3 | Complete    | 2026-07-17 |
 | 13. Groups Screen Rebuild | v4.1 | 3/3 | In Progress|  |
 | 14. Unified Detectors Screen + Add-Detector Wizard | v4.1 | 5/5 | Complete    | 2026-07-22 |
-| 15. Streaming State Persistence + Warm-up Backfill | v4.1 | 0/4 | Not planned |  |
+| 15. Streaming State Persistence + Warm-up Backfill | v4.1 | 0/4 | Planned |  |
 
 ### Phase 14: Unified Detectors Screen + Add-Detector Wizard
 

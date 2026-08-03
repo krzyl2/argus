@@ -5,10 +5,10 @@ milestone_name: Admin UI Rebuild (Design System)
 current_phase: 15
 current_phase_name: Streaming State Persistence + Warm-up Backfill
 status: planning
-stopped_at: Phase 15 added to ROADMAP — ready for /gsd-plan-phase 15
+stopped_at: Phase 15 planned (4 plans, plan-checker PASSED) — ready for /gsd-execute-phase 15
 last_updated: "2026-08-03T00:00:00.000Z"
 last_activity: 2026-08-03
-last_activity_desc: Phase 15 added — HST warm-up state lost on every restart (D1/D2/D3); design approved
+last_activity_desc: Phase 15 planned — 4 plans, waves 1→2→3→4, 10/10 requirements, plan-checker verification PASSED
 progress:
   total_phases: 5
   completed_phases: 5
@@ -283,11 +283,18 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 ## Operator Next Steps
 
-- Review the v4.1 roadmap draft; once approved, run `/gsd-plan-phase 10` to plan Design System Foundation
+- Run `/gsd-execute-phase 15` to fix the warm-up-resets-on-restart defect (4 plans, waves 1→2→3→4; 15-04 ends in a blocking human checkpoint for live-HA UAT + GHCR deploy)
 
 ## Current Position
 
 Phase: 15 — Streaming State Persistence + Warm-up Backfill
-Plan: Not started
-Status: Ready to plan (`/gsd-plan-phase 15`)
-Last activity: 2026-08-03 — Phase 15 added to ROADMAP after diagnosing warm-up-resets-on-restart (D1/D2/D3); design approved by operator
+Plan: 4 plans written (15-01..15-04), none executed
+Status: Ready to execute (`/gsd-execute-phase 15`)
+Last activity: 2026-08-03 — Phase 15 planned: research (measured deepcopy 56-96 ms, pickle 409 KiB) → pattern map (15/16 analogs) → 4 plans → plan-checker PASSED on all dimensions
+
+**Phase 15 planning notes worth carrying into execution:**
+- Waves are strictly linear 1→2→3→4, NOT the 15-01/15-02 parallel pair the roadmap first hinted at. 15-02's `servicer.ScoreStream` consumes `EntityDetector.n_seen`/`window` and `DetectorRegistry.get_warmup_state`, which 15-01 creates — parallel execution would compile against methods that do not exist yet.
+- `deepcopy` of a warmed `EntityDetector` measured 56-96 ms (pickle 409 KiB). That already exceeds the ">50 ms" trigger in 15-CONTEXT.md's risk table, so the per-entity yield in the checkpoint writer is baseline design, not a conditional mitigation.
+- The four new env knobs split across processes: `ARGUS_CHECKPOINT_INTERVAL_SEC` / `ARGUS_CHECKPOINT_ENABLED` are detector-side (Python `DetectorConfig`); `ARGUS_BACKFILL_ENABLED` / `ARGUS_BACKFILL_LOOKBACK` are orchestrator-side (.NET `ConnectionSettings`). 15-CONTEXT.md D-16 lists all four together and is imprecise on ownership.
+- s6's kill-grace timeout is UNVERIFIED against this repo's base image. 15-01 carries a grep verification step; the SIGTERM flush must be fast-and-bounded rather than assume a generous grace window.
+- `Program.cs`'s `AddSingleton<ScoreStreamPipeline>()` becomes an explicit factory (the class has two constructors and the backfill deps only register inside the Influx-configured branch). This must preserve the no-Influx streaming-only deployment, which is a supported configuration.
