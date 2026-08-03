@@ -62,6 +62,23 @@ restructure (no backend changes — D-09); depends on the Phase 10–13 Design S
 - [x] **WIZ-03**: Selecting >=2 sensors in the wizard pre-fills them into a new group draft (`#/groups/new`) via the existing `pendingPrefillMembers` handoff, then continues through the existing, unchanged guided algorithm-chooser flow
 - [x] **WIZ-04**: Any save triggered from the wizard, the single-sensor editor, or the relocated Settings pattern-filters loads the complete current tracked-sensor set first, so the full-list-replace `POST /api/sensors/save` never silently drops previously tracked sensors (Pitfall 1 / D-07)
 
+### Streaming state persistence + warm-up backfill (Phase 15 — added 2026-08-03)
+
+Backend requirements inside the UI-themed v4.1 milestone. Operator-reported critical defect: HST
+warm-up restarts from zero on every service or machine restart, because streaming detector state is
+RAM-only and the orchestrator keeps a second, independent warm-up counter.
+
+- [ ] **PERSIST-01**: Streaming detector state (River HST model + `MinMaxScaler` + `n_seen`) is checkpointed to disk on a recurring interval while the service runs — not only at shutdown — so an unexpected power loss or crash costs at most one interval of readings
+- [ ] **PERSIST-02**: Checkpoint writes are atomic (temp file + rename) and only occur for entities whose state actually changed since the last checkpoint; an entity with no new readings produces no disk writes
+- [ ] **PERSIST-03**: The detector flushes all pending checkpoints on SIGTERM, so a clean add-on restart loses zero readings
+- [ ] **PERSIST-04**: Checkpoints are restored into the registry at detector startup before the service reports healthy; a corrupt or River-version-incompatible checkpoint is discarded with a warning and never blocks startup for other entities
+- [ ] **WARM-01**: The detector is the single source of truth for warm-up — `warmed_up` and `n_seen` travel on the `Verdict`, and the orchestrator no longer maintains its own reading counter
+- [ ] **WARM-02**: Per-entity `hst` params (`window`, `n_trees`) reach the detector, so a configured non-default window governs both actual HST calibration and the warm-up progress shown in the UI
+- [ ] **BACKFILL-01**: A cold entity (no checkpoint, `n_seen == 0`) is primed from InfluxDB history before live streaming, so an entity with sufficient history is warmed up on its first live reading
+- [ ] **BACKFILL-02**: Backfill is idempotent — an orchestrator restart against an already-primed or checkpointed detector never re-feeds historical data
+- [ ] **BACKFILL-03**: Backfill degrades safely — InfluxDB unconfigured, unreachable, or returning no rows produces a warning and normal live warm-up, never a startup failure
+- [ ] **BACKFILL-04**: The same backfill pass primes the orchestrator's `FrozenSensorDetector` rolling window, so frozen-sensor detection is not blind for N readings after a restart
+
 ## Future Requirements
 
 Deferred, not in this milestone's roadmap.
@@ -113,13 +130,23 @@ Deferred, not in this milestone's roadmap.
 | WIZ-02 | Phase 14 | Planned |
 | WIZ-03 | Phase 14 | Planned |
 | WIZ-04 | Phase 14 | Planned |
+| PERSIST-01 | Phase 15 | Pending |
+| PERSIST-02 | Phase 15 | Pending |
+| PERSIST-03 | Phase 15 | Pending |
+| PERSIST-04 | Phase 15 | Pending |
+| WARM-01 | Phase 15 | Pending |
+| WARM-02 | Phase 15 | Pending |
+| BACKFILL-01 | Phase 15 | Pending |
+| BACKFILL-02 | Phase 15 | Pending |
+| BACKFILL-03 | Phase 15 | Pending |
+| BACKFILL-04 | Phase 15 | Pending |
 
 **Coverage:**
 
-- v4.1 requirements: 26 total (16 original + 10 Phase 14 IA restructure)
-- Mapped to phases: 26 (Phase 10: 5, Phase 11: 6, Phase 12: 2, Phase 13: 3, Phase 14: 10)
+- v4.1 requirements: 36 total (16 original + 10 Phase 14 IA restructure + 10 Phase 15 persistence/backfill)
+- Mapped to phases: 36 (Phase 10: 5, Phase 11: 6, Phase 12: 2, Phase 13: 3, Phase 14: 10, Phase 15: 10)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-07-08*
-*Last updated: 2026-07-21 — Phase 14 added 10 Detectors-IA requirements (DET-01..06, WIZ-01..04), 100% coverage*
+*Last updated: 2026-08-03 — Phase 15 added 10 backend requirements (PERSIST-01..04, WARM-01..02, BACKFILL-01..04), 100% coverage*

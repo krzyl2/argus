@@ -267,6 +267,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 12. Sensors Screen Rebuild | v4.1 | 3/3 | Complete    | 2026-07-17 |
 | 13. Groups Screen Rebuild | v4.1 | 3/3 | In Progress|  |
 | 14. Unified Detectors Screen + Add-Detector Wizard | v4.1 | 5/5 | Complete    | 2026-07-22 |
+| 15. Streaming State Persistence + Warm-up Backfill | v4.1 | 0/4 | Not planned |  |
 
 ### Phase 14: Unified Detectors Screen + Add-Detector Wizard
 
@@ -305,3 +306,71 @@ Plans:
 **Gap closure** *(G-14-1 blocker — data loss)*
 
 - [x] 14-05-PLAN.md — Fix /api/sensors/save wiping groups (read-modify-write groups: key) + GET /api/sensors config-sourced isTracked (SensorTracking helper) + 2 regression tests (DET-01, DET-02, DET-03)
+
+### Phase 15: Streaming State Persistence + Warm-up Backfill
+
+> **Note:** backend phase inside the UI-themed v4.1 milestone. Intentional — critical data-loss-class
+> bug affecting live detection; not worth opening a separate milestone for a single fix.
+
+**Goal:** HST warm-up survives service and machine restarts. Streaming detector state is checkpointed
+to disk on a regular interval (not only at shutdown), the orchestrator stops keeping a second,
+independent warm-up counter, and a cold entity is primed from InfluxDB history so it can be warm from
+its first live reading.
+
+**Problem** (diagnosed 2026-08-03, operator-reported):
+
+| # | Location | Defect |
+|---|----------|--------|
+| D1 | `hst_detector.py:57`, `registry.py:71` | HST model + `MinMaxScaler` + `_n_seen` are RAM-only. `save_river()` is reachable only via the `SaveModel` RPC, which the orchestrator **never calls** (grep: 0 call sites). Nothing persists the streaming path. |
+| D2 | `EntityRuntimeState.cs:40` | Orchestrator keeps its own `_readingCount`, reset on every `RunAsync`. Second, independent source of truth for warm-up. |
+| D3 | `servicer.py:63` | `score_one(entity_id, value)` — no `params`. Per-entity `window`/`n_trees` never reach the detector, so a configured `window: 50` warms the orchestrator at 50 while HST still calibrates on 250. |
+
+Impact: every restart restarts the 250-reading warm-up. For a sensor reporting every 30 min that is
+~5 days with no `binary_sensor` flags. Score keeps publishing but is not meaningful.
+
+**Approved solution:** the detector becomes the single source of truth for warm-up; the orchestrator
+reads `warmed_up`/`n_seen` off the `Verdict`. Detector checkpoints dirty streaming models to
+`/data/models/{slug}/{detector}/checkpoint.pkl` every 300 s (dirty-tracked, atomic tmp+rename), plus a
+SIGTERM flush. Checkpoints live outside the versioned batch `ModelStore` path to avoid per-interval
+version-dir + prune churn. A `river_version` sidecar invalidates checkpoints across River upgrades.
+On top of that, a `Warmup` RPC primes a cold detector from InfluxDB history — idempotent, gated on
+`n_seen == 0` so an orchestrator restart never re-feeds the same historical data.
+
+**Out of scope (decided):** `HysteresisGate` state persistence. It needs *scores*, not raw readings, so
+backfill cannot rebuild it; persisting it would require a new .NET-side persistence layer for a
+3-reading benefit. `FrozenSensorDetector`'s 10-reading window **is** in scope — it rides along on the
+backfill pass for ~15 lines.
+
+**New knobs:** `ARGUS_CHECKPOINT_INTERVAL_SEC=300`, `ARGUS_CHECKPOINT_ENABLED=true`,
+`ARGUS_BACKFILL_ENABLED=true`, `ARGUS_BACKFILL_LOOKBACK=30d`. Not surfaced in add-on `config.yaml`.
+
+**Requirements**: TBD (assigned during planning)
+**Depends on:** Phase 2 (ModelStore, InfluxDbReader), Phase 5 (proto/registry conventions)
+
+**Success Criteria** (what must be TRUE):
+
+  1. Detector killed with `SIGKILL` mid-warm-up → after restart `n_seen`/`warmed_up` are restored from
+     the checkpoint; at most one checkpoint interval of readings is lost
+  2. Orchestrator restarted alone → warm-up progress on the Detectors screen is unchanged (value comes
+     from the verdict, not a local counter)
+  3. Whole add-on restarted (SIGTERM) → **zero** readings lost
+  4. An entity with no new readings for an hour produces **zero** disk writes
+  5. `window: 50` configured on an entity → the detector actually uses 50 and the UI shows `x/50`
+  6. A corrupted `checkpoint.pkl` for one entity → startup succeeds, all other entities load normally
+  7. A new entity with ≥250 points of InfluxDB history → `warmed_up = true` on its first live reading
+  8. Orchestrator restart with an existing checkpoint → **no** re-backfill (`n_seen` does not jump)
+  9. InfluxDB unavailable or unconfigured → startup succeeds, normal warm-up, WARN log only
+
+**Plans:** 4 plans (breakdown below is the approved intent; finalized by /gsd-plan-phase)
+
+Plans:
+
+- [ ] 15-01 — Detector checkpoints: `save_checkpoint`/`load_checkpoint`, 300 s dirty-tracked writer
+      thread (deepcopy under `_entity_lock`, pickle outside — MDL-04), SIGTERM flush, `river_version`
+      sidecar validation, `load_all_into` extended to `*/*/checkpoint.pkl`
+- [ ] 15-02 — Proto + orchestrator: `Verdict.warmed_up`/`n_seen`, `Point.params` (D3 fix),
+      `EntityRuntimeState` reads warm-up from the verdict, `EntityStatusCache.Set` moves to the read loop
+- [ ] 15-03 — InfluxDB backfill: `Warmup` RPC (gated on `n_seen == 0`),
+      `InfluxDbReader.QueryHistoryAsync(entityId, lookback, limit)` replacing the hardcoded
+      `range(start: -24h)`, `FrozenDetector` priming, degrade-safe on Influx failure
+- [ ] 15-04 — Restart/crash test suite, UAT on live HA, add-on version bump + GHCR deploy

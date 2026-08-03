@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v4.1
 milestone_name: Admin UI Rebuild (Design System)
-current_phase: 999.1
-current_phase_name: BACKLOG
+current_phase: 15
+current_phase_name: Streaming State Persistence + Warm-up Backfill
 status: planning
-stopped_at: Completed 14-05-PLAN.md (gap closure G-14-1)
-last_updated: "2026-07-22T13:07:12.812Z"
-last_activity: 2026-07-22
-last_activity_desc: Phase 14 complete, transitioned to Phase 999.1
+stopped_at: Phase 15 added to ROADMAP — ready for /gsd-plan-phase 15
+last_updated: "2026-08-03T00:00:00.000Z"
+last_activity: 2026-08-03
+last_activity_desc: Phase 15 added — HST warm-up state lost on every restart (D1/D2/D3); design approved
 progress:
   total_phases: 5
   completed_phases: 5
@@ -67,7 +67,7 @@ these UI flows (Phases 10-13).
 See: .planning/PROJECT.md
 
 **Core value:** Anomalies appear in HA as live binary_sensor + score entities within 2 seconds (single-sensor). Group detection has its own, looser latency target (v4.0).
-**Current focus:** Phase 14 — unified-detectors-screen-add-detector-wizard
+**Current focus:** Phase 15 — streaming-state-persistence-warm-up-backfill
 
 ## Phase Status (v4.1)
 
@@ -225,6 +225,7 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 ### Roadmap Evolution
 
+- **2026-08-03**: Phase 15 added — Streaming State Persistence + Warm-up Backfill. Operator reported that HST warm-up appears to restart from zero after every service/machine restart; investigation confirmed it and found three linked defects: (D1) streaming HST state is RAM-only — `save_river()` is reachable only via the `SaveModel` RPC, which the orchestrator never calls, so nothing persists the streaming path; (D2) `EntityRuntimeState._readingCount` is a second, independent warm-up counter that resets on every `RunAsync`; (D3) per-entity `window`/`n_trees` never reach the detector because `servicer.ScoreStream` calls `registry.score_one(entity_id, value)` without params, so a configured `window: 50` warms the orchestrator at 50 while HST calibrates on 250. Impact is severe for slow-reporting sensors — at a 30-minute interval, 250 readings is ~5 days without anomaly flags after each restart. Approved design: the detector becomes the single source of truth for warm-up (orchestrator reads `warmed_up`/`n_seen` from the `Verdict`); dirty streaming models checkpoint to `/data/models/{slug}/{detector}/checkpoint.pkl` every 300 s with atomic tmp+rename plus a SIGTERM flush, deliberately outside the versioned batch `ModelStore` path to avoid per-interval version-dir and prune churn; a `river_version` sidecar invalidates checkpoints across River upgrades. A `Warmup` RPC additionally primes cold entities from InfluxDB history, gated on `n_seen == 0` so orchestrator restarts never re-feed the same data — this makes freshly-added entities warm from their first live reading, which is the operator's real pain point. `HysteresisGate` persistence ruled out (needs scores not raw readings; new .NET persistence layer for a 3-reading benefit); `FrozenSensorDetector`'s 10-reading window included since it rides along on the backfill pass. Backend phase inside the UI-themed v4.1 milestone — intentional, judged not worth a separate milestone. Raised 2026-08-03 by operator.
 - **2026-07-21**: Phase 14 added — Unified Detectors Screen + Add-Detector Wizard. IA restructure (beyond v4.1's screen-rebuild scope): replace the separate Sensors and Groups nav items with one unified "Detectors" list (groups from `api/groups` + tracked single sensors from `api/sensors`) plus a separate shared Add-detector wizard (sensor search reveals results only after ≥3 chars; 1 sensor → single-sensor path, ≥2 → group path; both continue through the full guided flow). Editing reuses existing editors (GroupEditorForm for groups; dedicated single-sensor detector-edit view). Depends on Phases 10–13. Raised 2026-07-21 by operator.
 - **2026-07-08**: v4.1 ROADMAP.md created — 4 phases (10 Design System Foundation, 11 New Standalone Screens [Dashboard/Algorithms/Settings], 12 Sensors Rebuild, 13 Groups Rebuild), continuing numbering from v4.0's Phase 9. THEME-01/02 + COMP-01 grouped as the foundation phase (every screen depends on tokens + shared components existing first); A11Y-01/02 folded into the same foundation phase since both rules are properties of the shared components (focus-visible baked into all interactive components; radio-card border-not-color baked into AlgorithmCard/SensitivityPreset) rather than separate late-phase verification work. Dashboard/Algorithms/Settings (all new, lower-complexity screens — mocked data, read-only catalog, simple config form) grouped into one phase per coarse-granularity guidance rather than three thin single-purpose phases. Sensors and Groups kept as separate phases since both are logic-preserving rebuilds of existing functional screens with real refactoring scope, not restyle-only work. 16/16 requirements mapped, 0 orphans.
 - Phase 9 added (v4.0): 2-Member Groups + Algorithm Guidance Correction — lower the joint-mode member floor to 2, add a pairwise-delta path (existing single-entity MAD detector on member_a − member_b) for 2-member peer_divergence, switch the guided chooser's "together" default from ecod to copod, and rewrite DetectorCatalog.cs BestFor copy. Raised 2026-07-03 during live verification of Phase 8, from two operator use cases (2 front-tire pressures; 2-sensor water pressure+temperature pair) plus empirical PyOD testing that found the existing "together" guidance produces ~90% false positives on correlated-pair relationship-break scenarios. See `.planning/milestones/v4.0-ROADMAP.md` Phase 9 section for full research context.
@@ -286,7 +287,7 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 
 ## Current Position
 
-Phase: 999.1 — Algorithm tester/simulator in group config UI (BACKLOG)
+Phase: 15 — Streaming State Persistence + Warm-up Backfill
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-23 — Completed quick task 260723-oik: group members visible in editor + group status on Detectors list
+Status: Ready to plan (`/gsd-plan-phase 15`)
+Last activity: 2026-08-03 — Phase 15 added to ROADMAP after diagnosing warm-up-resets-on-restart (D1/D2/D3); design approved by operator
