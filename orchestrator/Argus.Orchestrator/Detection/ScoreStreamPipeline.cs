@@ -155,13 +155,7 @@ public sealed class ScoreStreamPipeline
                 continue;
 
             entityState.FrozenDetector.AddReading(reading.Value);
-            entityState.RecordReading();
             entityState.SuppressBinarySensor = reading.SuppressBinarySensor;
-
-            // QUICK-warmup-status: publish a warm-up snapshot per reading so GET /api/sensors
-            // can surface live warm-up progress. Null-conditional keeps existing tests that
-            // construct the pipeline without a cache working unchanged.
-            _statusCache?.Set(new EntityStatusEntry(entityId, entityState.WarmedUp, entityState.ReadingCount, entityState.WarmUpWindow));
 
             if (entityState.FrozenDetector.IsFrozen)
             {
@@ -172,7 +166,10 @@ public sealed class ScoreStreamPipeline
                 // Still forward to detector for model continuity (HST keeps learning)
             }
 
-            var point = ToPoint(reading);
+            // D-01/WARM-01: warm-up no longer counted here — RecordReading() is gone.
+            // The status cache is now written from the verdict read loop
+            // (ProcessVerdictAsync), since warm-up data arrives on the Verdict.
+            var point = ToPoint(reading, entityState.HstParams);
             await call.WriteAsync(point, ct);
         }
 
@@ -195,6 +192,15 @@ public sealed class ScoreStreamPipeline
     {
         var startedAt = DateTimeOffset.UtcNow;
         double score = verdict.Score ?? 0.0;
+
+        // D-01/WARM-01: apply the detector's own warm-up numbers first — this is the
+        // single point where WarmedUp/ReadingCount/WarmUpWindow change value.
+        entityState.ApplyVerdictWarmup(verdict.WarmedUp, verdict.NSeen, verdict.Window);
+
+        // D-10: status cache write relocated here from the write loop — the data now
+        // arrives with the verdict, not the raw reading.
+        _statusCache?.Set(new EntityStatusEntry(
+            reading.EntityId, entityState.WarmedUp, entityState.ReadingCount, entityState.WarmUpWindow));
 
         // Always publish score (raw metric visible even during warm-up)
         await _publisher.PublishScoreAsync(reading.EntityId, score, ct);
@@ -308,12 +314,13 @@ public sealed class ScoreStreamPipeline
         return states;
     }
 
-    private static Point ToPoint(Ha.HaReading reading)
+    private static Point ToPoint(Ha.HaReading reading, HstParams hstParams)
         => new Point
         {
             EntityId = reading.EntityId,
             Value = reading.Value,
             Timestamp = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTimeOffset(reading.LastChanged),
+            Params = { ["window"] = hstParams.Window.ToString(), ["n_trees"] = hstParams.NTrees.ToString() },
         };
 }
 
