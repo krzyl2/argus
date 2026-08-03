@@ -344,7 +344,7 @@ backfill pass for ~15 lines.
 **New knobs:** `ARGUS_CHECKPOINT_INTERVAL_SEC=300`, `ARGUS_CHECKPOINT_ENABLED=true`,
 `ARGUS_BACKFILL_ENABLED=true`, `ARGUS_BACKFILL_LOOKBACK=30d`. Not surfaced in add-on `config.yaml`.
 
-**Requirements**: TBD (assigned during planning)
+**Requirements**: PERSIST-01, PERSIST-02, PERSIST-03, PERSIST-04, WARM-01, WARM-02, BACKFILL-01, BACKFILL-02, BACKFILL-03, BACKFILL-04
 **Depends on:** Phase 2 (ModelStore, InfluxDbReader), Phase 5 (proto/registry conventions)
 
 **Success Criteria** (what must be TRUE):
@@ -361,16 +361,26 @@ backfill pass for ~15 lines.
   8. Orchestrator restart with an existing checkpoint → **no** re-backfill (`n_seen` does not jump)
   9. InfluxDB unavailable or unconfigured → startup succeeds, normal warm-up, WARN log only
 
-**Plans:** 4 plans (breakdown below is the approved intent; finalized by /gsd-plan-phase)
+**Plans:** 4 plans
 
 Plans:
 
-- [ ] 15-01 — Detector checkpoints: `save_checkpoint`/`load_checkpoint`, 300 s dirty-tracked writer
-      thread (deepcopy under `_entity_lock`, pickle outside — MDL-04), SIGTERM flush, `river_version`
-      sidecar validation, `load_all_into` extended to `*/*/checkpoint.pkl`
-- [ ] 15-02 — Proto + orchestrator: `Verdict.warmed_up`/`n_seen`, `Point.params` (D3 fix),
-      `EntityRuntimeState` reads warm-up from the verdict, `EntityStatusCache.Set` moves to the read loop
-- [ ] 15-03 — InfluxDB backfill: `Warmup` RPC (gated on `n_seen == 0`),
-      `InfluxDbReader.QueryHistoryAsync(entityId, lookback, limit)` replacing the hardcoded
-      `range(start: -24h)`, `FrozenDetector` priming, degrade-safe on Influx failure
-- [ ] 15-04 — Restart/crash test suite, UAT on live HA, add-on version bump + GHCR deploy
+- [ ] 15-01-PLAN.md — Detector checkpoints (wave 1, PERSIST-01..04): `ModelStore.save_checkpoint`/
+      `load_checkpoint`, `EntityDetector.n_seen`/`window` accessors, `DetectorRegistry.checkpoint_dirty`
+      dirty-tracking (deepcopy under `_entity_lock`, pickle outside — MDL-04, plus a per-entity yield
+      since deepcopy measured 56-96 ms), new `CheckpointWriter` interval thread, SIGTERM flush,
+      `river_version` sidecar validation, `load_all_into` extended to `*/*/checkpoint.pkl` with an
+      explicit checkpoint-wins ordering guarantee
+- [ ] 15-02-PLAN.md — Proto + orchestrator warm-up-from-verdict (wave 2, depends 15-01; WARM-01,
+      WARM-02): `Point.params = 4`, `Verdict.warmed_up = 9`/`n_seen = 10`/`window = 11`, stub
+      regeneration verified on BOTH sides, `servicer.ScoreStream` forwards params (D3 fix),
+      `EntityRuntimeState.RecordReading` deleted and warm-up read from the verdict,
+      `EntityStatusCache.Set` moved to the verdict read loop
+- [ ] 15-03-PLAN.md — InfluxDB backfill (wave 3, depends 15-02; BACKFILL-01..04): `Warmup` RPC with the
+      `n_seen == 0` gate inside `DetectorRegistry.warmup_one`,
+      `InfluxDbReader.QueryHistoryAsync(entityId, lookback, limit)` as a sibling of the untouched
+      24-hour batch query, `ARGUS_BACKFILL_*` on the orchestrator side, pre-stream call site,
+      `FrozenDetector` priming, six degrade paths each covered
+- [ ] 15-04-PLAN.md — Restart/crash tests, UAT, ship (wave 4, depends 15-01/02/03; all 10 IDs):
+      cross-plan hard-kill / corrupt-checkpoint / no-re-backfill cases, version bump to 2.1.9,
+      nine-criterion live-HA UAT + GHCR deploy (blocking human checkpoint)
