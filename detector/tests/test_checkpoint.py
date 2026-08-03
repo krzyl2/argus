@@ -19,6 +19,7 @@ this module by later tasks in the same plan.
 import copy
 import json
 import pickle
+import threading
 import time
 
 from river import anomaly
@@ -147,3 +148,113 @@ class TestLoadAllIntoCheckpointPass:
 
         loaded = registry.get_model("sensor.c", "hst")
         assert loaded.n_seen == 7
+
+
+class TestGetWarmupState:
+    """RESEARCH.md Pitfall 4: DetectorRegistry.get_warmup_state (Task 2)."""
+
+    def test_unknown_entity_returns_false_zero_zero(self):
+        registry = DetectorRegistry()
+        assert registry.get_warmup_state("sensor.unknown") == (False, 0, 0)
+
+    def test_returns_actual_configured_window(self):
+        registry = DetectorRegistry()
+        for _ in range(3):
+            registry.score_one("sensor.p", 21.0, params={"window": "3", "n_trees": "5"})
+        warmed_up, n_seen, window = registry.get_warmup_state("sensor.p")
+        assert n_seen == 3
+        assert window == 3
+        assert warmed_up is True
+
+    def test_default_window_reported_when_no_params(self):
+        registry = DetectorRegistry()
+        registry.score_one("sensor.q", 21.0)
+        warmed_up, n_seen, window = registry.get_warmup_state("sensor.q")
+        assert n_seen == 1
+        assert window == 250
+        assert warmed_up is False
+
+
+class TestCheckpointDirty:
+    """D-05/D-06: dirty-tracked checkpoint sweep as a DetectorRegistry method (Task 2)."""
+
+    def test_dirty_entity_writes_once_then_idle_writes_nothing(self, tmp_path):
+        registry = DetectorRegistry()
+        store = ModelStore(root=tmp_path)
+
+        for _ in range(5):
+            registry.score_one("sensor.dirty", 21.0)
+
+        count1 = registry.checkpoint_dirty(store)
+        assert count1 == 1
+        pkl_path = tmp_path / "sensor_dirty" / "hst" / "checkpoint.pkl"
+        assert pkl_path.exists()
+        mtime1 = pkl_path.stat().st_mtime_ns
+
+        count2 = registry.checkpoint_dirty(store)
+        assert count2 == 0
+        assert pkl_path.stat().st_mtime_ns == mtime1
+
+    def test_only_hst_entities_are_checkpointed(self, tmp_path):
+        registry = DetectorRegistry()
+        store = ModelStore(root=tmp_path)
+
+        registry.score_one("sensor.h", 21.0)  # hst
+        registry.fit_one("sensor.m", "mad", [1.0] * 10)  # mad — must be skipped
+
+        registry.checkpoint_dirty(store)
+
+        assert (tmp_path / "sensor_h" / "hst" / "checkpoint.pkl").exists()
+        assert not (tmp_path / "sensor_m" / "mad").exists()
+
+    def test_failing_write_does_not_block_other_entities_or_advance_baseline(self, tmp_path):
+        registry = DetectorRegistry()
+        registry.score_one("sensor.fail", 21.0)
+        registry.score_one("sensor.ok", 21.0)
+
+        calls = []
+
+        class FailingFirstStore:
+            def save_checkpoint(self, slug, detector, model, entity_id, n_seen):
+                calls.append(entity_id)
+                if entity_id == "sensor.fail":
+                    raise OSError("disk full")
+
+        count = registry.checkpoint_dirty(FailingFirstStore())
+        assert count == 1
+        assert set(calls) == {"sensor.fail", "sensor.ok"}
+        # The failing entity's baseline must not have advanced.
+        assert registry._last_checkpointed.get(("sensor.fail", "hst")) is None
+
+    def test_no_lock_held_across_file_io(self, tmp_path):
+        """T-15-01-04: while checkpoint_dirty is writing entity A, a concurrent
+        score_one on entity A must not be blocked."""
+        registry = DetectorRegistry()
+        registry.score_one("sensor.slow", 21.0)
+
+        write_started = threading.Event()
+        release_write = threading.Event()
+
+        class BlockingStore:
+            def save_checkpoint(self, slug, detector, model, entity_id, n_seen):
+                write_started.set()
+                release_write.wait(timeout=5)
+
+        t = threading.Thread(target=registry.checkpoint_dirty, args=(BlockingStore(),))
+        t.start()
+        assert write_started.wait(timeout=5), "checkpoint_dirty never started its write"
+
+        # score_one must complete promptly even though the write is still blocked.
+        done = threading.Event()
+
+        def do_score():
+            registry.score_one("sensor.slow", 22.0)
+            done.set()
+
+        t2 = threading.Thread(target=do_score)
+        t2.start()
+        assert done.wait(timeout=2), "score_one was blocked by the in-flight checkpoint write"
+
+        release_write.set()
+        t.join(timeout=5)
+        t2.join(timeout=5)
