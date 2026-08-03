@@ -112,6 +112,21 @@ message FitGroupResponse {
   string error = 2;
 }
 
+message WarmupRequest {
+  string entity_id = 1;
+  string detector = 2;
+  map<string, string> params = 3;
+  repeated Point history = 4;
+}
+
+message WarmupResponse {
+  bool ok = 1;
+  string error = 2;
+  int32 n_seen = 3;
+  bool warmed_up = 4;
+  bool skipped = 5;
+}
+
 service DetectorService {
   rpc ScoreStream(stream Point) returns (stream Verdict);
   rpc Fit(FitRequest) returns (FitResponse);
@@ -120,4 +135,5 @@ service DetectorService {
   rpc LoadModel(LoadModelRequest) returns (LoadModelResponse);
   rpc ScoreGroupBatch(GroupScoreRequest) returns (GroupScoreResponse);
   rpc FitGroup(FitGroupRequest) returns (FitGroupResponse);
+  rpc Warmup(WarmupRequest) returns (WarmupResponse);
 }

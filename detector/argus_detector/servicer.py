@@ -463,6 +463,46 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
             logger.exception("unexpected error in FitGroup for %s", request.group_id)
             return argus_pb2.FitGroupResponse(ok=False, error=str(e))
 
+    def Warmup(self, request, context):  # noqa: N802
+        """Prime a cold detector from historical points (D-12/BACKFILL-01..03).
+
+        Feeds request.history through registry.warmup_one, which owns the
+        n_seen == 0 idempotency gate (D-12 — enforced detector-side so it
+        holds regardless of caller). Never emits verdicts, never publishes
+        anything; the only effect is model state plus the returned counters.
+        """
+        if not request.entity_id:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "empty entity_id")
+            return None  # WR-06: after abort, gRPC ignores the return value — return None
+
+        try:
+            entity_id = request.entity_id
+            detector = request.detector or "hst"
+            values = [p.value.value for p in request.history]
+
+            warmed_up, n_seen, window, skipped = self._registry.warmup_one(
+                entity_id, detector, values, params=dict(request.params)
+            )
+
+            # T-02-03: log only safe fields — never raw sensor values.
+            logger.info(
+                "warmup",
+                extra={
+                    "entity_id": entity_id,
+                    "history_points": len(values),
+                    "n_seen": n_seen,
+                    "skipped": skipped,
+                },
+            )
+
+            return argus_pb2.WarmupResponse(
+                ok=True, n_seen=n_seen, warmed_up=warmed_up, skipped=skipped
+            )
+
+        except Exception as e:
+            logger.exception("unexpected error in Warmup for %s", request.entity_id)
+            return argus_pb2.WarmupResponse(ok=False, error=str(e))
+
     def LoadModel(self, request, context):  # noqa: N802
         """Load a model from disk and register it into the registry."""
         entity_id = request.entity_id

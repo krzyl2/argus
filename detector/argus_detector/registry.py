@@ -219,6 +219,58 @@ class DetectorRegistry:
 
         return written
 
+    def warmup_one(
+        self,
+        entity_id: str,
+        detector: str,
+        values: list[float],
+        params: dict[str, str] | None = None,
+    ) -> tuple[bool, int, int, bool]:
+        """Prime a cold detector from historical values (D-12/BACKFILL-01..03).
+
+        The n_seen == 0 gate lives HERE, not in the servicer: D-12 requires it
+        to hold no matter who calls (orchestrator restart, CFG-04 hot-reload,
+        or any future tool), and this mirrors _get_or_create's "registry owns
+        the gate" idiom (RESEARCH.md Open Question 2). The whole check-then-
+        prime is held under the per-entity lock so it is atomic — deviating
+        from the usual train-outside-lock idiom (fit_one/checkpoint_dirty) is
+        correct here because this call happens once, before the entity's
+        ScoreStream opens, and the work is bounded by the (small) window size;
+        without holding the lock across the feed, two concurrent Warmup calls
+        for the same cold entity could both pass the n_seen==0 check and
+        double-prime it.
+
+        Deliberately does NOT set _last_checkpointed for the primed key —
+        leaving it unset makes the primed entity dirty, so the next
+        checkpoint_dirty tick persists the prime (SC-7 survives a subsequent
+        restart without a second Influx round trip).
+
+        Args:
+            entity_id: HA entity ID.
+            detector: Detector name (e.g. "hst").
+            values: Historical values, chronologically ascending.
+            params: optional string param overrides, applied only when a
+                fresh detector is created (mirrors fit_one's semantics).
+
+        Returns:
+            (warmed_up, n_seen, window, skipped) — skipped is True when an
+            existing entry already had n_seen > 0 (already primed or
+            restored from a checkpoint); in that case n_seen/window/warmed_up
+            reflect the EXISTING entry, untouched.
+        """
+        key = (entity_id, detector)
+        lock = self._entity_lock(key)
+        with lock:
+            existing = self._detectors.get(key)
+            if existing is not None and existing.n_seen > 0:
+                return (existing.is_warmed_up, existing.n_seen, existing.window, True)
+
+            det = existing if existing is not None else EntityDetector.from_params(params or {})
+            for value in values:
+                det.score_one(value)
+            self._detectors[key] = det
+            return (det.is_warmed_up, det.n_seen, det.window, False)
+
     def fit_one(
         self,
         entity_id: str,
