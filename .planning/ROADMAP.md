@@ -267,7 +267,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 12. Sensors Screen Rebuild | v4.1 | 3/3 | Complete    | 2026-07-17 |
 | 13. Groups Screen Rebuild | v4.1 | 3/3 | In Progress|  |
 | 14. Unified Detectors Screen + Add-Detector Wizard | v4.1 | 5/5 | Complete    | 2026-07-22 |
-| 15. Streaming State Persistence + Warm-up Backfill | v4.1 | 2/4 | In Progress|  |
+| 15. Streaming State Persistence + Warm-up Backfill | v4.1 | 3/4 | In Progress|  |
 
 ### Phase 14: Unified Detectors Screen + Add-Detector Wizard
 
@@ -363,7 +363,7 @@ backfill pass for ~15 lines.
   8. Orchestrator restart with an existing checkpoint → **no** re-backfill (`n_seen` does not jump)
   9. InfluxDB unavailable or unconfigured → startup succeeds, normal warm-up, WARN log only
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 
@@ -380,7 +380,7 @@ Plans:
       `EntityRuntimeState.RecordReading` deleted and warm-up read from the verdict,
       `EntityStatusCache.Set` moved to the verdict read loop
 
-- [ ] 15-03-PLAN.md — InfluxDB backfill (wave 3, depends 15-02; BACKFILL-01..04): `Warmup` RPC with the
+- [x] 15-03-PLAN.md — InfluxDB backfill (wave 3, depends 15-02; BACKFILL-01..04): `Warmup` RPC with the
       `n_seen == 0` gate inside `DetectorRegistry.warmup_one`,
       `InfluxDbReader.QueryHistoryAsync(entityId, lookback, limit)` as a sibling of the untouched
       24-hour batch query, `ARGUS_BACKFILL_*` on the orchestrator side, pre-stream call site,

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
+open_count: 2
 waived_count: 0
 fixed_count: 0
-total_count: 1
-last_updated: 2026-08-03T08:19:39.830Z
+total_count: 2
+last_updated: 2026-08-03T08:57:44.208Z
 ---
 
 # Broken Windows Ledger
@@ -16,6 +16,7 @@ last_updated: 2026-08-03T08:19:39.830Z
 | id | phase | kind | file | line | description | status | reason | recorded_at | resolved_at |
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
 | 1 | 15 | skipped-test | detector/tests/test_restart_resilience.py | 146 | SIGTERM subprocess integration test (TestSigtermFlush) skipped on win32 — Windows has no catchable SIGTERM delivery from another process (TerminateProcess bypasses Python signal handlers); production target is the Linux s6-overlay add-on container where this holds | open |  | 2026-08-03T08:19:39.830Z |  |
+| 2 | 15 | deviation | orchestrator/Argus.Orchestrator.Tests/ScoreStreamPipelineTests.cs |  | RunAsync_CompleteAsyncCalledBeforeReadTaskAwaited is a pre-existing flaky/racy test (order of Task.Run scheduling between the read-task completion and the write-loop CompleteAsync call is not deterministic outside a busy thread pool) — confirmed identical failure on the pre-15-03 codebase via git stash; not caused by 15-03's changes, not fixed per scope boundary | open |  | 2026-08-03T08:57:44.208Z |  |
 
 ````json
 [
@@ -29,6 +30,18 @@ last_updated: 2026-08-03T08:19:39.830Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-03T08:19:39.830Z",
+    "resolved_at": null
+  },
+  {
+    "id": 2,
+    "kind": "deviation",
+    "phase": "15",
+    "file": "orchestrator/Argus.Orchestrator.Tests/ScoreStreamPipelineTests.cs",
+    "line": null,
+    "description": "RunAsync_CompleteAsyncCalledBeforeReadTaskAwaited is a pre-existing flaky/racy test (order of Task.Run scheduling between the read-task completion and the write-loop CompleteAsync call is not deterministic outside a busy thread pool) — confirmed identical failure on the pre-15-03 codebase via git stash; not caused by 15-03's changes, not fixed per scope boundary",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-03T08:57:44.208Z",
     "resolved_at": null
   }
 ]

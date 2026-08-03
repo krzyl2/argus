@@ -74,10 +74,10 @@ RAM-only and the orchestrator keeps a second, independent warm-up counter.
 - [x] **PERSIST-04**: Checkpoints are restored into the registry at detector startup before the service reports healthy; a corrupt or River-version-incompatible checkpoint is discarded with a warning and never blocks startup for other entities
 - [x] **WARM-01**: The detector is the single source of truth for warm-up — `warmed_up` and `n_seen` travel on the `Verdict`, and the orchestrator no longer maintains its own reading counter
 - [x] **WARM-02**: Per-entity `hst` params (`window`, `n_trees`) reach the detector, so a configured non-default window governs both actual HST calibration and the warm-up progress shown in the UI
-- [ ] **BACKFILL-01**: A cold entity (no checkpoint, `n_seen == 0`) is primed from InfluxDB history before live streaming, so an entity with sufficient history is warmed up on its first live reading
-- [ ] **BACKFILL-02**: Backfill is idempotent — an orchestrator restart against an already-primed or checkpointed detector never re-feeds historical data
-- [ ] **BACKFILL-03**: Backfill degrades safely — InfluxDB unconfigured, unreachable, or returning no rows produces a warning and normal live warm-up, never a startup failure
-- [ ] **BACKFILL-04**: The same backfill pass primes the orchestrator's `FrozenSensorDetector` rolling window, so frozen-sensor detection is not blind for N readings after a restart
+- [x] **BACKFILL-01**: A cold entity (no checkpoint, `n_seen == 0`) is primed from InfluxDB history before live streaming, so an entity with sufficient history is warmed up on its first live reading
+- [x] **BACKFILL-02**: Backfill is idempotent — an orchestrator restart against an already-primed or checkpointed detector never re-feeds historical data
+- [x] **BACKFILL-03**: Backfill degrades safely — InfluxDB unconfigured, unreachable, or returning no rows produces a warning and normal live warm-up, never a startup failure
+- [x] **BACKFILL-04**: The same backfill pass primes the orchestrator's `FrozenSensorDetector` rolling window, so frozen-sensor detection is not blind for N readings after a restart
 
 ## Future Requirements
 
@@ -136,10 +136,10 @@ Deferred, not in this milestone's roadmap.
 | PERSIST-04 | Phase 15 | Complete |
 | WARM-01 | Phase 15 | Complete |
 | WARM-02 | Phase 15 | Complete |
-| BACKFILL-01 | Phase 15 | Pending |
-| BACKFILL-02 | Phase 15 | Pending |
-| BACKFILL-03 | Phase 15 | Pending |
-| BACKFILL-04 | Phase 15 | Pending |
+| BACKFILL-01 | Phase 15 | Complete |
+| BACKFILL-02 | Phase 15 | Complete |
+| BACKFILL-03 | Phase 15 | Complete |
+| BACKFILL-04 | Phase 15 | Complete |
 
 **Coverage:**
 

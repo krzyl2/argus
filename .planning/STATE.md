@@ -5,16 +5,16 @@ milestone_name: Admin UI Rebuild (Design System)
 current_phase: 15
 current_phase_name: Streaming State Persistence + Warm-up Backfill
 status: planning
-stopped_at: Completed 15-02-PLAN.md (proto + orchestrator warm-up-from-verdict)
-last_updated: "2026-08-03T08:37:48.134Z"
+stopped_at: Completed 15-03-PLAN.md (InfluxDB backfill)
+last_updated: "2026-08-03T08:59:45.837Z"
 last_activity: 2026-08-03
-last_activity_desc: "Phase 15 planned: research (measured deepcopy 56-96 ms, pickle 409 KiB) → pattern map (15/16 analogs) → 4 plans → plan-checker PASSED on all dimensions"
+last_activity_desc: "15-02 executed: proto additive fields (Point.params, Verdict.warmed_up/n_seen/window) regenerated on both sides; servicer.ScoreStream forwards params + populates warm-up; EntityRuntimeState.RecordReading deleted in favor of ApplyVerdictWarmup; detector suite 244 passed/1 skipped, orchestrator suite 429 passed"
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 27
-  completed_plans: 25
-  percent: 93
+  completed_plans: 26
+  percent: 83
 ---
 
 # Project State: Argus
@@ -79,7 +79,7 @@ See: .planning/PROJECT.md
 | 13 | Groups Screen Rebuild | Not started |
 
 ```
-Progress: [█████████░] 93%
+Progress: [██████████] 96%
 ```
 
 v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -214,6 +214,8 @@ v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/
 - [Phase ?]: Phase 15-01: SIGTERM grace=5s/wait=5s chosen for a fast-and-bounded flush since no verified s6 kill-grace budget exists in this repo
 - [Phase ?]: [Phase 15-02]: HstParams threaded to ToPoint via a new read-only EntityRuntimeState.HstParams property, not a RunAsync signature change — preserves ten existing test call sites
 - [Phase ?]: [Phase 15-02]: ApplyVerdictWarmup ignores a non-positive window argument so WarmUpWindow keeps its constructor-seeded value instead of blanking to 0 for an unknown entity
+- [Phase ?]: Phase 15-03: n_seen==0 idempotency gate lives inside DetectorRegistry.warmup_one (registry owns the gate), entity lock held across the whole check-then-prime feed
+- [Phase ?]: Phase 15-03: ARGUS_BACKFILL_ENABLED/ARGUS_BACKFILL_LOOKBACK deliberately absent from argus/config.yaml and 10-config-gen.sh per D-16
 
 ### Blockers
 
@@ -280,11 +282,12 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 | Phase 14 P05 | 20min | 2 tasks | 4 files |
 | Phase 15 P01 | 9min | 3 tasks | 8 files |
 | Phase 15 P02 | 13min | 3 tasks | 10 files |
+| Phase 15 P03 | 13min | 3 tasks | 18 files |
 
 ## Session Continuity
 
-**Last session:** 2026-08-03T08:37:48.119Z
-**Stopped at:** Completed 15-02-PLAN.md (proto + orchestrator warm-up-from-verdict)
+**Last session:** 2026-08-03T08:59:45.822Z
+**Stopped at:** Completed 15-03-PLAN.md (InfluxDB backfill)
 **Resume file:** None
 
 ## Operator Next Steps
@@ -294,9 +297,9 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 ## Current Position
 
 Phase: 15 — Streaming State Persistence + Warm-up Backfill
-Plan: 2/4 executed (15-01 detector checkpoints, 15-02 proto + orchestrator warm-up-from-verdict); 15-03 (InfluxDB backfill) and 15-04 (restart tests/UAT/ship) remain
-Status: Ready to execute 15-03 (`/gsd-execute-phase 15`)
-Last activity: 2026-08-03 — 15-02 executed: proto additive fields (Point.params, Verdict.warmed_up/n_seen/window) regenerated on both sides; servicer.ScoreStream forwards params + populates warm-up; EntityRuntimeState.RecordReading deleted in favor of ApplyVerdictWarmup; detector suite 244 passed/1 skipped, orchestrator suite 429 passed
+Plan: 3/4 executed (15-01 detector checkpoints, 15-02 proto + orchestrator warm-up-from-verdict, 15-03 InfluxDB backfill); 15-04 (restart tests/UAT/ship) remains
+Status: Ready to execute 15-04 (`/gsd-execute-phase 15`)
+Last activity: 2026-08-03 — 15-03 executed: WarmupRequest/WarmupResponse RPC + registry.warmup_one n_seen==0 gate; InfluxDbReader.QueryHistoryAsync sibling to the untouched QueryAsync; ScoreStreamPipeline.PrimeFromHistoryAsync primes both the detector and FrozenSensorDetector once per stream open with a full degrade-safe try/catch; detector suite 257 passed/1 skipped, orchestrator suite 455 passed/0 failed (one pre-existing flaky test logged to WINDOWS.md #2)
 
 **Phase 15 planning notes worth carrying into execution:**
 
