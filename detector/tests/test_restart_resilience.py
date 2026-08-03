@@ -10,11 +10,20 @@ Tests:
 create_server sets NOT_SERVING → loads models → sets SERVING (MDL-03 gate).
 """
 
+import json
+import os
 import pathlib
+import signal
+import socket
+import subprocess
+import sys
 
+import grpc
 import pytest
+from google.protobuf import wrappers_pb2
 
 from argus_detector.model_store import ModelStore
+from argus_detector.proto import argus_pb2, argus_pb2_grpc
 from argus_detector.pyod_detector import PyODDetector
 from argus_detector.server import create_server
 
@@ -105,3 +114,65 @@ class TestRestartResilience:
 
         assert registry.has_model("sensor_a", "mad")
         assert registry.has_model("sensor_b", "mad")
+
+
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
+class TestSigtermFlush:
+    """PERSIST-03/SC-3: SIGTERM to the detector flushes every dirty entity to
+    disk before the process exits — a clean add-on restart loses zero readings."""
+
+    def test_sigterm_flushes_dirty_checkpoint_before_exit(self, tmp_path):
+        port = _find_free_port()
+
+        env = os.environ.copy()
+        env["ARGUS_GRPC_PORT"] = str(port)
+        env["ARGUS_MODEL_ROOT"] = str(tmp_path)
+        env["ARGUS_GRPC_BIND"] = "127.0.0.1"
+        env.pop("ARGUS_TLS_CERT", None)
+        env.pop("ARGUS_TLS_KEY", None)
+        env.pop("ARGUS_TLS_CA", None)
+        # Interval irrelevant here — the SIGTERM flush is synchronous, not
+        # dependent on the interval thread having ticked.
+        env["ARGUS_CHECKPOINT_INTERVAL_SEC"] = "300"
+
+        repo_detector_dir = pathlib.Path(__file__).resolve().parent.parent
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "argus_detector.server"],
+            cwd=str(repo_detector_dir),
+            env=env,
+        )
+        try:
+            channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+            grpc.channel_ready_future(channel).result(timeout=10)
+            stub = argus_pb2_grpc.DetectorServiceStub(channel)
+
+            points = iter(
+                [
+                    argus_pb2.Point(
+                        entity_id="sensor.sigterm_test",
+                        value=wrappers_pb2.DoubleValue(value=21.0 + i),
+                    )
+                    for i in range(5)
+                ]
+            )
+            verdicts = list(stub.ScoreStream(points))
+            assert len(verdicts) == 5
+            channel.close()
+
+            proc.send_signal(signal.SIGTERM)
+            proc.wait(timeout=10)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+
+        pkl_path = tmp_path / "sensor_sigterm_test" / "hst" / "checkpoint.pkl"
+        json_path = tmp_path / "sensor_sigterm_test" / "hst" / "checkpoint.json"
+        assert pkl_path.exists(), "checkpoint.pkl was not written before process exit"
+        sidecar = json.loads(json_path.read_text())
+        assert sidecar["n_seen"] == 5

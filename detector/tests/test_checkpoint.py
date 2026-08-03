@@ -257,4 +257,115 @@ class TestCheckpointDirty:
 
         release_write.set()
         t.join(timeout=5)
+
+
+class TestDetectorConfigCheckpointKnobs:
+    """D-05: ARGUS_CHECKPOINT_* are detector-side; ARGUS_BACKFILL_* are not
+    (RESEARCH.md Pitfall 3) (Task 3)."""
+
+    def test_defaults(self, monkeypatch):
+        monkeypatch.delenv("ARGUS_CHECKPOINT_INTERVAL_SEC", raising=False)
+        monkeypatch.delenv("ARGUS_CHECKPOINT_ENABLED", raising=False)
+        from argus_detector.config import DetectorConfig
+
+        cfg = DetectorConfig()
+        assert cfg.checkpoint_interval_sec == 300
+        assert cfg.checkpoint_enabled is True
+
+    def test_interval_zero_disables(self, monkeypatch):
+        monkeypatch.setenv("ARGUS_CHECKPOINT_INTERVAL_SEC", "0")
+        from argus_detector.config import DetectorConfig
+
+        cfg = DetectorConfig()
+        assert cfg.checkpoint_interval_sec == 0
+
+    def test_enabled_false(self, monkeypatch):
+        monkeypatch.setenv("ARGUS_CHECKPOINT_ENABLED", "false")
+        from argus_detector.config import DetectorConfig
+
+        cfg = DetectorConfig()
+        assert cfg.checkpoint_enabled is False
+
+    def test_backfill_knobs_stay_orchestrator_side(self):
+        from argus_detector.config import DetectorConfig
+
+        cfg = DetectorConfig()
+        assert hasattr(cfg, "backfill_enabled") is False
+        assert hasattr(cfg, "backfill_lookback") is False
+
+
+class TestCheckpointWriter:
+    """D-05/D-08: interval thread + synchronous flush (Task 3)."""
+
+    def test_zero_interval_start_is_noop(self):
+        from argus_detector.checkpoint_writer import CheckpointWriter
+
+        writer = CheckpointWriter(registry=object(), model_store=object(), interval_sec=0)
+        writer.start()
+        assert writer.is_running is False
+
+    def test_ticks_at_least_twice_within_bounded_wait_and_stops_promptly(self):
+        from argus_detector.checkpoint_writer import CheckpointWriter
+
+        calls = []
+
+        class FakeRegistry:
+            def checkpoint_dirty(self, model_store):
+                calls.append(1)
+                return 0
+
+        writer = CheckpointWriter(registry=FakeRegistry(), model_store=object(), interval_sec=0.05)
+        writer.start()
+        deadline = time.time() + 2
+        while time.time() < deadline and len(calls) < 2:
+            time.sleep(0.02)
+        assert len(calls) >= 2
+
+        t0 = time.perf_counter()
+        writer.stop()
+        assert (time.perf_counter() - t0) < 1.0
+
+    def test_flush_calls_checkpoint_dirty_synchronously_without_starting_thread(self):
+        from argus_detector.checkpoint_writer import CheckpointWriter
+
+        class FakeRegistry:
+            def checkpoint_dirty(self, model_store):
+                return 3
+
+        writer = CheckpointWriter(registry=FakeRegistry(), model_store=object(), interval_sec=0)
+        assert writer.flush() == 3
+        assert writer.is_running is False
+
+    def test_tick_exception_does_not_kill_thread(self):
+        from argus_detector.checkpoint_writer import CheckpointWriter
+
+        calls = []
+
+        class FlakyRegistry:
+            def checkpoint_dirty(self, model_store):
+                calls.append(1)
+                if len(calls) == 1:
+                    raise RuntimeError("boom")
+                return 0
+
+        writer = CheckpointWriter(registry=FlakyRegistry(), model_store=object(), interval_sec=0.05)
+        writer.start()
+        deadline = time.time() + 2
+        while time.time() < deadline and len(calls) < 2:
+            time.sleep(0.02)
+        writer.stop()
+        assert len(calls) >= 2  # thread survived the first tick's exception
+
+
+class TestCreateServerAttachesWriter:
+    """create_server attaches the writer for test introspection; unit tests
+    that only call create_server never spawn a thread (Task 3)."""
+
+    def test_writer_attached_and_not_started(self, tmp_path):
+        from argus_detector.server import create_server
+
+        server = create_server(port=0, tls=False, model_root=tmp_path)
+        writer = server._argus_checkpoint_writer
+        assert writer is not None
+        assert writer.is_running is False
         t2.join(timeout=5)
