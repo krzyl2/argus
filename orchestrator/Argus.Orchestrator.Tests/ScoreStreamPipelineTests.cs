@@ -27,11 +27,21 @@ public class ScoreStreamPipelineTests
     private static HaReading MakeReading(string entityId = "sensor.test", double value = 21.0, bool suppress = false)
         => new HaReading(entityId, value, DateTimeOffset.UtcNow, suppress);
 
-    private static Verdict MakeVerdict(string entityId = "sensor.test", double score = 0.8)
+    /// <summary>
+    /// D-01/WARM-01: warmedUp/nSeen/window default to false/0/0 (matching the pre-15-02
+    /// "not warmed up yet" state) — tests that need a warmed-up entity pass warmedUp: true
+    /// explicitly instead of calling the now-removed EntityRuntimeState.RecordReading().
+    /// </summary>
+    private static Verdict MakeVerdict(
+        string entityId = "sensor.test", double score = 0.8,
+        bool warmedUp = false, int nSeen = 0, int window = 0)
         => new Verdict
         {
             EntityId = entityId,
             Score = score,
+            WarmedUp = warmedUp,
+            NSeen = nSeen,
+            Window = window,
         };
 
     private static EntitiesConfig MakeEntitiesConfig(string entityId = "sensor.test")
@@ -81,11 +91,11 @@ public class ScoreStreamPipelineTests
 
         var entityState = new EntityRuntimeState(HstParams.From(
             cfg.Entities[0].Detectors[0].Params));
-        entityState.RecordReading(); // warm up (window=1 means 1 reading needed)
 
         var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
         var reading = MakeReading(suppress: false);
-        var verdict = MakeVerdict(score: 0.9);
+        // D-01/WARM-01: warmed-up now comes from the verdict, not a local counter.
+        var verdict = MakeVerdict(score: 0.9, warmedUp: true, nSeen: 1, window: 1);
 
         // Act
         await pipeline.ProcessVerdictAsync(reading, verdict, entityState, CancellationToken.None);
@@ -119,11 +129,10 @@ public class ScoreStreamPipelineTests
         });
 
         var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
-        entityState.RecordReading();
 
         var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
         var reading = MakeReading(suppress: true); // SUPPRESSED
-        var verdict = MakeVerdict(score: 0.9);
+        var verdict = MakeVerdict(score: 0.9, warmedUp: true, nSeen: 1, window: 1);
 
         // Act
         await pipeline.ProcessVerdictAsync(reading, verdict, entityState, CancellationToken.None);
@@ -182,13 +191,12 @@ public class ScoreStreamPipelineTests
         });
 
         var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
-        entityState.RecordReading();
 
         var recentAnomalies = new RecentAnomaliesCache();
         var pipeline = new ScoreStreamPipeline(
             publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), recentAnomalies: recentAnomalies);
         var reading = MakeReading(suppress: false);
-        var verdict = MakeVerdict(score: 0.9);
+        var verdict = MakeVerdict(score: 0.9, warmedUp: true, nSeen: 1, window: 1);
 
         await pipeline.ProcessVerdictAsync(reading, verdict, entityState, CancellationToken.None);
 
@@ -222,13 +230,12 @@ public class ScoreStreamPipelineTests
         });
 
         var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
-        entityState.RecordReading();
 
         var recentAnomalies = new RecentAnomaliesCache();
         var pipeline = new ScoreStreamPipeline(
             publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), recentAnomalies: recentAnomalies);
         var reading = MakeReading(suppress: true); // SUPPRESSED
-        var verdict = MakeVerdict(score: 0.9);
+        var verdict = MakeVerdict(score: 0.9, warmedUp: true, nSeen: 1, window: 1);
 
         await pipeline.ProcessVerdictAsync(reading, verdict, entityState, CancellationToken.None);
 
@@ -301,10 +308,9 @@ public class ScoreStreamPipelineTests
 
         // Verdict path — warmed up (window=1), not suppressed, high score → flag ON
         var verdictState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
-        verdictState.RecordReading();
         await pipeline.ProcessVerdictAsync(
             MakeReading("sensor.verdict", suppress: false),
-            MakeVerdict("sensor.verdict", score: 0.9),
+            MakeVerdict("sensor.verdict", score: 0.9, warmedUp: true, nSeen: 1, window: 1),
             verdictState,
             CancellationToken.None);
 
@@ -361,6 +367,121 @@ public class ScoreStreamPipelineTests
         Assert.True(readTaskIdx >= 0, "ReadTask must complete");
         Assert.True(completeIdx < readTaskIdx,
             $"CompleteAsync (idx={completeIdx}) must precede readTask done (idx={readTaskIdx}) — PITFALL 3");
+    }
+
+    // ─── Test 5: D2 fix — write loop no longer counts readings (Phase 15-02) ─
+
+    [Fact]
+    public async Task RunAsync_FeedingReadings_DoesNotChangeReadingCount()
+    {
+        // Executable proof that defect D2 is closed: RecordReading() is gone, so pushing
+        // readings through the write loop must never move ReadingCount — only a verdict can.
+        var callOrder = new List<string>();
+        var fakeCall = new OrderTrackingDuplexCall(callOrder); // yields zero verdicts
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+
+        using var cts = new CancellationTokenSource();
+        var readings = AsyncEnumerableHelper.FromItems(
+            Enumerable.Range(0, 5).Select(i => MakeReading("sensor.test", 20.0 + i)),
+            cancellationToken: cts.Token);
+
+        await pipeline.RunAsync(fakeCall, "sensor.test", readings, entityState, cts.Token);
+
+        Assert.Equal(0, entityState.ReadingCount);
+    }
+
+    // ─── Test 6: D-10 — status cache written from the verdict read loop ─────
+
+    [Fact]
+    public async Task ProcessVerdictAsync_WritesStatusCacheFromVerdictNumbers()
+    {
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var cache = new EntityStatusCache();
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), statusCache: cache);
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+
+        var verdict = MakeVerdict("sensor.test", score: 0.5, warmedUp: false, nSeen: 137, window: 250);
+        await pipeline.ProcessVerdictAsync(MakeReading("sensor.test"), verdict, entityState, CancellationToken.None);
+
+        var entry = cache.Get("sensor.test");
+        Assert.NotNull(entry);
+        Assert.Equal(137, entry!.ReadingCount);
+        Assert.Equal(250, entry.WarmUpWindow);
+        Assert.False(entry.WarmedUp);
+    }
+
+    // ─── Test 7: D-01 — restored-warm entity is not re-suppressed after restart ─
+
+    [Fact]
+    public async Task ProcessVerdictAsync_VerdictWarmedUpTrue_PublishesFlagEvenWithZeroLocalReadingCount()
+    {
+        // A freshly-constructed EntityRuntimeState has ReadingCount=0 (post-restart), but if
+        // the detector's Verdict already reports warmed_up=true (restored checkpoint), the
+        // flag must publish on the very first verdict — no re-suppression wait.
+        var publisher = new FakeStatePublisher();
+        var cfg = new EntitiesConfig();
+        cfg.Entities.Add(new EntityConfig
+        {
+            EntityId = "sensor.restored",
+            FriendlyName = "Restored",
+            Detectors = new List<DetectorConfig>
+            {
+                new DetectorConfig
+                {
+                    Name = "hst",
+                    Params = new Dictionary<string, string> { ["window"] = "250", ["min_consecutive"] = "1" }
+                }
+            }
+        });
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        Assert.Equal(0, entityState.ReadingCount); // fresh, post-restart
+
+        var verdict = MakeVerdict("sensor.restored", score: 0.9, warmedUp: true, nSeen: 300, window: 250);
+        await pipeline.ProcessVerdictAsync(
+            MakeReading("sensor.restored", suppress: false), verdict, entityState, CancellationToken.None);
+
+        Assert.True(publisher.FlagPublished, "Restored-warm entity must publish its flag on the first verdict");
+    }
+
+    // ─── Test 8: WARM-02 — ToPoint emits resolved HstParams as wire params ────
+
+    [Fact]
+    public async Task RunAsync_WriteLoop_EmitsPointWithWindowAndNTreesParams()
+    {
+        var callOrder = new List<string>();
+        var fakeCall = new OrderTrackingDuplexCall(callOrder);
+        var publisher = new FakeStatePublisher();
+        var cfg = new EntitiesConfig();
+        cfg.Entities.Add(new EntityConfig
+        {
+            EntityId = "sensor.params",
+            FriendlyName = "Params",
+            Detectors = new List<DetectorConfig>
+            {
+                new DetectorConfig
+                {
+                    Name = "hst",
+                    Params = new Dictionary<string, string> { ["window"] = "77", ["n_trees"] = "9" }
+                }
+            }
+        });
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+
+        using var cts = new CancellationTokenSource();
+        var readings = AsyncEnumerableHelper.FromItems(
+            new[] { MakeReading("sensor.params") }, cancellationToken: cts.Token);
+
+        await pipeline.RunAsync(fakeCall, "sensor.params", readings, entityState, cts.Token);
+
+        var point = Assert.Single(fakeCall.WrittenPoints);
+        Assert.Equal("77", point.Params["window"]);
+        Assert.Equal("9", point.Params["n_trees"]);
     }
 }
 
@@ -448,6 +569,9 @@ internal sealed class OrderTrackingDuplexCall : IScoreStreamCall
     private readonly List<string> _order;
     private readonly Channel<Verdict> _verdicts = Channel.CreateUnbounded<Verdict>();
 
+    /// <summary>Points passed to WriteAsync, in call order (WARM-02 ToPoint assertions).</summary>
+    public List<Point> WrittenPoints { get; } = new();
+
     public OrderTrackingDuplexCall(List<string> order)
     {
         _order = order;
@@ -455,7 +579,11 @@ internal sealed class OrderTrackingDuplexCall : IScoreStreamCall
         _verdicts.Writer.Complete();
     }
 
-    public Task WriteAsync(Point point, CancellationToken ct) => Task.CompletedTask;
+    public Task WriteAsync(Point point, CancellationToken ct)
+    {
+        WrittenPoints.Add(point);
+        return Task.CompletedTask;
+    }
 
     public async Task CompleteAsync()
     {
@@ -480,6 +608,15 @@ internal static class AsyncEnumerableHelper
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         yield return reading;
+        await Task.CompletedTask;
+    }
+
+    public static async IAsyncEnumerable<HaReading> FromItems(
+        IEnumerable<HaReading> readings,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var reading in readings)
+            yield return reading;
         await Task.CompletedTask;
     }
 }
