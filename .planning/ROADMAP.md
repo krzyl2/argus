@@ -267,7 +267,7 @@ Context: raised 2026-07-03 while live-verifying Phase 8's algorithm chooser. The
 | 12. Sensors Screen Rebuild | v4.1 | 3/3 | Complete    | 2026-07-17 |
 | 13. Groups Screen Rebuild | v4.1 | 3/3 | In Progress|  |
 | 14. Unified Detectors Screen + Add-Detector Wizard | v4.1 | 5/5 | Complete    | 2026-07-22 |
-| 15. Streaming State Persistence + Warm-up Backfill | v4.1 | 0/4 | Planned |  |
+| 15. Streaming State Persistence + Warm-up Backfill | v4.1 | 1/4 | In Progress|  |
 
 ### Phase 14: Unified Detectors Screen + Add-Detector Wizard
 
@@ -351,8 +351,10 @@ backfill pass for ~15 lines.
 
   1. Detector killed with `SIGKILL` mid-warm-up → after restart `n_seen`/`warmed_up` are restored from
      the checkpoint; at most one checkpoint interval of readings is lost
+
   2. Orchestrator restarted alone → warm-up progress on the Detectors screen is unchanged (value comes
      from the verdict, not a local counter)
+
   3. Whole add-on restarted (SIGTERM) → **zero** readings lost
   4. An entity with no new readings for an hour produces **zero** disk writes
   5. `window: 50` configured on an entity → the detector actually uses 50 and the UI shows `x/50`
@@ -361,26 +363,29 @@ backfill pass for ~15 lines.
   8. Orchestrator restart with an existing checkpoint → **no** re-backfill (`n_seen` does not jump)
   9. InfluxDB unavailable or unconfigured → startup succeeds, normal warm-up, WARN log only
 
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 Plans:
 
-- [ ] 15-01-PLAN.md — Detector checkpoints (wave 1, PERSIST-01..04): `ModelStore.save_checkpoint`/
+- [x] 15-01-PLAN.md — Detector checkpoints (wave 1, PERSIST-01..04): `ModelStore.save_checkpoint`/
       `load_checkpoint`, `EntityDetector.n_seen`/`window` accessors, `DetectorRegistry.checkpoint_dirty`
       dirty-tracking (deepcopy under `_entity_lock`, pickle outside — MDL-04, plus a per-entity yield
       since deepcopy measured 56-96 ms), new `CheckpointWriter` interval thread, SIGTERM flush,
       `river_version` sidecar validation, `load_all_into` extended to `*/*/checkpoint.pkl` with an
       explicit checkpoint-wins ordering guarantee
+
 - [ ] 15-02-PLAN.md — Proto + orchestrator warm-up-from-verdict (wave 2, depends 15-01; WARM-01,
       WARM-02): `Point.params = 4`, `Verdict.warmed_up = 9`/`n_seen = 10`/`window = 11`, stub
       regeneration verified on BOTH sides, `servicer.ScoreStream` forwards params (D3 fix),
       `EntityRuntimeState.RecordReading` deleted and warm-up read from the verdict,
       `EntityStatusCache.Set` moved to the verdict read loop
+
 - [ ] 15-03-PLAN.md — InfluxDB backfill (wave 3, depends 15-02; BACKFILL-01..04): `Warmup` RPC with the
       `n_seen == 0` gate inside `DetectorRegistry.warmup_one`,
       `InfluxDbReader.QueryHistoryAsync(entityId, lookback, limit)` as a sibling of the untouched
       24-hour batch query, `ARGUS_BACKFILL_*` on the orchestrator side, pre-stream call site,
       `FrozenDetector` priming, six degrade paths each covered
+
 - [ ] 15-04-PLAN.md — Restart/crash tests, UAT, ship (wave 4, depends 15-01/02/03; all 10 IDs):
       cross-plan hard-kill / corrupt-checkpoint / no-re-backfill cases, version bump to 2.1.9,
       nine-criterion live-HA UAT + GHCR deploy (blocking human checkpoint)

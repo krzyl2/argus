@@ -68,10 +68,10 @@ Backend requirements inside the UI-themed v4.1 milestone. Operator-reported crit
 warm-up restarts from zero on every service or machine restart, because streaming detector state is
 RAM-only and the orchestrator keeps a second, independent warm-up counter.
 
-- [ ] **PERSIST-01**: Streaming detector state (River HST model + `MinMaxScaler` + `n_seen`) is checkpointed to disk on a recurring interval while the service runs — not only at shutdown — so an unexpected power loss or crash costs at most one interval of readings
-- [ ] **PERSIST-02**: Checkpoint writes are atomic (temp file + rename) and only occur for entities whose state actually changed since the last checkpoint; an entity with no new readings produces no disk writes
-- [ ] **PERSIST-03**: The detector flushes all pending checkpoints on SIGTERM, so a clean add-on restart loses zero readings
-- [ ] **PERSIST-04**: Checkpoints are restored into the registry at detector startup before the service reports healthy; a corrupt or River-version-incompatible checkpoint is discarded with a warning and never blocks startup for other entities
+- [x] **PERSIST-01**: Streaming detector state (River HST model + `MinMaxScaler` + `n_seen`) is checkpointed to disk on a recurring interval while the service runs — not only at shutdown — so an unexpected power loss or crash costs at most one interval of readings
+- [x] **PERSIST-02**: Checkpoint writes are atomic (temp file + rename) and only occur for entities whose state actually changed since the last checkpoint; an entity with no new readings produces no disk writes
+- [x] **PERSIST-03**: The detector flushes all pending checkpoints on SIGTERM, so a clean add-on restart loses zero readings
+- [x] **PERSIST-04**: Checkpoints are restored into the registry at detector startup before the service reports healthy; a corrupt or River-version-incompatible checkpoint is discarded with a warning and never blocks startup for other entities
 - [ ] **WARM-01**: The detector is the single source of truth for warm-up — `warmed_up` and `n_seen` travel on the `Verdict`, and the orchestrator no longer maintains its own reading counter
 - [ ] **WARM-02**: Per-entity `hst` params (`window`, `n_trees`) reach the detector, so a configured non-default window governs both actual HST calibration and the warm-up progress shown in the UI
 - [ ] **BACKFILL-01**: A cold entity (no checkpoint, `n_seen == 0`) is primed from InfluxDB history before live streaming, so an entity with sufficient history is warmed up on its first live reading
@@ -130,10 +130,10 @@ Deferred, not in this milestone's roadmap.
 | WIZ-02 | Phase 14 | Planned |
 | WIZ-03 | Phase 14 | Planned |
 | WIZ-04 | Phase 14 | Planned |
-| PERSIST-01 | Phase 15 | Pending |
-| PERSIST-02 | Phase 15 | Pending |
-| PERSIST-03 | Phase 15 | Pending |
-| PERSIST-04 | Phase 15 | Pending |
+| PERSIST-01 | Phase 15 | Complete |
+| PERSIST-02 | Phase 15 | Complete |
+| PERSIST-03 | Phase 15 | Complete |
+| PERSIST-04 | Phase 15 | Complete |
 | WARM-01 | Phase 15 | Pending |
 | WARM-02 | Phase 15 | Pending |
 | BACKFILL-01 | Phase 15 | Pending |

@@ -5,16 +5,16 @@ milestone_name: Admin UI Rebuild (Design System)
 current_phase: 15
 current_phase_name: Streaming State Persistence + Warm-up Backfill
 status: planning
-stopped_at: Phase 15 planned (4 plans, plan-checker PASSED) — ready for /gsd-execute-phase 15
-last_updated: "2026-08-03T00:00:00.000Z"
+stopped_at: Completed 15-01-PLAN.md (detector streaming checkpoints)
+last_updated: "2026-08-03T08:21:27.118Z"
 last_activity: 2026-08-03
-last_activity_desc: Phase 15 planned — 4 plans, waves 1→2→3→4, 10/10 requirements, plan-checker verification PASSED
+last_activity_desc: "Phase 15 planned: research (measured deepcopy 56-96 ms, pickle 409 KiB) → pattern map (15/16 analogs) → 4 plans → plan-checker PASSED on all dimensions"
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 5
-  total_plans: 23
-  completed_plans: 23
-  percent: 100
+  total_plans: 27
+  completed_plans: 24
+  percent: 83
 ---
 
 # Project State: Argus
@@ -79,7 +79,7 @@ See: .planning/PROJECT.md
 | 13 | Groups Screen Rebuild | Not started |
 
 ```
-Progress: [██████████] 100%
+Progress: [█████████░] 89%
 ```
 
 v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/archive/`.
@@ -210,6 +210,8 @@ v1.0 + v2.0 + v3.0 + v4.0 archived under `.planning/milestones/` and `.planning/
 - [Phase ?]: 14-04: Left SensorsPage.tsx on disk unreferenced (copy-source for 14-02/14-03 excerpts) instead of deleting
 - [Phase ?]: [Phase 14-05]: POST /api/sensors/save reads liveCfg.Get().Groups (pre-Swap reference) to populate the root dict's groups: key, preserving pre-existing groups (G-14-1 fix #1)
 - [Phase ?]: [Phase 14-05]: SensorTracking.TrackedIds(EntitiesConfig) is the single tracked-id source for GET /api/sensors isTracked, replacing the stale HA registry snapshot (G-14-1 fix #2)
+- [Phase ?]: Phase 15-01: dirty-tracking baseline (_last_checkpointed) lives on DetectorRegistry, never on the pickled EntityDetector (RESEARCH.md anti-pattern note)
+- [Phase ?]: Phase 15-01: SIGTERM grace=5s/wait=5s chosen for a fast-and-bounded flush since no verified s6 kill-grace budget exists in this repo
 
 ### Blockers
 
@@ -274,11 +276,12 @@ None currently — v4.0's 08-04 human-verify checkpoint is superseded by v4.1's 
 | Phase 14 P03 | 6min | 2 tasks | 2 files |
 | Phase 14 P04 | 12min | 3 tasks | 7 files |
 | Phase 14 P05 | 20min | 2 tasks | 4 files |
+| Phase 15 P01 | 9min | 3 tasks | 8 files |
 
 ## Session Continuity
 
-**Last session:** 2026-07-22T12:31:47.744Z
-**Stopped at:** Completed 14-05-PLAN.md (gap closure G-14-1)
+**Last session:** 2026-08-03T08:21:27.102Z
+**Stopped at:** Completed 15-01-PLAN.md (detector streaming checkpoints)
 **Resume file:** None
 
 ## Operator Next Steps
@@ -293,6 +296,7 @@ Status: Ready to execute (`/gsd-execute-phase 15`)
 Last activity: 2026-08-03 — Phase 15 planned: research (measured deepcopy 56-96 ms, pickle 409 KiB) → pattern map (15/16 analogs) → 4 plans → plan-checker PASSED on all dimensions
 
 **Phase 15 planning notes worth carrying into execution:**
+
 - Waves are strictly linear 1→2→3→4, NOT the 15-01/15-02 parallel pair the roadmap first hinted at. 15-02's `servicer.ScoreStream` consumes `EntityDetector.n_seen`/`window` and `DetectorRegistry.get_warmup_state`, which 15-01 creates — parallel execution would compile against methods that do not exist yet.
 - `deepcopy` of a warmed `EntityDetector` measured 56-96 ms (pickle 409 KiB). That already exceeds the ">50 ms" trigger in 15-CONTEXT.md's risk table, so the per-entity yield in the checkpoint writer is baseline design, not a conditional mitigation.
 - The four new env knobs split across processes: `ARGUS_CHECKPOINT_INTERVAL_SEC` / `ARGUS_CHECKPOINT_ENABLED` are detector-side (Python `DetectorConfig`); `ARGUS_BACKFILL_ENABLED` / `ARGUS_BACKFILL_LOOKBACK` are orchestrator-side (.NET `ConnectionSettings`). 15-CONTEXT.md D-16 lists all four together and is imprecise on ownership.
