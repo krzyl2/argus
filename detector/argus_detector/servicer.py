@@ -60,7 +60,15 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
                 entity_id: str = point.entity_id
                 value: float = point.value.value  # unwrap DoubleValue
 
-                score: float = self._registry.score_one(entity_id, value)
+                # WARM-02 (D3 fix): forward point.params so a configured window/n_trees
+                # actually reaches EntityDetector.from_params. Params are honored at
+                # instance-creation time only (existing registry semantics unchanged).
+                score: float = self._registry.score_one(entity_id, value, params=dict(point.params))
+
+                # WARM-01/D-01: read warm-up state AFTER scoring so n_seen reflects
+                # the point just processed. The detector is the single source of
+                # truth for warm-up — the orchestrator only reads these three fields.
+                warmed_up, n_seen, window = self._registry.get_warmup_state(entity_id, "hst")
 
                 ts = timestamp_pb2.Timestamp()
                 ts.GetCurrentTime()
@@ -71,6 +79,9 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
                     is_anomaly=False,
                     detector="hst",
                     timestamp=ts,
+                    warmed_up=warmed_up,
+                    n_seen=n_seen,
+                    window=window,
                 )
 
                 latency_ms = (time.monotonic() - t_start) * 1000
@@ -83,6 +94,9 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
                         "score": score,
                         "latency_ms": round(latency_ms, 3),
                         "detector": "hst",
+                        "warmed_up": warmed_up,
+                        "n_seen": n_seen,
+                        "window": window,
                     },
                 )
 
