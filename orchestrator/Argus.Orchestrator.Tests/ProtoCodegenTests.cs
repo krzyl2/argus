@@ -1,3 +1,4 @@
+using System.Linq;
 using Google.Protobuf;
 using Xunit;
 
@@ -91,5 +92,47 @@ public class ProtoCodegenTests
         Assert.True(verdictRoundtrip.WarmedUp);
         Assert.Equal(137, verdictRoundtrip.NSeen);
         Assert.Equal(250, verdictRoundtrip.Window);
+    }
+
+    [Fact]
+    public void WarmupRequest_AndWarmupResponse_RoundtripThroughSerialization()
+    {
+        // Phase 15-03: WarmupRequest/WarmupResponse must survive a ToByteArray/parse
+        // round-trip — the regeneration gate for BACKFILL-01..04.
+        var request = new Argus.Detector.V1.WarmupRequest
+        {
+            EntityId = "sensor.test",
+            Detector = "hst",
+        };
+        request.Params["window"] = "250";
+        request.History.Add(new Argus.Detector.V1.Point { EntityId = "sensor.test" });
+
+        var response = new Argus.Detector.V1.WarmupResponse
+        {
+            Ok = true,
+            NSeen = 250,
+            WarmedUp = true,
+            Skipped = false,
+        };
+
+        var requestRoundtrip = Argus.Detector.V1.WarmupRequest.Parser.ParseFrom(request.ToByteArray());
+        var responseRoundtrip = Argus.Detector.V1.WarmupResponse.Parser.ParseFrom(response.ToByteArray());
+
+        Assert.Equal("sensor.test", requestRoundtrip.EntityId);
+        Assert.Equal("250", requestRoundtrip.Params["window"]);
+        Assert.Single(requestRoundtrip.History);
+        Assert.True(responseRoundtrip.Ok);
+        Assert.Equal(250, responseRoundtrip.NSeen);
+        Assert.True(responseRoundtrip.WarmedUp);
+        Assert.False(responseRoundtrip.Skipped);
+    }
+
+    [Fact]
+    public void DetectorServiceClient_ExposesWarmupRpc()
+    {
+        // Proves Grpc.Tools generated the Warmup RPC method from argus.proto.
+        var clientType = typeof(Argus.Detector.V1.DetectorService.DetectorServiceClient);
+        var methods = clientType.GetMethods().Where(m => m.Name == "Warmup");
+        Assert.NotEmpty(methods);
     }
 }

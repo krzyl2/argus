@@ -132,3 +132,40 @@ class TestProtoCodegen:
         assert verdict_roundtrip.warmed_up is True
         assert verdict_roundtrip.n_seen == 137
         assert verdict_roundtrip.window == 250
+
+    def test_warmup_request_and_response_roundtrip(self):
+        """Phase 15-03: WarmupRequest/WarmupResponse must survive a
+        serialize/parse round-trip — the regeneration gate for BACKFILL-01..04."""
+        from argus_detector.proto import argus_pb2
+
+        request = argus_pb2.WarmupRequest(
+            entity_id="sensor.test",
+            detector="hst",
+            history=[argus_pb2.Point(entity_id="sensor.test")],
+        )
+        request.params["window"] = "250"
+
+        response = argus_pb2.WarmupResponse(
+            ok=True, n_seen=250, warmed_up=True, skipped=False
+        )
+
+        request_roundtrip = argus_pb2.WarmupRequest.FromString(request.SerializeToString())
+        response_roundtrip = argus_pb2.WarmupResponse.FromString(response.SerializeToString())
+
+        assert request_roundtrip.entity_id == "sensor.test"
+        assert request_roundtrip.params["window"] == "250"
+        assert len(request_roundtrip.history) == 1
+        assert response_roundtrip.ok is True
+        assert response_roundtrip.n_seen == 250
+        assert response_roundtrip.warmed_up is True
+        assert response_roundtrip.skipped is False
+
+    def test_detector_service_stub_exposes_warmup_rpc(self):
+        """DetectorServiceStub instances must expose a callable Warmup (verifies
+        the RPC stub regenerated)."""
+        import grpc
+        from argus_detector.proto import argus_pb2_grpc
+
+        channel = grpc.insecure_channel("localhost:1")
+        stub = argus_pb2_grpc.DetectorServiceStub(channel)
+        assert callable(getattr(stub, "Warmup", None)), "Warmup not found on stub"
