@@ -108,3 +108,27 @@ class TestProtoCodegen:
         stub = argus_pb2_grpc.DetectorServiceStub(channel)
         assert callable(getattr(stub, "ScoreGroupBatch", None)), "ScoreGroupBatch not found on stub"
         assert callable(getattr(stub, "FitGroup", None)), "FitGroup not found on stub"
+
+    def test_point_params_and_verdict_warmup_fields_roundtrip(self):
+        """Phase 15-02: Point.params (map, field 4) and Verdict.warmed_up/n_seen/window
+        (fields 9-11) must survive a serialize/parse round-trip. This is the regeneration
+        gate for WARM-01/WARM-02 — it fails loudly if the Python stubs are stale."""
+        from argus_detector.proto import argus_pb2
+
+        point = argus_pb2.Point(entity_id="sensor.test")
+        point.params["window"] = "50"
+
+        verdict = argus_pb2.Verdict(
+            entity_id="sensor.test",
+            warmed_up=True,
+            n_seen=137,
+            window=250,
+        )
+
+        point_roundtrip = argus_pb2.Point.FromString(point.SerializeToString())
+        verdict_roundtrip = argus_pb2.Verdict.FromString(verdict.SerializeToString())
+
+        assert point_roundtrip.params["window"] == "50"
+        assert verdict_roundtrip.warmed_up is True
+        assert verdict_roundtrip.n_seen == 137
+        assert verdict_roundtrip.window == 250

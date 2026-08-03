@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using Xunit;
 
 namespace Argus.Orchestrator.Tests;
@@ -64,5 +65,31 @@ public class ProtoCodegenTests
         // Null assignment proves nullable wrapper
         verdict.Score = null;
         Assert.Null(verdict.Score);
+    }
+
+    [Fact]
+    public void PointParams_AndVerdictWarmupFields_RoundtripThroughSerialization()
+    {
+        // Phase 15-02: Point.params (map, field 4) and Verdict.warmed_up/n_seen/window
+        // (fields 9-11) must survive a ToByteArray/parse round-trip. This is the
+        // regeneration gate for WARM-01/WARM-02 — it fails loudly if the .NET stubs are stale.
+        var point = new Argus.Detector.V1.Point { EntityId = "sensor.test" };
+        point.Params["window"] = "50";
+
+        var verdict = new Argus.Detector.V1.Verdict
+        {
+            EntityId = "sensor.test",
+            WarmedUp = true,
+            NSeen = 137,
+            Window = 250,
+        };
+
+        var pointRoundtrip = Argus.Detector.V1.Point.Parser.ParseFrom(point.ToByteArray());
+        var verdictRoundtrip = Argus.Detector.V1.Verdict.Parser.ParseFrom(verdict.ToByteArray());
+
+        Assert.Equal("50", pointRoundtrip.Params["window"]);
+        Assert.True(verdictRoundtrip.WarmedUp);
+        Assert.Equal(137, verdictRoundtrip.NSeen);
+        Assert.Equal(250, verdictRoundtrip.Window);
     }
 }

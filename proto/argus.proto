@@ -9,6 +9,7 @@ message Point {
   string entity_id = 1;
   google.protobuf.DoubleValue value = 2;
   google.protobuf.Timestamp timestamp = 3;
+  map<string, string> params = 4;
 }
 
 message Verdict {
@@ -20,6 +21,9 @@ message Verdict {
   bool is_anomaly = 6;
   string detector = 7;
   google.protobuf.Timestamp timestamp = 8;
+  bool warmed_up = 9;
+  int32 n_seen = 10;
+  int32 window = 11;
 }
 
 message FitRequest {
