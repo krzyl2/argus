@@ -12,6 +12,7 @@ Environment variables:
   ARGUS_TLS_CA       Path to CA cert for mTLS client auth (default: None)
   ARGUS_LOG_LEVEL    Logging level              (default: INFO)
   ARGUS_MODEL_ROOT   Root directory for model storage (default: /var/argus/models)
+  ARGUS_GRPC_MAX_WORKERS  gRPC server thread-pool size (default: 64)
 """
 
 import os
@@ -28,6 +29,10 @@ class DetectorConfig:
         self.tls_ca: str | None = os.environ.get("ARGUS_TLS_CA") or None
         self.log_level: str = os.environ.get("ARGUS_LOG_LEVEL", "INFO")
         self.model_root: str = os.environ.get("ARGUS_MODEL_ROOT", "/var/argus/models")
+        # One long-lived ScoreStream call permanently occupies one thread of the gRPC
+        # server pool, so the pool must be larger than the number of watched entities —
+        # otherwise Health/Check (and every new stream) starves behind them.
+        self.grpc_max_workers: int = int(os.environ.get("ARGUS_GRPC_MAX_WORKERS", "64"))
 
     @property
     def mtls_enabled(self) -> bool:
