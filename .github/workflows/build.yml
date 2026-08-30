@@ -26,6 +26,13 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Generate mTLS fixture certs for the tests
+        # deploy/certs/ is gitignored, so a clean CI checkout has none and the
+        # DetectorChannelFactory mTLS tests fail in their static initializer
+        # ("deploy/certs/ not found"). These are throwaway fixtures for this job only —
+        # nothing generated here is deployed or published.
+        run: bash deploy/generate-certs.sh 127.0.0.1 gpu-host
+
       - name: Run unit tests
         # Target the .sln explicitly: orchestrator/ holds both Argus.Orchestrator.sln and
         # Argus.Orchestrator.slnx, and a bare folder argument makes MSBuild bail out with
