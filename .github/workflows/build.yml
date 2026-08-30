@@ -75,11 +75,26 @@ jobs:
         id: builddate
         run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - name: Compute image version (strip leading v from tag)
+      - name: Compute image version
         id: ver
         env:
           REF: ${{ github.ref_name }}
-        run: echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            version="${REF#v}"
+          else
+            # Manual run from a branch: take the version the add-on declares, because
+            # Supervisor pulls {image}:{config.yaml version}. A branch name would be the
+            # wrong tag anyway — and an invalid image tag as soon as it contains a slash.
+            version="$(grep -m1 '^version:' argus/config.yaml | sed -e 's/^version:[[:space:]]*//' -e 's/^"//' -e 's/"$//')"
+          fi
+          if [ -z "$version" ]; then
+            echo "FAIL: could not determine image version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Image version: $version"
 
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v6
