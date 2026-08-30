@@ -27,7 +27,12 @@ jobs:
           dotnet-version: "8.0.x"
 
       - name: Run unit tests
-        run: dotnet test orchestrator/ -c Release --logger "console;verbosity=normal"
+        # Target the .sln explicitly: orchestrator/ holds both Argus.Orchestrator.sln and
+        # Argus.Orchestrator.slnx, and a bare folder argument makes MSBuild bail out with
+        # MSB1050 ("more than one project or solution file") — which failed every release
+        # build so far. The .slnx format also needs SDK 9.0.200+, so .sln is the right target
+        # for the .NET 8 SDK pinned above.
+        run: dotnet test orchestrator/Argus.Orchestrator.sln -c Release --logger "console;verbosity=normal"
 
       - name: Set up Node 20
         uses: actions/setup-node@v4
