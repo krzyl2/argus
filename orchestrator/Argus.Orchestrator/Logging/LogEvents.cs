@@ -39,10 +39,12 @@ public static class LogEvents
     public static readonly EventId MqttWorkerStarted = new(4006, nameof(MqttWorkerStarted));
     public static readonly EventId MqttWorkerReady = new(4007, nameof(MqttWorkerReady));
     public static readonly EventId MqttCredentialsRefreshed = new(4008, nameof(MqttCredentialsRefreshed));
+    public static readonly EventId MqttPublishDropped = new(4009, nameof(MqttPublishDropped));
 
     // Health publisher (6xxx)
     public static readonly EventId HealthEntityPublished = new(6001, nameof(HealthEntityPublished));
     public static readonly EventId HealthStatePublished  = new(6002, nameof(HealthStatePublished));
+    public static readonly EventId HealthCycleFailed     = new(6003, nameof(HealthCycleFailed));
 
     // Phase 2 UI / Sensor Registry (7xxx)
     public static readonly EventId SensorRegistryUpdated = new(7001, nameof(SensorRegistryUpdated));

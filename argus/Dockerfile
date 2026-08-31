@@ -3,7 +3,9 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:bookworm
 
 # ── Stage 1: build the SPA (Node, discarded) ──────────────────────────────────
-FROM node:20-alpine AS ui-build
+# Pinned to BUILDPLATFORM: the SPA output is plain JS/CSS, byte-identical for every
+# target arch, so emulating this stage under QEMU for the arm64 leg only costs time.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS ui-build
 WORKDIR /src/ui
 COPY orchestrator/ui/package.json orchestrator/ui/package-lock.json ./
 RUN npm ci
@@ -14,7 +16,13 @@ RUN npm run build
 # Output: /src/Argus.Orchestrator/wwwroot/ (index.html, assets/*.js, css/argus.css)
 
 # ── Stage 2: publish the .NET orchestrator (SDK, discarded) ──────────────────
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet-build
+# Pinned to BUILDPLATFORM. The publish is framework-dependent and RID-less, and the s6
+# run script starts it as `dotnet Argus.Orchestrator.dll`, so the output is portable IL:
+# the same files are correct in both the amd64 and the arm64 image. Running the SDK
+# under QEMU for the arm64 leg therefore bought nothing — and killed the build:
+#   qemu : error : uncaught target signal 11 (Segmentation fault) - core dumped
+# Keep this pinned unless the app starts needing a per-arch apphost or a native RID.
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet-build
 WORKDIR /src
 COPY orchestrator/ ./orchestrator/
 COPY proto/ ./proto/

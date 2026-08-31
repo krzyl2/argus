@@ -1,6 +1,7 @@
 using System.Text;
 using Argus.Orchestrator.Logging;
 using MQTTnet;
+using MQTTnet.Exceptions;
 using MQTTnet.Protocol;
 
 namespace Argus.Orchestrator.Mqtt;
@@ -32,6 +33,12 @@ public sealed class MqttConnection : IAsyncDisposable
     // concurrently — MQTTnet does not guarantee thread-safety for concurrent
     // connect attempts on one client (WR-02).
     private readonly SemaphoreSlim _connectGate = new(1, 1);
+
+    // How long PublishAsync waits for the reconnect loop to restore the connection
+    // before dropping the message. Shorter than the HealthPublisherWorker interval so
+    // a publish can never pile up behind the next one.
+    internal TimeSpan PublishConnectionWait { get; set; } = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ConnectionPollInterval = TimeSpan.FromMilliseconds(200);
 
     public MqttConnection(IMqttCredentialSource credentialSource, ILogger<MqttConnection> logger)
     {
@@ -75,6 +82,17 @@ public sealed class MqttConnection : IAsyncDisposable
 
     /// <summary>
     /// Publishes a message with optional retain flag, QoS AtLeastOnce.
+    ///
+    /// Never throws on a broker-side/transport failure (RES-01): every caller is a
+    /// BackgroundService, and an escaping <see cref="MqttClientDisconnectedException"/>
+    /// would stop the whole host (BackgroundServiceExceptionBehavior.StopHost), taking
+    /// the add-on down on a single keep-alive timeout. A publish attempted while the
+    /// reconnect loop is running waits briefly for the connection to come back and is
+    /// otherwise dropped with a warning — state topics are re-published on the next
+    /// reading, and retained topics are re-published by the reconnect path.
+    ///
+    /// Cancellation still propagates as <see cref="OperationCanceledException"/> so a
+    /// host shutdown remains a clean stop.
     /// </summary>
     public async Task PublishAsync(string topic, string payload, bool retain, CancellationToken ct)
     {
@@ -85,7 +103,47 @@ public sealed class MqttConnection : IAsyncDisposable
             .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
             .Build();
 
-        await _client.PublishAsync(message, ct);
+        if (!await WaitForConnectionAsync(ct))
+        {
+            _logger.LogWarning(LogEvents.MqttPublishDropped,
+                "MQTT not connected — dropped publish to {Topic}", topic);
+            return;
+        }
+
+        try
+        {
+            await _client.PublishAsync(message, ct);
+        }
+        catch (MqttClientDisconnectedException ex)
+        {
+            // Disconnected between the check and the publish (e.g. keep-alive ping
+            // timed out mid-call). The DisconnectedAsync handler owns reconnecting.
+            _logger.LogWarning(LogEvents.MqttPublishDropped, ex,
+                "MQTT disconnected during publish — dropped message to {Topic}", topic);
+        }
+        catch (MqttCommunicationException ex)
+        {
+            _logger.LogWarning(LogEvents.MqttPublishDropped, ex,
+                "MQTT communication failure — dropped message to {Topic}", topic);
+        }
+    }
+
+    /// <summary>
+    /// Waits up to <see cref="PublishConnectionWait"/> for the reconnect loop to restore
+    /// the connection. Returns false when the client is still disconnected — the caller
+    /// then drops the message instead of throwing.
+    /// </summary>
+    private async Task<bool> WaitForConnectionAsync(CancellationToken ct)
+    {
+        if (_client.IsConnected) return true;
+
+        var deadline = DateTime.UtcNow + PublishConnectionWait;
+        while (!_client.IsConnected && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(ConnectionPollInterval, ct);
+        }
+
+        return _client.IsConnected;
     }
 
     /// <summary>
@@ -107,6 +165,10 @@ public sealed class MqttConnection : IAsyncDisposable
         return new MqttClientOptionsBuilder()
             .WithTcpServer(creds.Host ?? "localhost", creds.Port)
             .WithCredentials(creds.User, creds.Password)
+            // Longer than the MQTTnet default (15s) so a busy add-on host sends fewer
+            // pings and a single slow PINGRESP is less likely to be read as a dead
+            // connection — that keep-alive timeout is what triggered the reconnect churn.
+            .WithKeepAlivePeriod(TimeSpan.FromSeconds(30))
             .WithWillTopic(BridgeAvailabilityTopic)
             .WithWillPayload("offline")
             .WithWillRetain(true)

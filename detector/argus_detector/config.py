@@ -16,6 +16,7 @@ Environment variables:
                                  (default: 300; 0 disables the writer, D-05)
   ARGUS_CHECKPOINT_ENABLED       Enable the streaming checkpoint writer
                                  (default: true, D-05)
+  ARGUS_GRPC_MAX_WORKERS  gRPC server thread-pool size (default: 64)
 
 Note: ARGUS_BACKFILL_ENABLED/ARGUS_BACKFILL_LOOKBACK are orchestrator-side
 (.NET ConnectionSettings) knobs, not detector-side — see 15-RESEARCH.md
@@ -42,6 +43,10 @@ class DetectorConfig:
         self.checkpoint_enabled: bool = (
             os.environ.get("ARGUS_CHECKPOINT_ENABLED", "true").lower() == "true"
         )
+        # One long-lived ScoreStream call permanently occupies one thread of the gRPC
+        # server pool, so the pool must be larger than the number of watched entities —
+        # otherwise Health/Check (and every new stream) starves behind them.
+        self.grpc_max_workers: int = int(os.environ.get("ARGUS_GRPC_MAX_WORKERS", "64"))
 
     @property
     def mtls_enabled(self) -> bool:

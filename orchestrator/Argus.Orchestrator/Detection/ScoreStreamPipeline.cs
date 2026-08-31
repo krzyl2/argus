@@ -288,10 +288,28 @@ public sealed class ScoreStreamPipeline
 
     // ─── Private helpers ──────────────────────────────────────────────────────
 
-    private async Task RunEntityStreamAsync(
+    private Task RunEntityStreamAsync(
         string entityId,
         EntityRuntimeState entityState,
         IAsyncEnumerable<HaReading> readings,
+        CancellationToken ct)
+        => RunEntityStreamAsync(
+            entityId,
+            entityState,
+            readings,
+            token => new LiveScoreStreamCall(_gateway!.DetectorClient.ScoreStream(cancellationToken: token)),
+            ct);
+
+    /// <summary>
+    /// Runs one entity stream with an injectable call factory. The factory seam lets tests
+    /// exercise the failure handling below without a live gRPC channel — the handling is the
+    /// only thing standing between a detector-side stream failure and a host shutdown.
+    /// </summary>
+    internal async Task RunEntityStreamAsync(
+        string entityId,
+        EntityRuntimeState entityState,
+        IAsyncEnumerable<HaReading> readings,
+        Func<CancellationToken, IScoreStreamCall> callFactory,
         CancellationToken ct)
     {
         try
@@ -301,8 +319,14 @@ public sealed class ScoreStreamPipeline
             // and never lets a failure here prevent the stream from opening below.
             await PrimeFromHistoryAsync(entityId, entityState, ct);
 
-            var call = new LiveScoreStreamCall(_gateway!.DetectorClient.ScoreStream(cancellationToken: ct));
+            var call = callFactory(ct);
             await RunAsync(call, entityId, readings, entityState, ct);
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.Cancelled && ct.IsCancellationRequested)
+        {
+            // Client-side cancellation (host shutdown or CFG-04 reload) surfaces from the
+            // gRPC stream as RpcException/Cancelled, not OperationCanceledException. Letting
+            // it escape fails HaListenerWorker and stops the host on every clean shutdown.
         }
         catch (RpcException ex) when (ex.StatusCode != StatusCode.Cancelled)
         {
@@ -310,6 +334,15 @@ public sealed class ScoreStreamPipeline
             _logger.LogError(ex,
                 "ScoreStream RpcException for {EntityId}: {Status} — entity marked offline",
                 entityId, ex.Status);
+        }
+        catch (RpcException ex)
+        {
+            // Cancelled without our own cancellation — the detector dropped the call.
+            // Treat it like any other stream failure: mark the entity offline, stay alive.
+            await HandleDetectorFailureAsync(entityId, CancellationToken.None);
+            _logger.LogWarning(ex,
+                "ScoreStream cancelled by detector for {EntityId} — entity marked offline",
+                entityId);
         }
         catch (OperationCanceledException)
         {

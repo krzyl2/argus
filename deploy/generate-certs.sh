@@ -36,14 +36,20 @@ if [[ -z "${GPU_HOST_NAME}" ]]; then
 fi
 
 # On Windows Git Bash, the shell performs MSYS path conversion on openssl -subj
-# arguments, turning /CN=ArgusCA into C:/Program Files/Git/CN=ArgusCA.
-# We use the //CN= prefix (double forward slash), which signals to Git Bash "do not
-# convert this path". On Linux/macOS the leading // is normalised to / by the kernel
-# and openssl sees the correct /CN= form. This is the standard workaround for CI on
-# Windows runners. See: https://github.com/openssl/openssl/issues/8795
-SUBJ_CA="//CN=ArgusCA"
-SUBJ_SERVER="//CN=${GPU_HOST_NAME}"
-SUBJ_CLIENT="//CN=edge-host"
+# arguments, turning /CN=ArgusCA into C:/Program Files/Git/CN=ArgusCA. The //CN=
+# prefix (double forward slash) tells Git Bash "do not convert this path".
+# That prefix is NOT safe everywhere: OpenSSL 3 reads the leading empty component as
+# an unknown attribute, warns "Skipping unknown subject name attribute" and drops the
+# CN — leaving every cert with an empty subject, which then fails chain verification.
+# So pick the prefix per platform instead of assuming one form works on both.
+# See: https://github.com/openssl/openssl/issues/8795
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) SUBJ_PREFIX="//" ;;
+  *)                    SUBJ_PREFIX="/"  ;;
+esac
+SUBJ_CA="${SUBJ_PREFIX}CN=ArgusCA"
+SUBJ_SERVER="${SUBJ_PREFIX}CN=${GPU_HOST_NAME}"
+SUBJ_CLIENT="${SUBJ_PREFIX}CN=edge-host"
 
 # ---------------------------------------------------------------------------
 # Output directory — always relative to this script's location

@@ -111,6 +111,46 @@ public class MqttConnectionTests
         Assert.Equal("argus/bridge/availability", StatePublisher.BridgeAvailabilityTopic);
     }
 
+    // ── Keep-alive tuning (spurious PINGRESP timeouts caused reconnect churn) ──
+
+    [Fact]
+    public async Task BuildConnectOptionsAsync_KeepAlive_IsThirtySeconds()
+    {
+        var conn = MakeConn();
+        var opts = await conn.BuildConnectOptionsAsync(CancellationToken.None);
+        Assert.Equal(TimeSpan.FromSeconds(30), opts.KeepAlivePeriod);
+    }
+
+    // ── Publish resilience: a broker outage must never stop the host ──────────
+
+    [Fact]
+    public async Task PublishAsync_WhenNeverConnected_DoesNotThrow()
+    {
+        // Every caller is a BackgroundService: an MqttClientDisconnectedException escaping
+        // here stops the whole host (BackgroundServiceExceptionBehavior.StopHost) and, via
+        // the s6 finish script (PROC-03), halts the add-on container.
+        var conn = MakeConn();
+        conn.PublishConnectionWait = TimeSpan.FromMilliseconds(50);
+
+        var ex = await Record.ExceptionAsync(() =>
+            conn.PublishAsync("argus/test/state", "ON", retain: false, CancellationToken.None));
+
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public async Task PublishAsync_WhenDisconnected_StillCancellable()
+    {
+        // Cancellation must keep propagating so host shutdown stays a clean stop.
+        var conn = MakeConn();
+        conn.PublishConnectionWait = TimeSpan.FromSeconds(5);
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(50));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            conn.PublishAsync("argus/test/state", "ON", retain: false, cts.Token));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     internal sealed class FakeCredentialSource : IMqttCredentialSource

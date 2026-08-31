@@ -75,8 +75,13 @@ def create_server(
 
     use_tls = config.mtls_enabled if tls is None else tls
 
-    # Build server
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    # Build server.
+    # Pool size must exceed the number of watched entities: ScoreStream is a long-lived
+    # bidi call that holds its worker thread for the lifetime of the stream, so a pool of
+    # 10 leaves Health/Check queued behind them once ~10 entities are configured — which
+    # reads in the orchestrator as detector=False forever (HEALTH-01) and inflates scoring
+    # latency. Configurable via ARGUS_GRPC_MAX_WORKERS.
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=config.grpc_max_workers))
 
     # Register grpc.health.v1 Health service
     health_servicer = health.HealthServicer()

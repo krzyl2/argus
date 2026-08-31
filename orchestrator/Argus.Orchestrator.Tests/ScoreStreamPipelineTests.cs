@@ -359,6 +359,86 @@ public class ScoreStreamPipelineTests
         Assert.False(publisher.LastAvailabilityOnline, "Should publish offline on detector failure");
     }
 
+    // ─── Test 3b: stream failures never take the host down ───────────────────
+
+    /// <summary>One reading that ignores cancellation, so the stream reaches the call itself.</summary>
+    private static async IAsyncEnumerable<HaReading> SingleReading(string entityId)
+    {
+        await Task.Yield();
+        yield return MakeReading(entityId);
+    }
+
+    private static EntityRuntimeState WarmState()
+        => new EntityRuntimeState(HstParams.From(new Dictionary<string, string> { ["window"] = "1" }));
+
+    [Fact]
+    public async Task RunEntityStream_CancelledRpcDuringShutdown_DoesNotThrow()
+    {
+        // Client-side cancellation reaches us as RpcException/Cancelled, not OCE. If it
+        // escapes, HaListenerWorker fails and StopHost tears the add-on down on every
+        // shutdown and every CFG-04 reload.
+        var publisher = new FakeStatePublisher();
+        var pipeline = new ScoreStreamPipeline(
+            publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(MakeEntitiesConfig()));
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var ex = await Record.ExceptionAsync(() => pipeline.RunEntityStreamAsync(
+            "sensor.test",
+            WarmState(),
+            SingleReading("sensor.test"),
+            _ => new ThrowingScoreStreamCall(
+                new RpcException(new Status(StatusCode.Cancelled, "Call canceled by the client."))),
+            cts.Token));
+
+        Assert.Null(ex);
+        Assert.False(publisher.AvailabilityPublished,
+            "Our own cancellation is a clean stop, not a detector failure");
+    }
+
+    [Fact]
+    public async Task RunEntityStream_CancelledRpcWithoutShutdown_MarksEntityOffline()
+    {
+        // Detector dropped the call while we were still running — degrade the entity,
+        // stay alive (RES-01).
+        var publisher = new FakeStatePublisher();
+        var pipeline = new ScoreStreamPipeline(
+            publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(MakeEntitiesConfig()));
+
+        var ex = await Record.ExceptionAsync(() => pipeline.RunEntityStreamAsync(
+            "sensor.test",
+            WarmState(),
+            SingleReading("sensor.test"),
+            _ => new ThrowingScoreStreamCall(
+                new RpcException(new Status(StatusCode.Cancelled, "dropped by detector"))),
+            CancellationToken.None));
+
+        Assert.Null(ex);
+        Assert.True(publisher.AvailabilityPublished);
+        Assert.False(publisher.LastAvailabilityOnline);
+    }
+
+    [Fact]
+    public async Task RunEntityStream_UnavailableRpc_MarksEntityOffline()
+    {
+        var publisher = new FakeStatePublisher();
+        var pipeline = new ScoreStreamPipeline(
+            publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(MakeEntitiesConfig()));
+
+        var ex = await Record.ExceptionAsync(() => pipeline.RunEntityStreamAsync(
+            "sensor.test",
+            WarmState(),
+            SingleReading("sensor.test"),
+            _ => new ThrowingScoreStreamCall(
+                new RpcException(new Status(StatusCode.Unavailable, "detector down"))),
+            CancellationToken.None));
+
+        Assert.Null(ex);
+        Assert.True(publisher.AvailabilityPublished);
+        Assert.False(publisher.LastAvailabilityOnline);
+    }
+
     // ─── Test 4: CompleteAsync ordering ──────────────────────────────────────
 
     [Fact]
@@ -926,6 +1006,28 @@ internal sealed class CoherenceTrackingPublisher : IStatePublisher
 
     public Task PublishGroupScoreAsync(string groupId, string? memberId, double score, CancellationToken ct)
         => Task.CompletedTask;
+}
+
+/// <summary>
+/// Fake duplex call whose first write fails with a configured RpcException — exercises the
+/// stream failure handling in RunEntityStreamAsync without a live gRPC channel.
+/// </summary>
+internal sealed class ThrowingScoreStreamCall : IScoreStreamCall
+{
+    private readonly RpcException _error;
+
+    public ThrowingScoreStreamCall(RpcException error) => _error = error;
+
+    public Task WriteAsync(Point point, CancellationToken ct) => throw _error;
+
+    public Task CompleteAsync() => Task.CompletedTask;
+
+    public async IAsyncEnumerable<Verdict> ReadAllVerdictsAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
 }
 
 /// <summary>

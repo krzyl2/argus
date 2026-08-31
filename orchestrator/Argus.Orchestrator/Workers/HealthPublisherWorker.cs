@@ -61,39 +61,73 @@ public sealed class HealthPublisherWorker : BackgroundService
         _logger.LogInformation(LogEvents.HealthEntityPublished,
             "Health discovery published to {Topic}", DiscoveryPublisher.HealthDiscoveryTopic);
 
-        // Periodic health state loop (~15s interval, T-03-08 mitigation)
+        // Periodic health state loop (~15s interval, T-03-08 mitigation).
+        // The whole cycle is guarded: a health cycle is a status report, never a reason
+        // to take the host down. Without this, a transient broker or gRPC failure escapes
+        // ExecuteAsync and BackgroundServiceExceptionBehavior.StopHost kills the add-on.
         while (!stoppingToken.IsCancellationRequested)
         {
-            bool serving = false;
-            bool ha = _signals.HaConnected;
-            bool mqtt = _mqtt.IsConnected;
+            try
+            {
+                await PublishHealthCycleAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break; // normal host shutdown
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(LogEvents.HealthCycleFailed, ex,
+                    "Health publish cycle failed — retrying in {Interval:F0}s", HealthInterval.TotalSeconds);
+            }
 
             try
             {
-                serving = await CheckDetectorServingAsync(stoppingToken);
+                await Task.Delay(HealthInterval, stoppingToken);
             }
             catch (OperationCanceledException)
             {
-                throw;
+                break; // normal host shutdown
             }
-            catch
-            {
-                // Any gRPC error (deadline, transport failure) → treat as not serving
-                serving = false;
-            }
-
-            // Cache detector-serving result for zero-latency UI reads (PlaceholderPage / Phase 2+ UI)
-            _signals.DetectorConnected = serving;
-
-            string payload = HealthEvaluator.Evaluate(serving, ha, mqtt);
-            await _mqtt.PublishAsync(DiscoveryPublisher.HealthStateTopic, payload, retain: true, stoppingToken);
-
-            _logger.LogInformation(LogEvents.HealthStatePublished,
-                "Health state: {Payload} (detector={Serving} ha={Ha} mqtt={Mqtt})",
-                payload, serving, ha, mqtt);
-
-            await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
         }
+    }
+
+    /// <summary>Interval between composite-health evaluations (T-03-08 mitigation).</summary>
+    private static readonly TimeSpan HealthInterval = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// One composite-health evaluation + publish. Extracted so ExecuteAsync can guard the
+    /// whole cycle rather than only the detector Check call.
+    /// </summary>
+    private async Task PublishHealthCycleAsync(CancellationToken stoppingToken)
+    {
+        bool serving;
+        bool ha = _signals.HaConnected;
+        bool mqtt = _mqtt.IsConnected;
+
+        try
+        {
+            serving = await CheckDetectorServingAsync(stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Any gRPC error (deadline, transport failure) → treat as not serving
+            serving = false;
+        }
+
+        // Cache detector-serving result for zero-latency UI reads (PlaceholderPage / Phase 2+ UI)
+        _signals.DetectorConnected = serving;
+
+        string payload = HealthEvaluator.Evaluate(serving, ha, mqtt);
+        await _mqtt.PublishAsync(DiscoveryPublisher.HealthStateTopic, payload, retain: true, stoppingToken);
+
+        _logger.LogInformation(LogEvents.HealthStatePublished,
+            "Health state: {Payload} (detector={Serving} ha={Ha} mqtt={Mqtt})",
+            payload, serving, ha, mqtt);
     }
 
     private async Task<bool> CheckDetectorServingAsync(CancellationToken ct)
