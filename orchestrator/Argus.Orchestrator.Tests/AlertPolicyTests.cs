@@ -561,28 +561,56 @@ public class AlertPolicyTests
     // ─── Frozen as evidence, not as an override ──────────────────────────────
 
     [Fact]
-    public void FrozenEvidence_BypassesCalibration_ButStillClearsWhenUnfrozen()
+    public void FrozenEvidence_IsGatedByWarmUp_ThenRaisesBeforeCalibrationAndStillClears()
     {
         // Before WS2 the frozen branch forced the flag ON from the write loop, bypassing
         // warm-up, cooldown and hysteresis — and only three scores below 0.3 could put it out,
-        // which F2 proves never happen. Frozen is now a premise fed into the same gate: it can
-        // still raise a flag on an uncalibrated entity, but the flag can go out again.
+        // which F2 proves never happen. D-H names exactly that as the defect and makes frozen a
+        // PREMISE fed into this gate. Three separate rules, all required:
+        //
+        //  1. Warm-up applies to frozen too. An entity that has observed nothing cannot be
+        //     pinned ON by a variance verdict taken over its first ten events — that is the half
+        //     of D-H that survived WS2 unfixed (suppression was honoured, warm-up was not).
+        //  2. It does NOT wait for rank calibration: frozen is raw-derived evidence, so the raw
+        //     channel's own readiness is what it waits for.
+        //  3. It can go out again.
         var policy = new AlertPolicy(FastParams(alertMinSamples: 100));
         int tick = 0;
+
+        // 1. Nothing observed yet: neither channel is ready, so frozen alone may not fire.
+        for (int i = 0; i < 5; i++)
+        {
+            var cold = policy.OnVerdict(0.5, warmedUp: false, suppressed: false, frozen: true, At(tick++));
+            Assert.False(cold.FlagOn, "Frozen must not bypass warm-up (D-H)");
+            Assert.False(cold.EventStarted);
+        }
+
+        // 2. The raw window reaches its floor (10 live values) long before the 100 verdicts the
+        //    rank channel needs — a frozen entity is exactly one whose readings are constant.
+        for (int i = 0; i < RawWarmUpSamples; i++)
+            policy.ObserveValue(20.0);
 
         AlertDecision? frozenOnset = null;
         for (int i = 0; i < 3; i++)
             frozenOnset = policy.OnVerdict(0.5, warmedUp: false, suppressed: false, frozen: true, At(tick++));
 
         Assert.False(policy.Calibrated);
-        Assert.True(frozenOnset!.FlagOn, "Frozen must still be able to raise a flag before calibration");
+        Assert.True(frozenOnset!.FlagOn, "Frozen must still be able to raise a flag before rank calibration");
         Assert.True(frozenOnset.EventStarted);
         Assert.Equal("frozen", frozenOnset.Channel);
 
-        var thawed = policy.OnVerdict(0.5, warmedUp: false, suppressed: false, frozen: false, At(tick++));
-        Assert.False(thawed.FlagOn, "An unfrozen sensor must be able to clear even while uncalibrated");
+        // 3. …and it goes out through the ordinary hysteresis, not through a bypass: min_consecutive
+        //    clearing verdicts, exactly like any other evidence (D-H).
+        AlertDecision? thawed = null;
+        for (int i = 0; i < 3; i++)
+            thawed = policy.OnVerdict(0.5, warmedUp: false, suppressed: false, frozen: false, At(tick++));
+
+        Assert.False(thawed!.FlagOn, "An unfrozen sensor must be able to clear even while uncalibrated");
         Assert.True(thawed.EventEnded);
     }
+
+    /// <summary>Live raw values the robust-z channel needs before it is trusted at all.</summary>
+    private const int RawWarmUpSamples = 10;
 
     // ─── Scale ladder ────────────────────────────────────────────────────────
 

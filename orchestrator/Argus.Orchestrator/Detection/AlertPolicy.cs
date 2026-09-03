@@ -213,7 +213,16 @@ public sealed class AlertPolicy
             // event rather than stranding it. Close ONLY when firing — stamping _lastEventEndedAt
             // on every calibration tick would drop the first real event into the refractory
             // branch and it would never be counted.
-            if (!frozen && !scoreReady && !rawReady)
+            //
+            // frozen does NOT exempt an entity from this gate. D-H names "frozen forces ON,
+            // bypassing warm-up, suppression and hysteresis" as today's defect and puts the
+            // frozen state into the gate as a PREMISE — subject to min_consecutive, to the
+            // watchdog, and able to go out again. Suppression was already respected here;
+            // warm-up was not, so a brand-new entity with no history at all could be pinned ON
+            // by a variance reading taken over its first ten events. The guaranteed publish path
+            // for an entity whose detector returns no verdict is unaffected: it is
+            // PublishFrozenAsync on the write loop, not this gate.
+            if (!scoreReady && !rawReady)
             {
                 if (_firing)
                     ended = Close(now);
