@@ -74,6 +74,16 @@ public class GroupBatchSchedulerTests
 
         public Task<WarmupResponse> WarmupAsync(WarmupRequest request, CancellationToken ct)
             => Task.FromResult(new WarmupResponse { Ok = true });
+
+        // WS6: the simulator seam. This fake is not a simulator — it answers a canned
+        // zero-score array of the right length so the classes under test compile and the
+        // 1:1 scores/history contract is preserved.
+        public Task<SimulateResult> SimulateBatchAsync(
+            string entityId, string detector,
+            IReadOnlyDictionary<string, string> parameters,
+            IReadOnlyList<HistoryPoint> history, CancellationToken ct)
+            => Task.FromResult(new SimulateResult(
+                true, null, new double[history.Count], Array.Empty<double>(), 0, 0, "fake"));
     }
 
     private sealed class FakeStatePublisher : IStatePublisher
