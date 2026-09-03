@@ -225,7 +225,13 @@ class TestScoreStreamParams:
     def test_params_honored_at_creation_time_only(self, servicer):
         """A second point with a different window for the same entity must NOT
         change Verdict.window — params are only applied when the detector is
-        first created (matches existing registry semantics)."""
+        first created (matches existing registry semantics).
+
+        This contract is DELIBERATELY waived for rmad: it exposes apply_params,
+        so registry._get_or_create re-applies params on every point. HST has no
+        apply_params, so the getattr guard keeps this test on its original code
+        path — see TestApplyParams in test_rmad_detector.py for the other half.
+        """
         svc, _, _ = servicer
         ctx = _FakeContext()
         points = iter(
@@ -237,6 +243,66 @@ class TestScoreStreamParams:
         verdicts = list(svc.ScoreStream(points, ctx))
         assert verdicts[0].window == 3
         assert verdicts[1].window == 3  # unchanged despite the second point's params
+
+
+class TestScoreStreamDetectorSelection:
+    """The algorithm rides on Point.params (map<string,string>) so the proto is
+    untouched. ScoreStream is bidi and MULTIPLEXED: every entity the
+    orchestrator tracks shares one stream, so a single bad Point must never be
+    able to abort it."""
+
+    def test_point_params_algorithm_selects_rmad(self, servicer):
+        svc, registry, _ = servicer
+        ctx = _FakeContext()
+        points = iter(
+            [
+                _make_point(
+                    "sensor.r", 20.0, {"algorithm": "rmad", "window": "720"}
+                )
+            ]
+        )
+        verdicts = list(svc.ScoreStream(points, ctx))
+
+        assert len(verdicts) == 1
+        assert verdicts[0].detector == "rmad"
+        # Warm-up must be read from the rmad key, not the hst one, or the chip
+        # in the UI counts a model that is not the one doing the scoring.
+        assert verdicts[0].n_seen == 1
+        assert verdicts[0].warmed_up is False
+        assert verdicts[0].window == 60  # min_samples, D-M
+        assert registry.has_model("sensor.r", "rmad")
+        assert not registry.has_model("sensor.r", "hst")
+
+    def test_point_without_params_still_selects_hst(self, servicer):
+        """Additive on the wire: an orchestrator that has not been upgraded yet
+        keeps sending bare Points and keeps getting hst."""
+        svc, _, _ = servicer
+        ctx = _FakeContext()
+        verdicts = list(svc.ScoreStream(iter([_make_point("sensor.old", 20.0)]), ctx))
+        assert verdicts[0].detector == "hst"
+
+    def test_unknown_algorithm_falls_back_to_hst_without_aborting_the_stream(
+        self, servicer
+    ):
+        """The largest blast radius in this workstream: registry.score_one now
+        propagates _create_detector's ValueError, and ScoreStream's blanket
+        handler turns any exception into abort(INTERNAL), which tears down
+        scoring for EVERY entity on the stream. One misconfigured entity must
+        cost one degraded entity, not the whole pipeline."""
+        svc, _, _ = servicer
+        ctx = _FakeContext()
+        points = iter(
+            [
+                _make_point("sensor.a", 20.0, {"algorithm": "rmad"}),
+                _make_point("sensor.b", 20.0, {"algorithm": "does_not_exist"}),
+                _make_point("sensor.c", 20.0, {"algorithm": "rmad"}),
+            ]
+        )
+        verdicts = list(svc.ScoreStream(points, ctx))
+
+        assert len(verdicts) == 3
+        assert [v.detector for v in verdicts] == ["rmad", "hst", "rmad"]
+        assert ctx.aborted is False
 
 
 class TestScoreStreamCheckpointRestore:

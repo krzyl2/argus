@@ -2,8 +2,10 @@
 DetectorServiceServicer — gRPC servicer implementation.
 
 ScoreStream: streams Verdict messages back for each incoming Point.
-  Phase 1: placeholder score=0.0, is_anomaly=False, detector="hst".
-  Plan 06: registry.score_one will return real River HalfSpaceTrees scores.
+  The algorithm is selected per Point from params["algorithm"] (falling back to
+  params["detector"], then "hst"). params is a map<string,string> on the wire,
+  so this needs no proto change and no stub regeneration — precedent:
+  pyod_detector.py:63-65.
 
 Fit: trains model via registry.fit_one, saves to disk via model_store.
 ScoreBatch: reads model from registry; cold-start fit if no model exists.
@@ -27,7 +29,7 @@ from google.protobuf import timestamp_pb2, wrappers_pb2
 
 from argus_detector.model_store import ModelStore
 from argus_detector.proto import argus_pb2, argus_pb2_grpc
-from argus_detector.registry import DetectorRegistry
+from argus_detector.registry import STREAMING_DETECTORS, DetectorRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,44 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
     def __init__(self, registry: DetectorRegistry, model_store: ModelStore) -> None:
         self._registry = registry
         self._model_store = model_store
+        # One warning per (entity_id, requested algorithm), never per point:
+        # ScoreStream runs on every reading of every entity, so an undeduplicated
+        # warning here is the same log-spam defect this release is fixing.
+        self._algo_warned: set[tuple[str, str]] = set()
+
+    def _select_algorithm(self, entity_id: str, params: dict[str, str]) -> str:
+        """Pick the scoring algorithm for one Point, warning at most once.
+
+        Unknown names degrade to "hst" instead of raising: registry.score_one
+        now propagates _create_detector's ValueError, and the blanket except
+        below turns any exception into context.abort(INTERNAL), which kills the
+        whole multiplexed stream — every entity loses scoring because one entity
+        is misconfigured. The fallback is mandatory, not defensive.
+        """
+        algo = params.get("algorithm") or params.get("detector") or "hst"
+
+        if algo not in STREAMING_DETECTORS:
+            if (entity_id, algo) not in self._algo_warned:
+                self._algo_warned.add((entity_id, algo))
+                logger.warning(
+                    "unknown streaming algorithm %r for entity_id=%s; "
+                    "falling back to 'hst'",
+                    algo, entity_id,
+                )
+            algo = "hst"
+
+        if algo == "hst" and (entity_id, "hst") not in self._algo_warned:
+            self._algo_warned.add((entity_id, "hst"))
+            logger.warning(
+                "entity_id=%s is scoring with the legacy, uncalibrated 'hst' "
+                "detector: it scores RARITY, not deviation (F4), its normalizer "
+                "collapses the normal band after one excursion (F5), and its "
+                "score distribution is per-sensor so no single threshold is "
+                "correct (F6). Thresholds must be tuned by hand.",
+                entity_id,
+            )
+
+        return algo
 
     def ScoreStream(self, request_iterator, context):  # noqa: N802
         """Stream a Verdict for each incoming Point.
@@ -60,15 +100,19 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
                 entity_id: str = point.entity_id
                 value: float = point.value.value  # unwrap DoubleValue
 
-                # WARM-02 (D3 fix): forward point.params so a configured window/n_trees
-                # actually reaches EntityDetector.from_params. Params are honored at
-                # instance-creation time only (existing registry semantics unchanged).
-                score: float = self._registry.score_one(entity_id, value, params=dict(point.params))
+                # WARM-02 (D3 fix): forward point.params so a configured window
+                # actually reaches the detector's from_params/apply_params.
+                params = dict(point.params)
+                algo = self._select_algorithm(entity_id, params)
+
+                score: float = self._registry.score_one(
+                    entity_id, value, detector=algo, params=params
+                )
 
                 # WARM-01/D-01: read warm-up state AFTER scoring so n_seen reflects
                 # the point just processed. The detector is the single source of
                 # truth for warm-up — the orchestrator only reads these three fields.
-                warmed_up, n_seen, window = self._registry.get_warmup_state(entity_id, "hst")
+                warmed_up, n_seen, window = self._registry.get_warmup_state(entity_id, algo)
 
                 ts = timestamp_pb2.Timestamp()
                 ts.GetCurrentTime()
@@ -77,7 +121,7 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
                     entity_id=entity_id,
                     score=wrappers_pb2.DoubleValue(value=score),
                     is_anomaly=False,
-                    detector="hst",
+                    detector=algo,
                     timestamp=ts,
                     warmed_up=warmed_up,
                     n_seen=n_seen,
@@ -93,7 +137,7 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
                         "entity_id": entity_id,
                         "score": score,
                         "latency_ms": round(latency_ms, 3),
-                        "detector": "hst",
+                        "detector": algo,
                         "warmed_up": warmed_up,
                         "n_seen": n_seen,
                         "window": window,
