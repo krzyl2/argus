@@ -234,23 +234,41 @@ public class AlertPolicyTests
         // channel measures deviation instead: 101 W is 6 W from the median against a MAD-derived
         // scale of ~2.97, i.e. about 2σ — normal, in every evidence mode.
         var levels = ZamrazarkaLevels();
-        var policy = new AlertPolicy(FastParams(evidenceMode: evidenceMode, alertMinSamples: 100));
 
-        // Prime the raw window from history first, exactly as backfill does before a stream
-        // opens — a z-score taken against a half-empty window measures the window, not the value.
-        foreach (var v in levels) policy.SeedValue(v);
-
-        double maxZ = 0.0;
-        int events = 0;
-        for (int i = 0; i < levels.Length; i++)
+        // Flat score throughout: this test isolates the raw channel, so the score channel must
+        // contribute nothing (a constant always sits at mid-rank 0.5).
+        (double MaxZ, int Events) Replay(AlertPolicy policy)
         {
-            policy.ObserveValue(levels[i]);
-            maxZ = Math.Max(maxZ, policy.LastRawZ);
-            // Flat score: this test isolates the raw channel, so the score channel must
-            // contribute nothing (a constant always sits at mid-rank 0.5).
-            var d = policy.OnVerdict(0.6, true, false, false, At(i, secondsPerTick: 384.0));
-            if (d.EventStarted) events++;
+            double maxZ = 0.0;
+            int events = 0;
+            for (int i = 0; i < levels.Length; i++)
+            {
+                policy.ObserveValue(levels[i]);
+                maxZ = Math.Max(maxZ, policy.LastRawZ);
+                var d = policy.OnVerdict(0.6, true, false, false, At(i, secondsPerTick: 384.0));
+                if (d.EventStarted) events++;
+            }
+            return (maxZ, events);
         }
+
+        // Cold start: no backfill, the window fills as the series plays. On a partly-filled
+        // window the MAD scale is estimated from fewer levels, so |z| runs higher — measured
+        // 2.698, above the 2.1 the plan quotes for the settled window. That is expected, and it
+        // is not the acceptance axis: F4's criterion is that this series raises NO event, and
+        // 2.698 is nowhere near z_fire = 5.0. Warm-up must not be a back door for the alarms
+        // this sensor used to produce.
+        var (coldMaxZ, coldEvents) = Replay(new AlertPolicy(FastParams(evidenceMode: evidenceMode, alertMinSamples: 100)));
+        Assert.Equal(0, coldEvents);
+        Assert.True(coldMaxZ < 5.0,
+            $"Cold-start robust-z on the F4 histogram reached {coldMaxZ:F3}, i.e. z_fire = 5.0 is in reach");
+
+        // Settled window — the condition the plan's 2.1 is derived from, and the one the entity
+        // actually runs in: backfill seeds the raw window before the stream opens (SeedHistory),
+        // so the scale is the full histogram's. 101 W is 6 W from the median 107 W against a
+        // MAD-derived scale of 1.4826 × 2 = 2.965, i.e. |z| = 2.024. Rare, and still normal.
+        var primed = new AlertPolicy(FastParams(evidenceMode: evidenceMode, alertMinSamples: 100));
+        foreach (var v in levels) primed.SeedValue(v);
+        var (maxZ, events) = Replay(primed);
 
         Assert.True(maxZ <= 2.1, $"Max robust-z on the F4 histogram was {maxZ:F3}, expected ≤ 2.1");
         Assert.Equal(0, events);
@@ -278,8 +296,15 @@ public class AlertPolicyTests
         }
 
         Assert.Equal(2, events);
+
+        // Two events alone are not the criterion — an implementation that fires twice and
+        // latches would also score 2. The flag has to cover the compressor runs and then let
+        // go: the two runs are 180 of 1546 readings (11.6 %), and the rank/robust-z pair
+        // releases part-way through each run as 984 W stops being rare in its own window.
+        // Measured: 99 on-ticks = 6.404 %. Below 2 % the flag would be missing the runs it
+        // exists for; above 8 % it is starting to hold, which is F1 coming back.
         double onTime = (double)onTicks / series.Length;
-        Assert.InRange(onTime, 0.02, 0.15);
+        Assert.InRange(onTime, 0.02, 0.08);
     }
 
     // ─── Calibration floor ───────────────────────────────────────────────────
