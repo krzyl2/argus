@@ -447,8 +447,12 @@ public class ScoreStreamPipelineTests
     [Fact]
     public async Task RunAsync_CompleteAsyncCalledBeforeReadTaskAwaited()
     {
-        // This test verifies PITFALL 3: CompleteAsync must precede readTask await.
-        // We use an instrumented fake call that records call order.
+        // PITFALL 3: RunAsync must call CompleteAsync BEFORE awaiting readTask. On a real
+        // gRPC duplex call the response stream only ends after the client half-closes, so
+        // the reverse order deadlocks the entity stream forever. OrderTrackingDuplexCall
+        // reproduces that dependency: its verdict channel is closed by CompleteAsync, never
+        // before. A regression therefore hangs here rather than merely misordering, which is
+        // why the call is raced against a timeout instead of simply awaited.
         var callOrder = new List<string>();
         var fakeCall = new OrderTrackingDuplexCall(callOrder);
         var publisher = new FakeStatePublisher();
@@ -457,12 +461,16 @@ public class ScoreStreamPipelineTests
 
         using var cts = new CancellationTokenSource();
 
-        // Feed one reading then cancel (empty duplex call completes immediately)
+        // One reading through the write loop; the fake yields no verdicts.
         var readings = AsyncEnumerableHelper.FromItems(
             MakeReading("sensor.test"),
             cancellationToken: cts.Token);
 
-        await pipeline.RunAsync(fakeCall, "sensor.test", readings, new EntityRuntimeState(HstParams.From(new Dictionary<string, string> { ["window"] = "1" })), cts.Token);
+        var run = pipeline.RunAsync(fakeCall, "sensor.test", readings, new EntityRuntimeState(HstParams.From(new Dictionary<string, string> { ["window"] = "1" })), cts.Token);
+        var finished = await Task.WhenAny(run, Task.Delay(TimeSpan.FromSeconds(30)));
+        Assert.True(ReferenceEquals(finished, run),
+            "RunAsync never returned — readTask was awaited before CompleteAsync (PITFALL 3 deadlock)");
+        await run;
 
         // Assert: CompleteAsync recorded before readTask completion
         var completeIdx = callOrder.IndexOf("CompleteAsync");
@@ -1188,8 +1196,6 @@ internal sealed class OrderTrackingDuplexCall : IScoreStreamCall
     public OrderTrackingDuplexCall(List<string> order)
     {
         _order = order;
-        // Immediately close the verdict channel so the read loop can finish
-        _verdicts.Writer.Complete();
     }
 
     public Task WriteAsync(Point point, CancellationToken ct)
@@ -1198,10 +1204,16 @@ internal sealed class OrderTrackingDuplexCall : IScoreStreamCall
         return Task.CompletedTask;
     }
 
-    public async Task CompleteAsync()
+    /// <summary>
+    /// Half-close. Like a real gRPC duplex call, the response stream ends only once the client
+    /// has half-closed — so the read loop cannot finish before this runs. That is precisely why
+    /// PITFALL 3 exists: awaiting readTask first would hang forever.
+    /// </summary>
+    public Task CompleteAsync()
     {
-        _order.Add("CompleteAsync");
-        await Task.CompletedTask;
+        Record("CompleteAsync");
+        _verdicts.Writer.Complete();
+        return Task.CompletedTask;
     }
 
     public async IAsyncEnumerable<Verdict> ReadAllVerdictsAsync(
@@ -1209,7 +1221,14 @@ internal sealed class OrderTrackingDuplexCall : IScoreStreamCall
     {
         await foreach (var v in _verdicts.Reader.ReadAllAsync(ct))
             yield return v;
-        _order.Add("ReadTaskDone");
+        Record("ReadTaskDone");
+    }
+
+    // The read loop runs on a thread-pool thread; the write loop on the caller's. Both append
+    // here, so the list needs a lock even though the ordering itself is now deterministic.
+    private void Record(string step)
+    {
+        lock (_order) _order.Add(step);
     }
 }
 
