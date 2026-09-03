@@ -1,9 +1,34 @@
 """
 River HalfSpaceTrees wrapper with online min-max normalization.
 
-EntityDetector: per-entity streaming anomaly detector.
+LEGACY / UNCALIBRATED — kept verbatim as the opt-in rollback path (D-F), NOT
+as a peer of rmad_detector.RmadDetector. Nothing below is fixed, and nothing
+below is going to be fixed; selecting it logs a warning once per entity in
+servicer.py. Its checkpoints live under /data/models/<slug>/hst/, disjoint
+from <slug>/rmad/, so switching back restores the old model with its n_seen
+intact.
+
+KNOWN DEFECTS (measured on the operator's live HA instance, 2026-09-03 —
+docs/FIX-PLAN.md section 1):
+  F4  HalfSpaceTrees.score_one returns 1 - mass/max_mass, i.e. RARITY, not
+      deviation. On a quantized series the rare-but-perfectly-normal level
+      101 W scores 0.997 while the MODAL level 107 W scores 0.560. The
+      detector's opinion is inverted with respect to deviation, so no
+      threshold placed anywhere separates anomalies from normal readings.
+  F5  score_one below calls _normalizer.learn_one BEFORE transform_one, and
+      river.preprocessing.MinMaxScaler keeps UNBOUNDED running min/max. After
+      one 13.01 reading on a series whose p50 was 0.54, the whole normal band
+      collapses to ~0.3% of [0,1] (0.54 -> 0.0032) and never recovers.
+  F6  The resulting score distribution is per-sensor and uncalibrated
+      (measured 24 h minima: memory 0.830, processor 0.562, load 0.480), so a
+      single global high_threshold cannot be correct on all of them at once.
+      Thresholds for this detector must be tuned by hand, per entity.
+  F7  Nothing observes that distribution: is_warmed_up flips at
+      n_seen >= window and that is the end of it.
+
   - Online min-max normalization (D-08, river.preprocessing.MinMaxScaler)
-  - River HalfSpaceTrees scoring (D-09, default window=250, n_trees=25)
+  - River HalfSpaceTrees scoring (window=250, n_trees=25 — these are this
+    module's own defaults; the shipped defaults are rmad's, see D-B)
   - is_warmed_up tracks when n_seen >= window_size (PITFALL 8 mitigation)
   - from_params(): overrides from string params map (CONF-02)
 
@@ -17,7 +42,7 @@ from __future__ import annotations
 
 from river import anomaly, preprocessing
 
-# D-09 defaults
+# This module's own defaults (D-09). NOT the shipped defaults — see D-B.
 _DEFAULT_WINDOW = 250
 _DEFAULT_N_TREES = 25
 _HEIGHT = 8
