@@ -23,7 +23,14 @@ public static class InputValidator
         new(@"^[a-z0-9_]+\.[a-z0-9_]+$", RegexOptions.Compiled);
 
     // Allowlist of valid detector names (T-04-02); comparison is always .ToLowerInvariant()
-    private static readonly string[] KnownDetectors = { "hst", "mad", "stl" };
+    private static readonly string[] KnownDetectors = { "rmad", "hst", "mad", "stl" };
+
+    // Parity constants — orchestrator/ui/src/validation/detectorParams.ts carries the SAME
+    // three strings verbatim. A client/server drift here shows up as a form that saves a value
+    // the server then rejects with no field highlighted.
+    internal const string MSG_WINDOW_RANGE = "Must be a whole number between 30 and 10000.";
+    internal const string MSG_MIN_SAMPLES = "Must be a whole number ≥ 10.";
+    internal const string MSG_MIN_SAMPLES_LE_WINDOW = "Must not be greater than window.";
 
     /// <summary>
     /// Validates entity IDs and detector parameters parsed from an untrusted POST body.
@@ -66,12 +73,15 @@ public static class InputValidator
                     // T-04-04: HTML-encode the submitted detector name before interpolation
                     errors.Add(
                         $"Unknown detector type \"{WebUtility.HtmlEncode(det.Name)}\". " +
-                        "Choose HST, MAD, or STL.");
+                        "Choose RMAD, HST, MAD, or STL.");
                     continue; // skip param validation for unknown detector type
                 }
 
                 switch (name)
                 {
+                    case "rmad":
+                        ValidateRmad(det.Params, errors);
+                        break;
                     case "hst":
                         ValidateHst(det.Params, errors);
                         break;
@@ -125,6 +135,70 @@ public static class InputValidator
         }
 
         // frozen_variance_threshold: number ≥ 0
+        if (!TryGetDouble(p, "frozen_variance_threshold", out var fvt) || fvt < 0.0)
+            errors.Add("Must be 0 or greater.");
+
+        ValidateAlertKeys(p, errors);
+    }
+
+    /// <summary>
+    /// Validates the rmad params set (D-A/D-B).
+    ///
+    /// Every key is REQUIRED — an absent key is an error, not a silent default. WHY: the
+    /// migration and the SPA both write the full table, so a params map arriving here with a
+    /// key missing means something upstream dropped it, and defaulting at the validation
+    /// boundary would let that loss reach disk looking deliberate.
+    ///
+    /// frozen_window keeps the >= 1 rule of the hst path unchanged: frozen is disabled through
+    /// frozen_variance_threshold (D-H), never through the window, because
+    /// FrozenSensorDetector.AddReading dequeues from an empty queue when the window is 0.
+    /// </summary>
+    private static void ValidateRmad(Dictionary<string, string> p, List<string> errors)
+    {
+        // window: 30..10000. The lower bound is not cosmetic — a median/MAD baseline under
+        // ~30 samples has a scale estimate too noisy to divide by, so the score stops meaning
+        // "deviation" and starts meaning "the last few readings disagreed".
+        var hasWindow = TryGetInt(p, "window", out var window);
+        if (!hasWindow || window < 30 || window > 10000)
+            errors.Add(MSG_WINDOW_RANGE);
+
+        var hasMinSamples = TryGetInt(p, "min_samples", out var minSamples);
+        if (!hasMinSamples || minSamples < 10)
+            errors.Add(MSG_MIN_SAMPLES);
+
+        // Cross-field: a min_samples above the window it is counted against can never be
+        // reached, so the entity would report "calibrating" forever and never alarm.
+        if (hasWindow && hasMinSamples && window >= 30 && window <= 10000 &&
+            minSamples >= 10 && minSamples > window)
+            errors.Add(MSG_MIN_SAMPLES_LE_WINDOW);
+
+        if (!TryGetDouble(p, "z_scale", out var zScale) || zScale <= 0.0)
+            errors.Add("Must be greater than 0.");
+
+        if (!TryGetDouble(p, "scale_floor", out var scaleFloor) || scaleFloor < 0.0)
+            errors.Add("Must be 0 or greater.");
+
+        ValidateIntAtLeast(p, "min_consecutive", 1, "Must be a whole number ≥ 1.", errors);
+        ValidateIntAtLeast(p, "frozen_window",   1, "Must be a whole number ≥ 1.", errors);
+
+        // high/low: identical rules and identical messages to ValidateHst — the keys keep
+        // their types and ranges, only the score they are compared against changed (D-B).
+        var hasHigh = TryGetDouble(p, "high_threshold", out var high);
+        if (!hasHigh || high <= 0.0 || high > 1.0)
+            errors.Add("Must be between 0 and 1, and greater than low threshold.");
+
+        var hasLow = TryGetDouble(p, "low_threshold", out var low);
+        if (!hasLow || low < 0.0 || low >= 1.0)
+            errors.Add("Must be between 0 and 1, and less than high threshold.");
+
+        if (hasHigh && hasLow &&
+            high > 0.0 && high <= 1.0 && low >= 0.0 && low < 1.0 &&
+            high <= low)
+        {
+            errors.Add("Must be between 0 and 1, and greater than low threshold.");
+            errors.Add("Must be between 0 and 1, and less than high threshold.");
+        }
+
         if (!TryGetDouble(p, "frozen_variance_threshold", out var fvt) || fvt < 0.0)
             errors.Add("Must be 0 or greater.");
 

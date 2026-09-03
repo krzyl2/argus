@@ -94,4 +94,35 @@ public class FrozenSensorDetectorTests
             det.AddReading(100.0);
         Assert.True(det.IsFrozen);
     }
+
+    /// <summary>
+    /// D-H, load-bearing: this is WHY the schema-2 migration disables frozen detection through
+    /// frozen_variance_threshold: "0.0" and carries frozen_window over VERBATIM, never writing
+    /// "0". With window 0 the count check (0 >= 0) passes on the very first reading and dequeues
+    /// an empty queue. ScoreStreamPipeline calls AddReading unconditionally for every reading,
+    /// so a migrated "0" would take the entity's stream down on its first live value.
+    /// </summary>
+    [Fact]
+    public void WindowZero_Throws_OnFirstReading()
+    {
+        var det = new FrozenSensorDetector(window: 0, varianceThreshold: 0.0);
+
+        Assert.Throws<InvalidOperationException>(() => det.AddReading(1.0));
+    }
+
+    /// <summary>
+    /// The supported disable switch (D-H): sample variance is never negative, so "variance &lt; 0.0"
+    /// is permanently false and IsFrozen can never latch — without touching the detector's code.
+    /// </summary>
+    [Fact]
+    public void VarianceThresholdZero_NeverReportsFrozen_EvenOnAConstantSeries()
+    {
+        var det = new FrozenSensorDetector(window: 10, varianceThreshold: 0.0);
+
+        for (int i = 0; i < 50; i++)
+        {
+            det.AddReading(0.0);
+            Assert.False(det.IsFrozen);
+        }
+    }
 }

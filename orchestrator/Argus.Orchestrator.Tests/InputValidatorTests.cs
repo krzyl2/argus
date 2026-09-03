@@ -659,4 +659,165 @@ public class InputValidatorTests
 
         Assert.Empty(errors);
     }
+
+    // -------------------------------------------------------------------------
+    // rmad (D-A/D-B) — the default streaming detector
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Fixtures start from the authoritative default table and override ONLY the key under
+    /// test. WHY it matters that the base is complete: every rmad key is required, so a fixture
+    /// that omitted keys would produce errors unrelated to the rule being exercised and each
+    /// test would pass for the wrong reason.
+    /// </summary>
+    private static Dictionary<int, List<DetectorConfig>> OneRmadDetector(
+        Dictionary<string, string>? overrides = null)
+    {
+        var p = new Dictionary<string, string>(Argus.Orchestrator.Web.DetectorDefaults.Get("rmad")!);
+        if (overrides is not null)
+            foreach (var (k, v) in overrides) p[k] = v;
+
+        return new Dictionary<int, List<DetectorConfig>>
+        {
+            [0] = [new DetectorConfig { Name = "rmad", Params = p }],
+        };
+    }
+
+    [Fact]
+    public void Validate_RmadDetectorName_IsAccepted()
+    {
+        // rmad is the default detector after migration; if the allowlist rejected it, the very
+        // first Save from any screen would fail and the operator could not touch their config.
+        var errors = InputValidator.Validate(["sensor.load_5m"], OneRmadDetector());
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void ValidateRmad_MinSamplesAboveWindow_ReturnsSingleCrossFieldError()
+    {
+        // A min_samples larger than the window it is counted against can never be reached, so
+        // the entity would report "calibrating" forever and never alarm at all.
+        var errors = InputValidator.Validate(["sensor.load_5m"], OneRmadDetector(
+            new Dictionary<string, string> { ["min_samples"] = "720", ["window"] = "60" }));
+
+        Assert.Single(errors);
+        Assert.Equal(InputValidator.MSG_MIN_SAMPLES_LE_WINDOW, errors[0]);
+    }
+
+    [Theory]
+    [InlineData("29")]
+    [InlineData("10001")]
+    public void ValidateRmad_WindowOutOfRange_ReturnsWindowRangeMessage(string window)
+    {
+        // Below ~30 samples a median/MAD scale estimate is too noisy to divide by — the score
+        // stops meaning "deviation from normal" and starts meaning "recent readings disagreed".
+        var errors = InputValidator.Validate(["sensor.load_5m"], OneRmadDetector(
+            new Dictionary<string, string> { ["window"] = window, ["min_samples"] = "10" }));
+
+        Assert.Contains(InputValidator.MSG_WINDOW_RANGE, errors);
+    }
+
+    [Theory]
+    [InlineData("30", "10")]
+    [InlineData("10000", "60")]
+    public void ValidateRmad_WindowAtBounds_ReturnsNoErrors(string window, string minSamples)
+    {
+        // min_samples travels with the window here: at the 30 bound the default 60 would trip
+        // the (separate) cross-field rule and mask whether the bound itself is inclusive.
+        var errors = InputValidator.Validate(["sensor.load_5m"], OneRmadDetector(
+            new Dictionary<string, string> { ["window"] = window, ["min_samples"] = minSamples }));
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void ValidateRmad_MinSamplesBelowTen_ReturnsMinSamplesMessage()
+    {
+        var errors = InputValidator.Validate(["sensor.load_5m"], OneRmadDetector(
+            new Dictionary<string, string> { ["min_samples"] = "9" }));
+
+        Assert.Contains(InputValidator.MSG_MIN_SAMPLES, errors);
+    }
+
+    [Fact]
+    public void ValidateRmad_MissingKey_IsAnError_NotADefault()
+    {
+        // Defaulting at the validation boundary would let an upstream key loss reach disk
+        // looking deliberate — the operator would never learn a value was dropped.
+        var p = new Dictionary<string, string>(Argus.Orchestrator.Web.DetectorDefaults.Get("rmad")!);
+        p.Remove("z_scale");
+
+        var errors = InputValidator.Validate(["sensor.load_5m"],
+            new Dictionary<int, List<DetectorConfig>>
+            {
+                [0] = [new DetectorConfig { Name = "rmad", Params = p }],
+            });
+
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void ValidateRmad_ZeroFrozenWindow_IsRejected()
+    {
+        // D-H: frozen is disabled through frozen_variance_threshold, NEVER through the window.
+        // FrozenSensorDetector.AddReading dequeues an empty queue when the window is 0, and
+        // ScoreStreamPipeline calls it on every reading — the first reading would throw.
+        var errors = InputValidator.Validate(["sensor.load_5m"], OneRmadDetector(
+            new Dictionary<string, string> { ["frozen_window"] = "0" }));
+
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void ValidateRmad_ZeroFrozenVarianceThreshold_IsAccepted()
+    {
+        // The mirror of the rule above: 0.0 is the SUPPORTED way to disable frozen, so it must
+        // validate. Sample variance is never negative, so "variance < 0.0" is permanently false.
+        var errors = InputValidator.Validate(["sensor.load_5m"], OneRmadDetector(
+            new Dictionary<string, string> { ["frozen_variance_threshold"] = "0.0" }));
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void ValidateRmad_LegacyHstParamSet_IsRejected()
+    {
+        // The exact legacy fingerprint (window 250 / n_trees 25 / 0.7 / 0.3 / frozen 10/0.001)
+        // must NOT quietly validate as rmad: those thresholds mean "alarm above the 70th
+        // percentile of an HST rarity mass" and would mean "alarm above robust z 11.7" here.
+        // Rejecting it is what forces the migration to rewrite the whole block.
+        var legacy = new Dictionary<string, string>
+        {
+            ["window"]                    = "250",
+            ["n_trees"]                   = "25",
+            ["high_threshold"]            = "0.7",
+            ["low_threshold"]             = "0.3",
+            ["min_consecutive"]           = "3",
+            ["frozen_window"]             = "10",
+            ["frozen_variance_threshold"] = "0.001",
+        };
+
+        var errors = InputValidator.Validate(["sensor.load_5m"],
+            new Dictionary<int, List<DetectorConfig>>
+            {
+                [0] = [new DetectorConfig { Name = "rmad", Params = legacy }],
+            });
+
+        // min_samples, z_scale and scale_floor are all absent from the legacy set.
+        Assert.Contains(InputValidator.MSG_MIN_SAMPLES, errors);
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void Validate_UnknownDetector_MessageListsRmadFirst()
+    {
+        var errors = InputValidator.Validate([],
+            new Dictionary<int, List<DetectorConfig>>
+            {
+                [0] = [new DetectorConfig { Name = "nope", Params = [] }],
+            });
+
+        Assert.Single(errors);
+        Assert.Contains("Choose RMAD, HST, MAD, or STL.", errors[0]);
+    }
 }
