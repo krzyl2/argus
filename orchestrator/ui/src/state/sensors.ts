@@ -1,38 +1,26 @@
 import { signal, computed } from '@preact/signals';
 import { apiGet, apiPost } from '../api/client';
-import type { SensorEntry, SaveRequest, SaveResponse, DetectorEntry as ApiDetectorEntry } from '../api/types';
+import type {
+  SensorEntry,
+  SaveRequest,
+  SaveResponse,
+  DetectorName,
+  DetectorEntry as ApiDetectorEntry,
+} from '../api/types';
 import { validateDetectorParams, hasAnyError } from '../validation/detectorParams';
+import { defaultsFor, defaultsLoaded, loadDetectorDefaults } from './detectorDefaults';
 
-// Detector default values — must match EntityPickerPage.cs constants exactly
-// (07-UI-SPEC.md "Detector default values"). AddDetectorButton constructs new
-// entries from this table client-side — no server round-trip needed.
-//
-// WR-02: intentionally mirrored in orchestrator/Argus.Orchestrator/Web/DetectorDefaults.cs
-// (backing GET /api/detectors/defaults, which this client does not call). If either table
-// changes, update BOTH and confirm they still match exactly.
-export const DETECTOR_DEFAULTS: Record<'hst' | 'mad' | 'stl', Record<string, string>> = {
-  hst: {
-    window: '250',
-    n_trees: '25',
-    high_threshold: '0.7',
-    low_threshold: '0.3',
-    min_consecutive: '3',
-    frozen_window: '10',
-    frozen_variance_threshold: '0.001',
-  },
-  mad: {
-    threshold: '3.5',
-    window: '20',
-  },
-  stl: {
-    period: '24',
-    seasonal: '7',
-    threshold: '3.0',
-  },
-};
-
-export function makeDetectorEntry(name: 'hst' | 'mad' | 'stl'): ApiDetectorEntry {
-  return { name, params: { ...DETECTOR_DEFAULTS[name] } };
+/**
+ * Builds a NEW detector entry from the server's default table.
+ *
+ * WR-02 withdrawn: the client no longer carries its own copy of the numbers. If the table has
+ * not arrived, this returns an entry with EMPTY params rather than invented ones — an empty
+ * params map is exactly what "use all defaults" means to the server, whereas a guessed table
+ * that drifted from DetectorDefaults.cs would be written to disk as though the operator had
+ * chosen it. Call sites that MINT entries are additionally gated on defaultsLoaded.
+ */
+export function makeDetectorEntry(name: DetectorName): ApiDetectorEntry {
+  return { name, params: defaultsFor(name) };
 }
 
 export type SaveState = 'idle' | 'saving' | { result: SaveResponse };
@@ -51,12 +39,33 @@ export const includePatterns = signal('');
 export const excludePatterns = signal('');
 export const saveState = signal<SaveState>('idle');
 
-function getOrInitEdit(entityId: string, isTracked: boolean): EntityEditState {
+/**
+ * Seeds the editor for one entity, hydrating from the server's SAVED detector list (D-N).
+ *
+ * This is the fix for a silent revert, not a convenience. `save()` replaces the entire
+ * `entities:` list, so whatever sits in entityEdits when ANY screen saves — including the
+ * pattern textareas in Settings — is what lands on disk for EVERY tracked sensor. Seeding
+ * `[makeDetectorEntry('rmad')]` unconditionally therefore rewrote every operator-tuned block
+ * (and, after the migration, every migrated block) with defaults on the first save.
+ *
+ * The default-entry fallback only applies to a tracked entity the server sent no detectors
+ * for — a genuinely new selection.
+ */
+function getOrInitEdit(entityId: string, entry?: SensorEntry): EntityEditState {
   const existing = entityEdits.value[entityId];
   if (existing) return existing;
+
+  const isTracked = entry?.isTracked ?? false;
+  const saved = entry?.detectors;
+  if (saved && saved.length > 0) {
+    return {
+      isTracked,
+      detectors: saved.map((d) => ({ name: d.name, params: { ...d.params } })),
+    };
+  }
   return {
     isTracked,
-    detectors: isTracked ? [makeDetectorEntry('hst')] : [],
+    detectors: isTracked ? [makeDetectorEntry('rmad')] : [],
   };
 }
 
@@ -68,13 +77,18 @@ export async function loadSensors(q: string): Promise<void> {
   const seq = ++loadSensorsSeq;
   loading.value = true;
   try {
-    const res = await apiGet<{ entries: SensorEntry[] }>(`api/sensors?q=${encodeURIComponent(q)}`);
+    // The defaults table is fetched alongside the sensor list, not lazily on first use: a
+    // detector entry minted before it arrives would carry empty params.
+    const [res] = await Promise.all([
+      apiGet<{ entries: SensorEntry[] }>(`api/sensors?q=${encodeURIComponent(q)}`),
+      loadDetectorDefaults(),
+    ]);
     if (seq !== loadSensorsSeq) return; // stale response — a newer request is in flight/done
     sensors.value = res.entries;
     const edits = { ...entityEdits.value };
     for (const entry of res.entries) {
       if (!edits[entry.entityId]) {
-        edits[entry.entityId] = getOrInitEdit(entry.entityId, entry.isTracked);
+        edits[entry.entityId] = getOrInitEdit(entry.entityId, entry);
       }
     }
     entityEdits.value = edits;
@@ -88,17 +102,20 @@ export function setTracked(entityId: string, tracked: boolean): void {
   const current = edits[entityId] ?? { isTracked: false, detectors: [] };
   edits[entityId] = {
     isTracked: tracked,
-    detectors: tracked && current.detectors.length === 0 ? [makeDetectorEntry('hst')] : current.detectors,
+    detectors: tracked && current.detectors.length === 0 ? [makeDetectorEntry('rmad')] : current.detectors,
   };
   entityEdits.value = edits;
 }
 
 export function addDetector(entityId: string): void {
+  // Gated on the server table: adding a detector MINTS a params block that the next save
+  // writes to disk, so doing it before the defaults arrive would persist an empty block.
+  if (!defaultsLoaded.value) return;
   const edits = { ...entityEdits.value };
   const current = edits[entityId] ?? { isTracked: true, detectors: [] };
   edits[entityId] = {
     ...current,
-    detectors: [...current.detectors, makeDetectorEntry('hst')],
+    detectors: [...current.detectors, makeDetectorEntry('rmad')],
   };
   entityEdits.value = edits;
 }
@@ -114,7 +131,7 @@ export function removeDetector(entityId: string, index: number): void {
   entityEdits.value = edits;
 }
 
-export function updateDetectorName(entityId: string, index: number, name: 'hst' | 'mad' | 'stl'): void {
+export function updateDetectorName(entityId: string, index: number, name: DetectorName): void {
   const edits = { ...entityEdits.value };
   const current = edits[entityId];
   if (!current) return;

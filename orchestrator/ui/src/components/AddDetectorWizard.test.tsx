@@ -129,7 +129,7 @@ describe('AddDetectorWizard', () => {
     let capturedBody: unknown = null;
     vi.spyOn(client, 'apiPost').mockImplementation(async (_url: string, body: unknown) => {
       capturedBody = body;
-      return { ok: true, count: 4, hasHst: false };
+      return { ok: true, count: 4, hasStreaming: false };
     });
 
     await save();

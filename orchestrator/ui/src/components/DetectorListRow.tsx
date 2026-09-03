@@ -60,6 +60,11 @@ function SensorRow({ entry }: { entry: NonNullable<DetectorRow['entry']> }) {
   // least once (readingCount/warmUpWindow both present) — untracked and no-status rows
   // never show a warm-up chip.
   const hasWarmUpStatus = entry.readingCount != null && entry.warmUpWindow != null;
+  // "Warmed up" and "has a usable band" are different facts, and conflating them is what made
+  // the old chip misleading: rmad reports warmed_up at min_samples, but until a verdict has
+  // carried an expected/lower/upper the editor has no band to show and no threshold the
+  // operator can sanity-check. Say "Kalibracja" for that state instead of a green "Działa".
+  const hasBand = entry.calibratedUpper != null;
 
   return (
     <li class="argus-list-row">
@@ -70,7 +75,11 @@ function SensorRow({ entry }: { entry: NonNullable<DetectorRow['entry']> }) {
       <div class="argus-row-meta">
         {hasWarmUpStatus &&
           (entry.warmedUp ? (
-            <Badge tone="ok">Działa</Badge>
+            hasBand ? (
+              <Badge tone="ok">Działa</Badge>
+            ) : (
+              <Badge tone="warn">Kalibracja</Badge>
+            )
           ) : (
             <Badge tone="warn">
               Rozgrzewka {entry.readingCount}/{entry.warmUpWindow}

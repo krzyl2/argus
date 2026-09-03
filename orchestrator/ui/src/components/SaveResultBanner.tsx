@@ -6,17 +6,24 @@ interface SaveResultBannerProps {
 }
 
 // Replaces #argus-flash + Build*Banner methods. Branches on ok/kind discriminant,
-// never string-sniffing. Copy verbatim from EntityPickerPage.cs.
+// never string-sniffing.
+//
+// The old warm-up note said "HST ... window=250 at ~1 reading/s ... ~4 minutes". After the
+// migration all three numbers are wrong: the detector is rmad, the gate is min_samples (60),
+// and the measured cadences on real sensors run from 15,3 s to 391 s per reading — so "~4
+// minutes" was off by up to two orders of magnitude. A wrong number here is worse than none:
+// it tells the operator the system is broken when it is merely still warming up.
 export function SaveResultBanner({ result }: SaveResultBannerProps) {
   if (result.ok) {
     const entityWord = result.count === 1 ? 'entity' : 'entities';
     return (
       <Banner tone="success">
         Saved — pipeline active. {result.count} {entityWord} tracked.
-        {result.hasHst && (
+        {result.hasStreaming && (
           <p class="argus-warmup-note">
-            HST detectors need ~4 minutes of readings to warm up (window=250 at ~1 reading/s).
-            Anomaly scores will be low until warm-up completes.
+            Streaming detectors need min_samples readings before their first verdict (60 by
+            default). How long that takes depends on how often each sensor reports — see the
+            per-field note in the detector editor. Anomaly flags stay off until then.
           </p>
         )}
       </Banner>

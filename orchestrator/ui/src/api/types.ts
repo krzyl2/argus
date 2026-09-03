@@ -1,5 +1,15 @@
 // API contract types — see 07-UI-SPEC.md / 08-UI-SPEC.md "API Contract" sections.
 
+/**
+ * Single-sensor detector names. Declared ONCE here: before WS3 this union was re-typed
+ * inline in eight places, so adding a name meant finding all eight, and `strictFunctionTypes`
+ * turns a missed one into a contravariance error nowhere near the actual edit.
+ *
+ * `rmad` is the default (D-A). `hst` remains available as the rollback path and is
+ * known-broken by design — it scores rarity, not deviation (F4).
+ */
+export type DetectorName = 'rmad' | 'hst' | 'mad' | 'stl';
+
 export interface SensorEntry {
   entityId: string;
   friendlyName: string | null;
@@ -9,11 +19,22 @@ export interface SensorEntry {
   // SRCH-02/03 (08-02): HA area name (null if unresolved) + entity_id domain, e.g. "sensor".
   areaName: string | null;
   domain: string;
-  // QUICK-warmup-status: HST warm-up progress, tracked entities only (null otherwise, and
+  // QUICK-warmup-status: warm-up progress, tracked entities only (null otherwise, and
   // null for a tracked entity the pipeline has not yet scored).
   warmedUp?: boolean | null;
   readingCount?: number | null;
   warmUpWindow?: number | null;
+  // D-N: the detector list AS STORED, so the editor hydrates from the server instead of
+  // seeding defaults. Optional: many test fixtures predate it, and an absent value must
+  // read as "unknown", never as "no detectors" (which a save would then write to disk).
+  detectors?: DetectorEntry[] | null;
+  // D-E / F6-2: the calibrated band in the sensor's own units. Null until the first verdict.
+  calibratedExpected?: number | null;
+  calibratedLower?: number | null;
+  calibratedUpper?: number | null;
+  // Measured seconds between readings, used to render a window in SAMPLES as a wall-clock
+  // span. Null means the UI shows samples only and says nothing it cannot back up.
+  medianIntervalSec?: number | null;
 }
 
 export interface SensorsResponse {
@@ -21,7 +42,7 @@ export interface SensorsResponse {
 }
 
 export interface DetectorEntry {
-  name: 'hst' | 'mad' | 'stl';
+  name: DetectorName;
   params: Record<string, string>;
 }
 
@@ -39,13 +60,23 @@ export interface SaveRequest {
 }
 
 export type SaveResponse =
-  | { ok: true; count: number; hasHst: boolean }
+  | { ok: true; count: number; hasStreaming: boolean }
   | { ok: false; kind: 'validation'; errorCount: number }
   | { ok: false; kind: 'error'; reason: string };
 
 export interface DetectorDefaults {
-  name: 'hst' | 'mad' | 'stl';
+  name: DetectorName;
   params: Record<string, string>;
+}
+
+/**
+ * GET /api/detectors/defaults with no ?name= — the whole table plus the single-sensor
+ * sensitivity presets. WR-02 is withdrawn: the client no longer mirrors these numbers,
+ * so DetectorDefaults.cs is the only place they exist and a .NET-only rebuild moves the UI.
+ */
+export interface DetectorDefaultsResponse {
+  defaults: Record<string, Record<string, string>>;
+  presets: { rmad: DetectorPreset[] | null };
 }
 
 // ---------------------------------------------------------------------------

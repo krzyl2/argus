@@ -1,12 +1,25 @@
-import type { DetectorEntry as DetectorEntryModel } from '../api/types';
-import { DetectorParamGrid } from './DetectorParamGrid';
+import type { DetectorEntry as DetectorEntryModel, DetectorName } from '../api/types';
+import { DetectorParamGrid, type FieldCtx } from './DetectorParamGrid';
 import { AlgorithmCard } from './AlgorithmCard';
 import { Button } from './Button';
 
 // Client-hardcoded (no backend catalog for single-sensor detectors — see 12-CONTEXT.md
-// Deferred). bestFor text reuses the previous timingCaption wording verbatim (Assumption A1).
-const DETECTOR_TYPES: { name: 'hst' | 'mad' | 'stl'; bestFor: string }[] = [
-  { name: 'hst', bestFor: 'streaming (live, ~2 s reload)' },
+// Deferred). rmad is listed FIRST because it is the default (D-A).
+//
+// The hst copy is deliberately blunt (D-F): hst scores RARITY, not deviation, so on a
+// quantized series a rare-but-perfectly-normal level outscores the modal one (F4), and its
+// unbounded normalizer collapses the normal band after a single spike (F5). It is kept as the
+// rollback path, not as an equal-quality alternative — nobody should pick it by accident.
+const DETECTOR_TYPES: { name: DetectorName; bestFor: string }[] = [
+  {
+    name: 'rmad',
+    bestFor: 'streaming (live) — odchylenie od własnej normy czujnika; domyślny',
+  },
+  {
+    name: 'hst',
+    bestFor:
+      'streaming (live) — rzadkość wartości; legacy / niekalibrowany, wymaga ręcznego strojenia progów',
+  },
   { name: 'mad', bestFor: 'batch (runs every N min)' },
   { name: 'stl', bestFor: 'batch (runs every N min)' },
 ];
@@ -15,12 +28,14 @@ interface DetectorEntryProps {
   entityIdx: number;
   detIdx: number;
   detector: DetectorEntryModel;
-  onTypeChange: (name: 'hst' | 'mad' | 'stl') => void;
+  onTypeChange: (name: DetectorName) => void;
   onParamChange: (key: string, value: string) => void;
   onRemove: () => void;
   // WR-06: identifies the entity in the ARIA label (e.g. entityId). Falls back to
   // `entity ${entityIdx}` when omitted, preserving prior callers' behavior.
   entityLabel?: string;
+  /** Forwarded to the param grid so help lines can be written in this sensor's own terms. */
+  ctx?: FieldCtx;
 }
 
 // Replaces .argus-detector-entry / BuildDetectorEntry.
@@ -32,6 +47,7 @@ export function DetectorEntry({
   onParamChange,
   onRemove,
   entityLabel,
+  ctx,
 }: DetectorEntryProps) {
   return (
     <div class="argus-detector-entry">
@@ -48,7 +64,7 @@ export function DetectorEntry({
               bestFor={t.bestFor}
               selected={detector.name === t.name}
               recommended={false}
-              onSelect={(name) => onTypeChange(name as 'hst' | 'mad' | 'stl')}
+              onSelect={(name) => onTypeChange(name as DetectorName)}
             />
           ))}
         </div>
@@ -61,6 +77,7 @@ export function DetectorEntry({
         detIdx={detIdx}
         detector={detector}
         onParamChange={onParamChange}
+        ctx={ctx}
       />
     </div>
   );

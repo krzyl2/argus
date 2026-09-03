@@ -90,7 +90,7 @@ describe('SettingsPage', () => {
     let capturedBody: unknown = null;
     vi.spyOn(client, 'apiPost').mockImplementation(async (_url: string, body: unknown) => {
       capturedBody = body;
-      return { ok: true, count: 3, hasHst: false };
+      return { ok: true, count: 3, hasStreaming: false };
     });
 
     await save();

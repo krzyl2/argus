@@ -1,4 +1,4 @@
-import type { SensorEntry, DetectorEntry as DetectorEntryModel } from '../api/types';
+import type { SensorEntry, DetectorEntry as DetectorEntryModel, DetectorName } from '../api/types';
 import { DetectorDisclosure } from './DetectorDisclosure';
 import { Checkbox } from './Checkbox';
 import { Badge } from './Badge';
@@ -11,7 +11,7 @@ interface SensorListRowProps {
   onSelectRow: () => void;
   detectors: DetectorEntryModel[];
   onToggleTracked: (checked: boolean) => void;
-  onDetectorTypeChange: (detIdx: number, name: 'hst' | 'mad' | 'stl') => void;
+  onDetectorTypeChange: (detIdx: number, name: DetectorName) => void;
   onDetectorParamChange: (detIdx: number, key: string, value: string) => void;
   onDetectorRemove: (detIdx: number) => void;
   onDetectorAdd: () => void;

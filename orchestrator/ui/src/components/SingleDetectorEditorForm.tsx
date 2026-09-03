@@ -13,6 +13,8 @@ import {
   save,
 } from '../state/sensors';
 import { DetectorDisclosure } from './DetectorDisclosure';
+import { SensorPresetPicker } from './SensorPresetPicker';
+import { CalibratedBandReadout } from './CalibratedBandReadout';
 import { SaveBar } from './SaveBar';
 import { SaveResultBanner } from './SaveResultBanner';
 import { Button } from './Button';
@@ -42,6 +44,16 @@ export function SingleDetectorEditorForm({ entityId }: SingleDetectorEditorFormP
   const saving = saveState.value === 'saving';
   const result = typeof saveState.value === 'object' ? saveState.value.result : null;
 
+  // Everything the param help lines need to describe THIS sensor. z_scale comes from the
+  // entity's own params so the "= odchylenie N sigma" line stays true if it is ever tuned.
+  const streaming = detectors.find((d) => d.name === 'rmad');
+  const ctx = {
+    medianIntervalSec: entry?.medianIntervalSec ?? null,
+    zScale: Number(streaming?.params.z_scale ?? '5') || 5,
+    unitOfMeasurement: entry?.unitOfMeasurement ?? null,
+  };
+  const streamingIdx = detectors.findIndex((d) => d.name === 'rmad');
+
   return (
     <div>
       <header class="argus-page-header">
@@ -58,7 +70,22 @@ export function SingleDetectorEditorForm({ entityId }: SingleDetectorEditorFormP
       </header>
 
       {edit?.isTracked ? (
-        <DetectorDisclosure
+        <>
+          {/* The band answers "is 0.5 right for THIS sensor?" — the number itself cannot. */}
+          <CalibratedBandReadout entry={entry} />
+          {streamingIdx >= 0 && (
+            <SensorPresetPicker
+              params={detectors[streamingIdx].params}
+              onApply={(preset) => {
+                // A preset writes ONLY its own keys; window/min_samples/scale_floor are in
+                // units this sensor owns and must never move from a sensitivity radio button.
+                for (const [key, value] of Object.entries(preset)) {
+                  updateDetectorParam(entityId, streamingIdx, key, value);
+                }
+              }}
+            />
+          )}
+          <DetectorDisclosure
           entityId={entityId}
           entityIdx={0}
           entityLabel={entityId}
@@ -67,7 +94,9 @@ export function SingleDetectorEditorForm({ entityId }: SingleDetectorEditorFormP
           onParamChange={(detIdx, key, value) => updateDetectorParam(entityId, detIdx, key, value)}
           onRemove={(detIdx) => removeDetector(entityId, detIdx)}
           onAdd={() => addDetector(entityId)}
-        />
+          ctx={ctx}
+          />
+        </>
       ) : (
         <p class="argus-label">This sensor will be untracked on next save.</p>
       )}

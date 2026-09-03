@@ -5,26 +5,39 @@ import type { SaveResponse } from '../api/types';
 
 describe('SaveResultBanner', () => {
   it('renders success banner with count and entities plural', () => {
-    const result: SaveResponse = { ok: true, count: 3, hasHst: false };
+    const result: SaveResponse = { ok: true, count: 3, hasStreaming: false };
     const { container } = render(<SaveResultBanner result={result} />);
     expect(container.querySelector('.argus-banner--success')).not.toBeNull();
     expect(container.textContent).toMatch(/Saved — pipeline active\. 3 entities tracked\./);
   });
 
   it('renders success banner with singular entity for count=1', () => {
-    const result: SaveResponse = { ok: true, count: 1, hasHst: false };
+    const result: SaveResponse = { ok: true, count: 1, hasStreaming: false };
     const { container } = render(<SaveResultBanner result={result} />);
     expect(container.textContent).toMatch(/1 entity tracked\./);
   });
 
-  it('appends HST warm-up note only when hasHst is true', () => {
-    const withHst: SaveResponse = { ok: true, count: 1, hasHst: true };
-    const { container: c1 } = render(<SaveResultBanner result={withHst} />);
+  it('appends the warm-up note only when a streaming detector is present', () => {
+    const withStreaming: SaveResponse = { ok: true, count: 1, hasStreaming: true };
+    const { container: c1 } = render(<SaveResultBanner result={withStreaming} />);
     expect(c1.querySelector('.argus-warmup-note')).not.toBeNull();
 
-    const withoutHst: SaveResponse = { ok: true, count: 1, hasHst: false };
-    const { container: c2 } = render(<SaveResultBanner result={withoutHst} />);
+    const withoutStreaming: SaveResponse = { ok: true, count: 1, hasStreaming: false };
+    const { container: c2 } = render(<SaveResultBanner result={withoutStreaming} />);
     expect(c2.querySelector('.argus-warmup-note')).toBeNull();
+  });
+
+  // The three numbers in the old copy ("HST", "window=250", "~4 minutes") are all false after
+  // the migration, and the last one is off by up to two orders of magnitude on a slow sensor
+  // (391 s per reading times 60 min_samples is ~6,5 h, not 4 minutes). An operator who reads
+  // "4 minutes" and sees nothing an hour later concludes the add-on is broken.
+  it('does not promise a warm-up time the detector cannot keep', () => {
+    const result: SaveResponse = { ok: true, count: 1, hasStreaming: true };
+    const { container } = render(<SaveResultBanner result={result} />);
+    const note = container.querySelector('.argus-warmup-note')!.textContent!;
+    expect(note).not.toMatch(/window=250/);
+    expect(note).not.toMatch(/4 minutes/);
+    expect(note).toMatch(/min_samples/);
   });
 
   it('renders validation banner for kind=validation', () => {

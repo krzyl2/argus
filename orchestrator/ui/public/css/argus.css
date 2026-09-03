@@ -677,6 +677,34 @@ details[open] > .argus-disclosure-toggle::before {
   outline: none;
 }
 
+/* Param help / warning lines (WS3). The rmad params are dimensionless by design, so a bare
+   number is unreadable — these lines translate it back into this sensor's own terms. */
+.argus-param-field__help {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-secondary);
+  margin: var(--space-xs) 0 0;
+}
+
+.argus-param-field__warn {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-status-warn);
+  margin: var(--space-xs) 0 0;
+}
+
+/* Calibrated band readout — the threshold expressed in the sensor's own units. */
+.argus-calibrated-band {
+  font-size: var(--font-size-body);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-sm);
+}
+
+.argus-calibrated-band--calibrating,
+.argus-calibrated-band--unknown {
+  color: var(--color-text-secondary);
+}
+
 /* Remove detector button — ghost style with destructive color */
 .argus-btn--destructive-ghost {
   background: transparent;

@@ -14,7 +14,7 @@ function makeDetector(overrides: Partial<DetectorEntryModel> = {}): DetectorEntr
 const noop = () => {};
 
 describe('DetectorEntry type picker (Select -> AlgorithmCard radiogroup, D-01/D-02)', () => {
-  it('renders a role="radiogroup" containing three AlgorithmCards (hst/mad/stl)', () => {
+  it('renders a role="radiogroup" containing four AlgorithmCards (rmad/hst/mad/stl)', () => {
     render(
       <DetectorEntry
         entityIdx={0}
@@ -29,7 +29,28 @@ describe('DetectorEntry type picker (Select -> AlgorithmCard radiogroup, D-01/D-
     const group = screen.getByRole('radiogroup');
     expect(group).toBeTruthy();
     const cards = screen.getAllByRole('radio');
-    expect(cards).toHaveLength(3);
+    expect(cards).toHaveLength(4);
+  });
+
+  // D-F. hst is kept as a rollback path, not as an equal-quality option: it scores RARITY
+  // rather than deviation, so a rare-but-normal level can outscore the modal one (F4). If the
+  // card said nothing about that, an operator comparing four names would have no way to know
+  // which one is the known-broken one.
+  it('marks hst as legacy so nobody picks it by accident', () => {
+    render(
+      <DetectorEntry
+        entityIdx={0}
+        detIdx={0}
+        detector={makeDetector()}
+        onTypeChange={noop}
+        onParamChange={noop}
+        onRemove={noop}
+      />
+    );
+
+    const group = screen.getByRole('radiogroup');
+    expect(group.textContent).toMatch(/legacy/i);
+    expect(group.textContent).toMatch(/domyślny/);
   });
 
   it('marks the card matching the current detector name as selected (SC3 — 2px accent border class)', () => {

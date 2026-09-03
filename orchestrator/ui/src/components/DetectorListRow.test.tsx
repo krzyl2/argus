@@ -103,7 +103,31 @@ describe('DetectorListRow', () => {
     expect(screen.queryByText('Działa')).toBeNull();
   });
 
-  it('sensor variant: warmed up shows "Działa" and not Rozgrzewka (QUICK-warmup-status)', () => {
+  it('sensor variant: warmed up WITH a band shows "Działa" and not Rozgrzewka', () => {
+    const row: DetectorRow = {
+      key: 'sensor:sensor.living_room_temp',
+      kind: 'sensor',
+      entry: makeSensor({
+        warmedUp: true,
+        readingCount: 250,
+        warmUpWindow: 250,
+        calibratedUpper: 122,
+      }),
+    };
+    render(
+      <ul>
+        <DetectorListRow row={row} />
+      </ul>
+    );
+    expect(screen.getByText('Działa')).not.toBeNull();
+    expect(screen.queryByText(/Rozgrzewka/)).toBeNull();
+  });
+
+  // "Warmed up" and "has a usable threshold" are different facts. rmad reports warmed_up once
+  // min_samples readings are in, but until a verdict has carried expected/lower/upper there is
+  // no band, so the editor cannot show the operator what 0.5 means for this sensor. A green
+  // "Działa" there would claim the entity is fully armed when its threshold is still unstated.
+  it('WarmSensorWithoutBand_ShowsKalibracja', () => {
     const row: DetectorRow = {
       key: 'sensor:sensor.living_room_temp',
       kind: 'sensor',
@@ -114,8 +138,8 @@ describe('DetectorListRow', () => {
         <DetectorListRow row={row} />
       </ul>
     );
-    expect(screen.getByText('Działa')).not.toBeNull();
-    expect(screen.queryByText(/Rozgrzewka/)).toBeNull();
+    expect(screen.getByText('Kalibracja')).not.toBeNull();
+    expect(screen.queryByText('Działa')).toBeNull();
   });
 
   it('sensor variant: no status data renders neither chip (QUICK-warmup-status)', () => {

@@ -1,4 +1,4 @@
-import type { SensorEntry } from '../api/types';
+import type { SensorEntry, DetectorName } from '../api/types';
 import type { EntityEditState } from '../state/sensors';
 import { SensorListRow } from './SensorListRow';
 import { EmptyState } from './EmptyState';
@@ -12,7 +12,7 @@ interface SensorListProps {
   selectedEntityId: string | null;
   onSelectRow: (entityId: string) => void;
   onToggleTracked: (entityId: string, checked: boolean) => void;
-  onDetectorTypeChange: (entityId: string, detIdx: number, name: 'hst' | 'mad' | 'stl') => void;
+  onDetectorTypeChange: (entityId: string, detIdx: number, name: DetectorName) => void;
   onDetectorParamChange: (entityId: string, detIdx: number, key: string, value: string) => void;
   onDetectorRemove: (entityId: string, detIdx: number) => void;
   onDetectorAdd: (entityId: string) => void;
