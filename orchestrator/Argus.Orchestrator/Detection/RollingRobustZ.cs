@@ -10,15 +10,29 @@ namespace Argus.Orchestrator.Detection;
 /// measures deviation directly, in the sensor's own units, with no model, no fit and no
 /// persistence — the same category as FrozenSensorDetector.
 ///
-/// Scale ladder, first strictly positive wins:
-///   1. 1.4826 · MAD   — the robust default,
-///   2. (Q3 − Q1) / 1.349 — survives a series where more than half the window is one value,
-///   3. sample StdDev over the LIVE slots only — a last resort for a nearly-degenerate window,
-///   4. 0.0 = abstain (return z = 0).
-/// Step 3 must never see the whole array: unfilled slots are zeros, and on a 0/984 W duty-cycle
+/// Scale ladder, first strictly positive wins — DELIBERATELY the same ladder as
+/// <c>RmadDetector._scale</c> (detector/argus_detector/rmad_detector.py):
+///   1. 1.4826 · MAD — the robust default,
+///   2. mean absolute deviation from the median, over the LIVE slots only,
+///   3. 0.0 = abstain (return z = 0).
+/// Rung 2 must never see the whole array: unfilled slots are zeros, and on a 0/984 W duty-cycle
 /// sensor those zeros would look like real readings and deflate the scale into permanent alarm.
-/// Step 4 is deliberate abstention, not a fallback: a perfectly flat series has no deviation to
+/// Rung 3 is deliberate abstention, not a fallback: a perfectly flat series has no deviation to
 /// report, and after D-H there is no frozen-sensor guard behind it (§7 #8).
+///
+/// WHY rung 2 is MeanAD and not the IQR or the sample StdDev: on a duty-cycle series (the fridge
+/// spends fraction p of its window at 984 W and the rest at 0 W) MAD and the IQR are both zero,
+/// so rung 2 is what actually decides. MeanAD gives σ = 984·p ⇒ z = 1/p; StdDev gives
+/// σ = 984·√(p(1−p)) ⇒ z = 1/√(p(1−p)). Those are different statistics with different cliffs:
+/// the plan's §7 #3 blocker ("the duty-cycle cliff z = 1/p silences the fridge at p ≥ 0.2") is
+/// computed for the first, while the second is already below z_fire = 5.0 at the fridge's own
+/// measured 12 % duty cycle (z = 3.08) — i.e. the sensor would be silent at steady state and the
+/// documented safety margin would not be the one in force. Two channels judging the same reading
+/// have to use the same σ, and the one the plan's numbers are derived from is Python's.
+///
+/// Python's rung 3 (a scale_floor in the sensor's own units, D-I) has no counterpart here: the
+/// alert layer takes no scale_floor parameter, so the raw channel damps nothing. Its rung 4 also
+/// differs on purpose: a degenerate window scores 1.0 there (frozen coverage) and abstains here.
 /// </summary>
 internal sealed class RollingRobustZ
 {
@@ -55,13 +69,10 @@ internal sealed class RollingRobustZ
         Array.Copy(_buf, _scratch, _count);
         Array.Sort(_scratch, 0, _count);
 
-        // Quartiles must be read from the FIRST sort — the array is overwritten with
-        // absolute deviations below, and reading them afterwards would silently return
-        // quartiles of |x − median| instead of quartiles of the series.
-        double q1 = _scratch[_count / 4];
-        double q3 = _scratch[3 * _count / 4];
         double med = MedianOfSorted(_scratch, _count);
 
+        // _scratch now holds the absolute deviations from the median: the median of those is the
+        // MAD (rung 1) and their mean is rung 2, so both rungs come out of one pass.
         for (int i = 0; i < _count; i++)
             _scratch[i] = Math.Abs(_scratch[i] - med);
         Array.Sort(_scratch, 0, _count);
@@ -69,9 +80,7 @@ internal sealed class RollingRobustZ
 
         double scale = 1.4826 * mad;
         if (scale <= 0.0)
-            scale = (q3 - q1) / 1.349;
-        if (scale <= 0.0)
-            scale = StdDev(_buf, _count);
+            scale = MeanAbsoluteDeviation(_scratch, _count);
         if (scale <= 0.0)
             return 0.0;
 
@@ -90,24 +99,20 @@ internal sealed class RollingRobustZ
     private static double MedianOfSorted(double[] sorted, int n)
         => n % 2 == 1 ? sorted[n / 2] : 0.5 * (sorted[n / 2 - 1] + sorted[n / 2]);
 
-    /// <summary>Sample standard deviation over the first <paramref name="n"/> (live) slots only.</summary>
-    private static double StdDev(double[] buf, int n)
+    /// <summary>
+    /// Mean of the absolute deviations from the median, over the first <paramref name="n"/> (live)
+    /// slots only — rung 2, and the same statistic as <c>_mean_ad</c> in rmad_detector.py.
+    /// Takes the array of |x − median| values the caller has already built.
+    /// </summary>
+    private static double MeanAbsoluteDeviation(double[] deviations, int n)
     {
-        if (n < 2)
+        if (n < 1)
             return 0.0;
 
         double sum = 0.0;
         for (int i = 0; i < n; i++)
-            sum += buf[i];
-        double mean = sum / n;
+            sum += deviations[i];
 
-        double sumSq = 0.0;
-        for (int i = 0; i < n; i++)
-        {
-            double d = buf[i] - mean;
-            sumSq += d * d;
-        }
-
-        return Math.Sqrt(sumSq / (n - 1));
+        return sum / n;
     }
 }

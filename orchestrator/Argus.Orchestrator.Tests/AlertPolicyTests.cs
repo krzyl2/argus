@@ -280,11 +280,19 @@ public class AlertPolicyTests
     public void RawZ_LodowkaCompressorCycle_FiresExactlyTwice()
     {
         // F3: sensor.lodowkababcia_power is the only sensor in the measured set whose alarms
-        // were mostly real (83 % episode precision) — two compressor runs a day between 0 W and
-        // 984 W. Reducing the design to a rank-on-score gate would silence this sensor outright
-        // (its score is flat), so this test fails the moment the raw channel is dropped.
+        // were mostly real (83 % episode precision) — two compressor runs between 0 W and 984 W.
+        // Reducing the design to a rank-on-score gate would silence this sensor outright (its
+        // score is flat), so this test fails the moment the raw channel is dropped.
+        //
+        // max_event_duration is lifted out of the way ON PURPOSE. The fixture compresses a
+        // 7-day recording into 1546 readings at 391 s each, so each 90-reading "run" is 9.8 h of
+        // wall clock — longer than the 6 h watchdog, which would then split each run into two
+        // events plus a storm. A real compressor run is tens of minutes; the watchdog is a
+        // property of this fixture's time compression, not of the sensor, and it has its own
+        // test (MaxEventDuration_EvidenceHeldTrueForever_ForceClosesAndRaisesStorm).
         var series = LodowkaCompressorCycle();
-        var policy = new AlertPolicy(FastParams(evidenceMode: "any", alertMinSamples: 100));
+        var policy = new AlertPolicy(FastParams(
+            evidenceMode: "any", alertMinSamples: 100, maxEventDurationSec: 7 * 24 * 3600));
 
         int events = 0, onTicks = 0;
         for (int i = 0; i < series.Length; i++)
@@ -298,13 +306,61 @@ public class AlertPolicyTests
         Assert.Equal(2, events);
 
         // Two events alone are not the criterion — an implementation that fires twice and
-        // latches would also score 2. The flag has to cover the compressor runs and then let
-        // go: the two runs are 180 of 1546 readings (11.6 %), and the rank/robust-z pair
-        // releases part-way through each run as 984 W stops being rare in its own window.
-        // Measured: 99 on-ticks = 6.404 %. Below 2 % the flag would be missing the runs it
-        // exists for; above 8 % it is starting to hold, which is F1 coming back.
+        // latches would also score 2. The flag has to cover the compressor runs and then let go:
+        // the two runs are 180 of 1546 readings (11.6 %), and the flag goes out within
+        // min_consecutive readings of each run ending, because 0 W is the window's median again.
+        // Measured: 178 on-ticks = 11.51 %, i.e. the flag covers the runs and nothing else.
+        // Below 8 % it would be missing part of the runs it exists for; above 20 % it is holding
+        // past them, which is F1 coming back.
         double onTime = (double)onTicks / series.Length;
-        Assert.InRange(onTime, 0.02, 0.08);
+        Assert.InRange(onTime, 0.08, 0.20);
+    }
+
+    /// <summary>
+    /// Duty-cycle series: <paramref name="onOutOfSixtyFour"/> readings at <paramref name="high"/>
+    /// in every 64, the rest at 0 — the shape lodowkababcia_power actually has inside a 720-sample
+    /// window (~78 h at 391 s/reading, i.e. many compressor cycles), as opposed to the two
+    /// isolated bursts of the 24 h fixture. 704 readings = 11 whole 64-reading cycles, so the
+    /// window's duty fraction is exactly onOutOfSixtyFour/64 and the expected z is exact.
+    /// </summary>
+    private static double[] StationaryDutyCycle(int onOutOfSixtyFour, int length = 704, double high = 984.0)
+    {
+        var series = new double[length];
+        for (int i = 0; i < length; i++)
+            series[i] = (i % 64) < onOutOfSixtyFour ? high : 0.0;
+        return series;
+    }
+
+    [Theory]
+    [InlineData(3)]   // p = 0.047
+    [InlineData(6)]   // p = 0.094
+    [InlineData(8)]   // p = 0.125 — the fridge's measured duty cycle
+    [InlineData(12)]  // p = 0.1875
+    public void RawZ_StationaryDutyCycle_KeepsThePlansOwnMargin_ToTwentyPercent(int onOutOfSixtyFour)
+    {
+        // §7 #3 of the plan ships a named blocker: "the duty-cycle cliff z = 1/p silences
+        // lodowkababcia_power at p ≥ 0.2; the sensor survives with ~8 percentage points of
+        // margin". That number is a property of the SCALE LADDER, and it only holds if the raw
+        // channel derives sigma the way RmadDetector does — MAD, then MeanAD. On a duty-cycle
+        // series MAD is zero, so rung 2 decides everything: MeanAD gives sigma = 984·p and
+        // z = 1/p, while a sample-StdDev rung gives sigma = 984·√(p(1−p)) and z = 1/√(p(1−p)),
+        // which is already 3.08 — under z_fire — at the fridge's own 12 % duty cycle. Same data,
+        // two different sigmas, and only one of them is the one the plan's margin is computed on.
+        //
+        // Note what the fixture does NOT have: the two isolated bursts of
+        // LodowkaCompressorCycle, whose windows are nearly free of 984 W and therefore hide this
+        // entirely. This is the steady state a real fridge sits in — 720 samples is ~78 h.
+        var series = StationaryDutyCycle(onOutOfSixtyFour);
+        double p = onOutOfSixtyFour / 64.0;
+
+        var z = new RollingRobustZ(720);
+        foreach (var v in series) z.Push(v);
+
+        double observed = z.ZOf(984.0);
+
+        Assert.Equal(1.0 / p, observed, 6);
+        Assert.True(observed >= 5.0,
+            $"Duty cycle {p:P1}: robust z is {observed:F3}, below z_fire = 5.0 — the fridge is silent here");
     }
 
     // ─── Independent warm-up per channel ─────────────────────────────────────
@@ -617,11 +673,11 @@ public class AlertPolicyTests
     [Fact]
     public void ScaleLadder_TwelveIdenticalThenOutlier_PicksFiniteNonDegenerateScale()
     {
-        // Both rungs below MAD exist for a reason. MAD and the IQR are both zero when most of
-        // the window is one value, so without the StdDev rung the channel would abstain on a
-        // series that plainly contains an outlier. StdDev must see only the live slots: on a
-        // 0/984 W duty-cycle sensor the unfilled tail of the array is zeros, and counting them
-        // deflates the scale into permanent alarm.
+        // Rung 2 exists for a reason. MAD is zero when most of the window is one value, so
+        // without a second rung the channel would abstain on a series that plainly contains an
+        // outlier. Rung 2 must see only the live slots: on a 0/984 W duty-cycle sensor the
+        // unfilled tail of the array is zeros, and counting them deflates the scale into
+        // permanent alarm.
         var z = new RollingRobustZ(720);
         for (int i = 0; i < 12; i++) z.Push(50.0);
         z.Push(500.0);
