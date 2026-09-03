@@ -33,8 +33,26 @@ public sealed class EntityRuntimeState
     /// Resolved HST params this entity was configured with. Threaded through so
     /// ScoreStreamPipeline.ToPoint can populate Point.params (WARM-02) without
     /// re-parsing config in the write loop.
+    ///
+    /// For an rmad entity this holds the EQUIVALENT gate/window view of its rmad params
+    /// (thresholds, min_consecutive, frozen pair, baseline window) so the hysteresis gate,
+    /// the frozen detector and the backfill row request keep one code path. The rmad-only
+    /// keys live on <see cref="RmadParams"/>; <see cref="DetectorName"/> says which is real.
     /// </summary>
     public HstParams HstParams { get; }
+
+    /// <summary>
+    /// Detector this entity actually runs — "rmad" (default, D-A) or "hst". Sent on the wire
+    /// in Point.params/WarmupRequest.Detector so the Python side scores with the same
+    /// algorithm the config names. A hardcoded literal here is exactly the defect that would
+    /// let a migrated entities.yaml silently run the old detector (F0).
+    /// </summary>
+    public string DetectorName { get; }
+
+    /// <summary>
+    /// Resolved rmad params, or null for an hst entity. Non-null iff DetectorName == "rmad".
+    /// </summary>
+    public RmadParams? RmadParams { get; }
 
     /// <summary>
     /// True once the detector reports warmed_up on a Verdict (D-01) — set by
@@ -98,9 +116,49 @@ public sealed class EntityRuntimeState
             hstParams.FrozenVarianceThreshold);
 
         HstParams = hstParams;
+        DetectorName = "hst";
         AlertParams = alertParams ?? new AlertParams();
         Alert = alert ?? new AlertPolicy(AlertParams);
         WarmUpWindow = hstParams.Window;
+    }
+
+    /// <summary>
+    /// Creates per-entity state for an rmad entity (D-A/D-B/D-M).
+    ///
+    /// The gate and the frozen detector are configured from the SAME numbers as the hst path —
+    /// D-C keeps HysteresisGate untouched, because an rmad score is already dimensionless and a
+    /// fixed threshold on it is correct per entity.
+    ///
+    /// D-M: WarmUpWindow is seeded from min_samples (60), NOT from the baseline window (720).
+    /// The rolling median/MAD IS the calibration, recomputed every tick, so min_samples is the
+    /// gate that actually decides whether a verdict counts — showing "n/720" would tell the
+    /// operator to wait ~78 h on a slow sensor for a verdict that already arrived at 60.
+    /// </summary>
+    public EntityRuntimeState(RmadParams rmadParams, AlertParams? alertParams = null, AlertPolicy? alert = null)
+    {
+        Hysteresis = new HysteresisGate(
+            rmadParams.HighThreshold,
+            rmadParams.LowThreshold,
+            rmadParams.MinConsecutive);
+
+        FrozenDetector = new FrozenSensorDetector(
+            rmadParams.FrozenWindow,
+            rmadParams.FrozenVarianceThreshold);
+
+        RmadParams = rmadParams;
+        DetectorName = "rmad";
+        HstParams = new HstParams
+        {
+            Window = rmadParams.Window,
+            HighThreshold = rmadParams.HighThreshold,
+            LowThreshold = rmadParams.LowThreshold,
+            MinConsecutive = rmadParams.MinConsecutive,
+            FrozenWindow = rmadParams.FrozenWindow,
+            FrozenVarianceThreshold = rmadParams.FrozenVarianceThreshold,
+        };
+        AlertParams = alertParams ?? new AlertParams();
+        Alert = alert ?? new AlertPolicy(AlertParams);
+        WarmUpWindow = rmadParams.MinSamples;
     }
 
     /// <summary>

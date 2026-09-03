@@ -101,4 +101,52 @@ public class EntityRuntimeStateTests
 
         Assert.Same(hstParams, state.HstParams);
     }
+
+    // ─── rmad entities (D-A/D-B/D-M) ─────────────────────────────────────────
+
+    /// <summary>
+    /// D-M: an rmad entity's warm-up denominator is min_samples, not the baseline window.
+    /// This is what the operator reads as "Rozgrzewka n/N". Seeding it from the 720-sample
+    /// baseline instead would tell them to wait ~78 h on a 391 s/sample sensor for a verdict
+    /// the detector already emits at 60 — the rolling median/MAD IS the calibration.
+    /// </summary>
+    [Fact]
+    public void WarmUpWindow_RmadParams_SeededFromMinSamples_NotBaselineWindow()
+    {
+        var state = new EntityRuntimeState(new RmadParams());
+
+        Assert.Equal(60, state.WarmUpWindow);
+    }
+
+    /// <summary>
+    /// The gate is shared with the hst path unchanged (D-C) — only the numbers differ — so an
+    /// rmad entity must arrive with ITS thresholds in the gate, not the 0.7/0.3 hst defaults.
+    /// A silent fallback here is exactly how a migrated config would keep running F0.
+    /// </summary>
+    [Fact]
+    public void RmadParams_ConfigureTheGateAndFrozenDetector()
+    {
+        var rmad = new RmadParams { HighThreshold = 0.5, LowThreshold = 0.375, MinConsecutive = 3 };
+        var state = new EntityRuntimeState(rmad);
+
+        Assert.Equal("rmad", state.DetectorName);
+        Assert.Same(rmad, state.RmadParams);
+
+        // Three consecutive scores above 0.5 fire; the hst default (0.7) would not have.
+        Assert.False(state.Hysteresis.Apply(0.6));
+        Assert.False(state.Hysteresis.Apply(0.6));
+        Assert.True(state.Hysteresis.Apply(0.6));
+
+        // frozen_variance_threshold 0.0 can never latch — sample variance is never negative.
+        for (int i = 0; i < 20; i++)
+            state.FrozenDetector.AddReading(0.0);
+        Assert.False(state.FrozenDetector.IsFrozen);
+    }
+
+    [Fact]
+    public void DetectorName_HstConstructor_IsHst()
+    {
+        Assert.Equal("hst", new EntityRuntimeState(new HstParams()).DetectorName);
+        Assert.Null(new EntityRuntimeState(new HstParams()).RmadParams);
+    }
 }

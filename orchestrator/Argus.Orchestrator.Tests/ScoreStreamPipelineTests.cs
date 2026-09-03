@@ -1133,6 +1133,58 @@ public class ScoreStreamPipelineTests
 
         Assert.NotNull(pipeline);
     }
+
+    // ─── Detector selection on the wire (WS3 / D-A) ──────────────────────────
+
+    /// <summary>
+    /// The Python side dispatches on params["algorithm"] then params["detector"], falling back
+    /// to "hst". So a migrated rmad entity whose Point carries no detector key is scored by the
+    /// rarity detector against thresholds that mean something else entirely (0.5 on an HST
+    /// rarity mass reads as "above the 50th percentile") — F0, restored in silence and with no
+    /// log line. This test is the only thing standing between the migration and that state.
+    /// </summary>
+    [Fact]
+    public void BuildDetectorParamsMap_RmadEntity_NamesTheDetectorAndItsWindowKeys()
+    {
+        var state = new EntityRuntimeState(RmadParams.From(
+            Argus.Orchestrator.Web.DetectorDefaults.Get("rmad")!));
+
+        var wire = ScoreStreamPipeline.BuildDetectorParamsMap(state);
+
+        Assert.Equal("rmad", wire["detector"]);
+        Assert.Equal("720", wire["window"]);
+        Assert.Equal("60", wire["min_samples"]);
+        Assert.Equal("0", wire["scale_floor"]);
+        // n_trees is an HST-only knob; sending it would be noise the rmad detector strips.
+        Assert.False(wire.ContainsKey("n_trees"));
+    }
+
+    /// <summary>
+    /// The hst path stays byte-identical (D-F: hst is the rollback route, not a parity target),
+    /// and in particular must NOT gain a "detector" key — servicer.py already defaults to hst.
+    /// </summary>
+    [Fact]
+    public void BuildDetectorParamsMap_HstEntity_IsUnchanged()
+    {
+        var state = new EntityRuntimeState(new HstParams());
+
+        var wire = ScoreStreamPipeline.BuildDetectorParamsMap(state);
+
+        Assert.Equal(new[] { "n_trees", "window" }, wire.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+        Assert.Equal("250", wire["window"]);
+    }
+
+    /// <summary>
+    /// The sequence gate EntitiesSchemaMigrator reads before it rewrites entities.yaml. It is
+    /// a constant only because the pipeline above genuinely resolves the detector from config;
+    /// if anyone reverts BuildEntityStates to a literal "hst", this must go false with it, or
+    /// the migration writes a config nothing honours.
+    /// </summary>
+    [Fact]
+    public void SupportsRmad_IsTrue_BecauseBuildEntityStatesResolvesByName()
+    {
+        Assert.True(ScoreStreamPipeline.SupportsRmad);
+    }
 }
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────

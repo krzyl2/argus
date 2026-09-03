@@ -7,6 +7,7 @@ using Argus.Orchestrator.Mqtt;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 using System.Threading.Channels;
+using System.Globalization;
 
 namespace Argus.Orchestrator.Detection;
 
@@ -196,7 +197,7 @@ public sealed class ScoreStreamPipeline
             // D-01/WARM-01: warm-up no longer counted here — RecordReading() is gone.
             // The status cache is now written from the verdict read loop
             // (ProcessVerdictAsync), since warm-up data arrives on the Verdict.
-            var point = ToPoint(reading, entityState.HstParams);
+            var point = ToPoint(reading, entityState);
             await call.WriteAsync(point, ct);
         }
 
@@ -524,8 +525,11 @@ public sealed class ScoreStreamPipeline
                     history.Count, requestedRows, entityId);
             }
 
-            var request = new WarmupRequest { EntityId = entityId, Detector = "hst" };
-            foreach (var kv in BuildHstParamsMap(entityState.HstParams))
+            // The priming request must name the SAME detector the live stream will use, or the
+            // registry keys the primed model under (entity, "hst") and the rmad key opens cold
+            // (registry.warmup_one skips only keys with n_seen > 0).
+            var request = new WarmupRequest { EntityId = entityId, Detector = entityState.DetectorName };
+            foreach (var kv in BuildDetectorParamsMap(entityState))
                 request.Params[kv.Key] = kv.Value;
 
             // WS2: seed the raw-evidence window from the same rows, but only when it is still
@@ -598,6 +602,42 @@ public sealed class ScoreStreamPipeline
             ["n_trees"] = hstParams.NTrees.ToString(),
         };
 
+    /// <summary>
+    /// Wire params for whichever detector the entity is configured with.
+    ///
+    /// The "detector" key is what servicer.py dispatches on (params["algorithm"] then
+    /// params["detector"], falling back to "hst"), so omitting it would silently score a
+    /// migrated rmad entity with the old rarity detector — the exact F0 state the migration
+    /// exists to leave. The numeric keys are the ones RmadDetector._read_params reads;
+    /// z_scale is deliberately NOT among them (D-B: z_scale and high_threshold are the same
+    /// degree of freedom, and the gate owns the threshold).
+    /// </summary>
+    internal static Dictionary<string, string> BuildDetectorParamsMap(EntityRuntimeState entityState)
+    {
+        if (entityState.RmadParams is not { } rmad)
+            return BuildHstParamsMap(entityState.HstParams);
+
+        return new Dictionary<string, string>
+        {
+            ["detector"] = "rmad",
+            ["window"] = rmad.Window.ToString(CultureInfo.InvariantCulture),
+            ["min_samples"] = rmad.MinSamples.ToString(CultureInfo.InvariantCulture),
+            ["scale_floor"] = rmad.ScaleFloor.ToString(CultureInfo.InvariantCulture),
+        };
+    }
+
+    /// <summary>
+    /// True when this pipeline resolves the detector from config instead of hardcoding "hst".
+    ///
+    /// EntitiesSchemaMigrator reads this as a sequence gate and REFUSES to write when it is
+    /// false: a config migrated to rmad while the pipeline still sends window/n_trees and
+    /// Detector="hst" would run the legacy detector against thresholds that mean something
+    /// entirely different (0.5 on an HST rarity mass is "above the 50th percentile"), which is
+    /// a worse state than not migrating at all. Flip this to false only alongside reverting
+    /// BuildEntityStates.
+    /// </summary>
+    internal static bool SupportsRmad => true;
+
     private Dictionary<string, EntityRuntimeState> BuildEntityStates()
     {
         // CFG-04: read live config at RunAsync entry — captures the post-swap entity set
@@ -605,15 +645,25 @@ public sealed class ScoreStreamPipeline
         var states = new Dictionary<string, EntityRuntimeState>(StringComparer.OrdinalIgnoreCase);
         foreach (var entity in _liveConfig.Get().Entities)
         {
-            var hstDetector = entity.Detectors.FirstOrDefault(d =>
+            // WS3/D-A: resolve the streaming detector by NAME, first match wins. The literal
+            // "hst" lookup this replaced meant a config migrated to rmad fell through to
+            // `new HstParams()` (250/0.7/0.3) — F0 restored in silence.
+            var streaming = entity.Detectors.FirstOrDefault(d =>
+                string.Equals(d.Name, "rmad", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(d.Name, "hst", StringComparison.OrdinalIgnoreCase));
-            var hstParams = hstDetector is not null
-                ? HstParams.From(hstDetector.Params)
-                : new HstParams();
-            // WS2: alert params come from the SAME params map as HstParams (no new YAML block).
-            var alertParams = AlertParams.From(hstDetector?.Params ?? new Dictionary<string, string>());
-            states[entity.EntityId] = new EntityRuntimeState(
-                hstParams, alertParams, _alertStore?.GetOrCreate(entity.EntityId, alertParams));
+
+            // WS2: alert params come from the SAME params map as the detector params (no new
+            // YAML block).
+            var alertParams = AlertParams.From(streaming?.Params ?? new Dictionary<string, string>());
+            var alertPolicy = _alertStore?.GetOrCreate(entity.EntityId, alertParams);
+
+            states[entity.EntityId] =
+                streaming is not null &&
+                string.Equals(streaming.Name, "rmad", StringComparison.OrdinalIgnoreCase)
+                    ? new EntityRuntimeState(RmadParams.From(streaming.Params), alertParams, alertPolicy)
+                    : new EntityRuntimeState(
+                        streaming is not null ? HstParams.From(streaming.Params) : new HstParams(),
+                        alertParams, alertPolicy);
         }
 
         // Config reloads rebuild this map on every Save; the store keeps each entity's rank/raw
@@ -622,7 +672,7 @@ public sealed class ScoreStreamPipeline
         return states;
     }
 
-    private static Point ToPoint(Ha.HaReading reading, HstParams hstParams)
+    private static Point ToPoint(Ha.HaReading reading, EntityRuntimeState entityState)
     {
         var point = new Point
         {
@@ -630,7 +680,7 @@ public sealed class ScoreStreamPipeline
             Value = reading.Value,
             Timestamp = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTimeOffset(reading.LastChanged),
         };
-        foreach (var kv in BuildHstParamsMap(hstParams))
+        foreach (var kv in BuildDetectorParamsMap(entityState))
             point.Params[kv.Key] = kv.Value;
         return point;
     }
