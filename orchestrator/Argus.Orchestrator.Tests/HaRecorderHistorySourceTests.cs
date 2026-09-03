@@ -1,14 +1,17 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Argus.Detector.V1;
 using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
+using Argus.Orchestrator.Detection;
 using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Logging;
+using Grpc.Net.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -42,7 +45,26 @@ public class HaRecorderHistorySourceTests
         public int Connects { get; private set; }
         public Exception? ThrowOnGetHistory { get; set; }
 
-        public void MarkConnect() => Connects++;
+        public int Closes { get; private set; }
+
+        /// <summary>Highest number of simultaneously open connections seen during the run.</summary>
+        public int MaxConcurrentlyOpen { get; private set; }
+
+        private int _open;
+
+        public void MarkConnect()
+        {
+            Connects++;
+            _open++;
+            if (_open > MaxConcurrentlyOpen)
+                MaxConcurrentlyOpen = _open;
+        }
+
+        public void MarkClose()
+        {
+            Closes++;
+            _open--;
+        }
 
         public JsonElement Handle(string entityId, DateTimeOffset start, DateTimeOffset end)
         {
@@ -75,24 +97,31 @@ public class HaRecorderHistorySourceTests
         private readonly FakeHaHistory _ha;
         public FakeHistoryConnection(FakeHaHistory ha) => _ha = ha;
 
-        public Task ConnectAndAuthAsync(Uri uri, string token, CancellationToken ct)
+        public async Task ConnectAndAuthAsync(Uri uri, string token, CancellationToken ct)
         {
+            // Yield before recording the connect: without it this fake is fast enough to run
+            // every query to completion synchronously, which would hide a missing semaphore from
+            // HistoryConnections_AreTransientAndNeverOverlap.
+            await Task.Yield();
             _ha.MarkConnect();
-            return Task.CompletedTask;
         }
 
         public Task<JsonElement> GetHistoryAsync(
             string entityId, DateTimeOffset start, DateTimeOffset end, CancellationToken ct)
             => Task.FromResult(_ha.Handle(entityId, start, end));
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            _ha.MarkClose();
+            return ValueTask.CompletedTask;
+        }
     }
 
     /// <summary>
     /// Captures log entries so a criterion phrased as "readable from the log" can be asserted as
     /// exactly that, and not as an internal field only a test can reach.
     /// </summary>
-    private sealed class RecordingLogger : ILogger<HaRecorderHistorySource>
+    private sealed class RecordingLogger<T> : ILogger<T>
     {
         public List<(LogLevel Level, EventId Event, string Message)> Entries { get; } = new();
 
@@ -338,7 +367,7 @@ public class HaRecorderHistorySourceTests
         // broken one. So this asserts the LOG LINE, not ConnectionsOpened.
         var ha = new FakeHaHistory();
         SeedSeries(ha, "sensor.load_5m", 50);
-        var log = new RecordingLogger();
+        var log = new RecordingLogger<HaRecorderHistorySource>();
         var source = MakeSource(ha, logger: log);
 
         for (int i = 0; i < 200; i++)
@@ -394,6 +423,192 @@ public class HaRecorderHistorySourceTests
         Assert.True(callAt > elseAt && callAt < buildAt,
             "Program.cs must register the HA Recorder history source in the else (no-InfluxDB) arm "
             + "of the influx_url branch - F11 depends on it.");
+    }
+
+
+    // --- F11/F12 acceptance criteria, pinned offline -------------------------
+
+    /// <summary>
+    /// F12's measured baseline: 1546 rows for sensor.lodowkababcia_power over an 8 d lookback,
+    /// oldest stamp 2026-08-27T05:18Z, and the SAME count when asked for 30 d because the
+    /// Recorder only keeps 7 days.
+    /// </summary>
+    private const int F12RowCount = 1546;
+
+    private static readonly DateTimeOffset F12OldestStamp =
+        new(2026, 8, 27, 5, 18, 0, TimeSpan.Zero);
+
+    /// <summary>F12's measurement was taken exactly 7 d (the Recorder's retention) after the oldest row.</summary>
+    private static readonly DateTimeOffset F12Now = F12OldestStamp.AddDays(7);
+
+    /// <summary>Rebuilds the F12 series: 1546 rows evenly spread across the Recorder's 7 day window.</summary>
+    private static void SeedF12Series(FakeHaHistory ha, string entityId)
+    {
+        var step = TimeSpan.FromTicks(TimeSpan.FromDays(7).Ticks / F12RowCount);
+        var rows = new List<FakeRow>();
+        for (int i = 0; i < F12RowCount; i++)
+        {
+            rows.Add(new FakeRow(
+                F12OldestStamp + step * i,
+                (40 + (i % 7)).ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+        ha.Series[entityId] = rows;
+    }
+
+    [Fact]
+    public async Task F12_EightDayLookback_ReturnsTheMeasuredWindow_AndThirtyDaysReturnsNoMore()
+    {
+        // F12 is a measurement off the live install, and the reason it belongs here as a
+        // REGRESSION fixture is that both of its halves fail silently. Half one: 8 d must reach
+        // past the 7 d retention edge so the whole window arrives - a slice walk that gave up at
+        // the first thin slice would return "plenty of rows" and nothing would say otherwise.
+        // Half two: 30 d must cost no extra rows, because the Recorder has nothing older; a wider
+        // lookback that suddenly returns MORE means rows are being duplicated across slice
+        // boundaries, which is precisely what include_start_time_state used to do.
+        var ha = new FakeHaHistory();
+        SeedF12Series(ha, "sensor.lodowkababcia_power");
+        var source = MakeSource(ha, clock: () => F12Now);
+
+        var eightDays = await source.QueryHistoryAsync(
+            "sensor.lodowkababcia_power", "8d", 2000, CancellationToken.None);
+        var commandsAt8d = ha.Commands.Count;
+
+        var thirtyDays = await source.QueryHistoryAsync(
+            "sensor.lodowkababcia_power", "30d", 2000, CancellationToken.None);
+        var commandsAt30d = ha.Commands.Count - commandsAt8d;
+
+        Assert.InRange(eightDays.Count, F12RowCount - 20, F12RowCount + 20);
+        Assert.Equal(eightDays.Count, thirtyDays.Count);
+
+        // The oldest row must not be younger than the measured retention edge: an early stop
+        // still returns a lot of rows, just not the ones from seven days ago.
+        Assert.True(eightDays[0].Timestamp <= F12OldestStamp.UtcDateTime.AddMinutes(1),
+            $"oldest row {eightDays[0].Timestamp:O} is newer than the measured edge {F12OldestStamp:O}");
+
+        // 5.3: commands per entity stay <= 10 even at a 30 d lookback against a 7 d Recorder -
+        // the empty-slice stop is what keeps a wide lookback from costing 30 round trips of
+        // nothing on every restart.
+        Assert.True(commandsAt30d <= 10, $"30d lookback issued {commandsAt30d} commands");
+    }
+
+    [Fact]
+    public async Task PrimedLogLine_NamesHaRecorderAsTheSource()
+    {
+        // F11's acceptance criterion is a startup line reading "primed <entity> <n> points from
+        // HA Recorder". The source name is the load-bearing part: on this install influx_url is
+        // empty, so a line saying only "Primed sensor.x with 720 history points" looks the same
+        // whether the Recorder answered or whether IInfluxDataSource resolved to null and priming
+        // never ran at all - and telling those two apart IS the F11 check.
+        var ha = new FakeHaHistory();
+        SeedF12Series(ha, "sensor.lodowkababcia_power");
+        var source = MakeSource(ha, clock: () => F12Now);
+        var log = new RecordingLogger<ScoreStreamPipeline>();
+
+        var pipeline = MakePipeline(source, log, out var detectorClient);
+        await pipeline.PrimeFromHistoryAsync(
+            "sensor.lodowkababcia_power", NewEntityState(), CancellationToken.None);
+
+        var primed = Assert.Single(log.Entries, e => e.Event == LogEvents.WarmupPrimed);
+        Assert.Equal(LogLevel.Information, primed.Level);
+        Assert.Contains("sensor.lodowkababcia_power", primed.Message);
+        Assert.Contains("from HA Recorder", primed.Message);
+
+        // ...and n > 0, the other half of the criterion.
+        var pointCount = detectorClient.LastWarmupRequest!.History.Count;
+        Assert.True(pointCount > 0);
+        Assert.Contains($"{pointCount} history points", primed.Message);
+    }
+
+    [Fact]
+    public async Task EmptyRecorderResult_IsAWarningNamingTheEntity_NotSilence()
+    {
+        // 5.3 case (e): success == true with an empty result for a watched entity is an HA-side
+        // visibility/permission problem, not a normal outcome - and it is the one path that emits
+        // no "Primed ..." line at all. Without this warning "backfill is off", "the entity is
+        // invisible to the Supervisor token" and "the Recorder is empty" are all just missing
+        // output, and F11's "n > 0 for all five entities" would have to be checked by noticing
+        // what is NOT in the log.
+        var ha = new FakeHaHistory();
+        ha.Series["sensor.invisible"] = new List<FakeRow>();
+        var source = MakeSource(ha, clock: () => F12Now);
+        var log = new RecordingLogger<ScoreStreamPipeline>();
+
+        var pipeline = MakePipeline(source, log, out var detectorClient);
+        await pipeline.PrimeFromHistoryAsync("sensor.invisible", NewEntityState(), CancellationToken.None);
+
+        var empty = Assert.Single(log.Entries, e => e.Event == LogEvents.HistoryEmpty);
+        Assert.Equal(LogLevel.Warning, empty.Level);
+        Assert.Contains("sensor.invisible", empty.Message);
+        Assert.Contains("HA Recorder", empty.Message);
+        Assert.Equal(0, detectorClient.WarmupCallCount);
+    }
+
+    [Fact]
+    public async Task HistoryConnections_AreTransientAndNeverOverlap()
+    {
+        // Non-invasiveness towards the live stream. Two failure shapes are pinned here because
+        // neither shows up in the returned rows.
+        // (1) A connection kept alive between queries would show fewer connects than fetches -
+        //     that is the second persistent socket ADR-4 forbids, and the state in which a
+        //     history response starts consuming state_changed frames.
+        // (2) Two open at once would mean the semaphore stopped serializing, turning startup
+        //     priming of six entities into six simultaneous connect+auth handshakes against the
+        //     Supervisor proxy - the reconnect storm the criterion rules out.
+        var ha = new FakeHaHistory();
+        SeedSeries(ha, "sensor.load_5m", 30);
+        var source = MakeSource(ha);
+
+        // Distinct lookbacks so the 60 s cache cannot absorb the calls and hide the answer.
+        await Task.WhenAll(
+            source.QueryHistoryAsync("sensor.load_5m", "1h", 720, CancellationToken.None),
+            source.QueryHistoryAsync("sensor.load_5m", "2h", 720, CancellationToken.None),
+            source.QueryHistoryAsync("sensor.load_5m", "3h", 720, CancellationToken.None));
+
+        Assert.Equal(3, ha.Connects);
+        Assert.Equal(3, ha.Closes);            // each one closed again: transient, not pooled
+        Assert.Equal(1, ha.MaxConcurrentlyOpen);
+    }
+
+    // --- Pipeline wiring for the two log-line tests --------------------------
+
+    private static EntityRuntimeState NewEntityState()
+        => new(HstParams.From(new Dictionary<string, string> { ["window"] = "250" }));
+
+    /// <summary>
+    /// A ScoreStreamPipeline wired to the REAL HaRecorderHistorySource: the log-line criteria are
+    /// about what the two components print together, so faking the seam here would assert the
+    /// test's own string instead of the shipped one.
+    /// </summary>
+    private static ScoreStreamPipeline MakePipeline(
+        HaRecorderHistorySource source,
+        ILogger<ScoreStreamPipeline> logger,
+        out FakeWarmupDetectorClient detectorClient)
+    {
+        var cfg = new EntitiesConfig();
+        cfg.Entities.Add(new EntityConfig
+        {
+            EntityId = "sensor.lodowkababcia_power",
+            FriendlyName = "Lodowka babcia - moc",
+            Detectors = new List<DetectorConfig>
+            {
+                new DetectorConfig { Name = "hst", Params = new Dictionary<string, string> { ["window"] = "250" } },
+            },
+        });
+
+        detectorClient = new FakeWarmupDetectorClient
+        {
+            WarmupResponse = new WarmupResponse { Ok = true, NSeen = 720, WarmedUp = true },
+        };
+
+        return new ScoreStreamPipeline(
+            new FakeStatePublisher(),
+            logger,
+            new LiveEntitiesConfig(cfg),
+            // Never dialled: PrimeFromHistoryAsync does not touch the gateway.
+            new DetectionGateway(GrpcChannel.ForAddress("http://localhost:1"), NullLogger<DetectionGateway>.Instance),
+            historySource: source,
+            detectorClient: detectorClient,
+            connectionSettings: new ConnectionSettings { BackfillEnabled = true, BackfillLookback = "8d" });
     }
 
     /// <summary>Resolves a repo-relative path by walking up from the test binary.</summary>
