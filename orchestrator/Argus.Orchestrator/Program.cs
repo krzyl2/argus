@@ -52,7 +52,11 @@ var connectionSettings = new ConnectionSettings
     // D-15: a bad/absent backfill value must degrade, not fail startup — no throw-on-invalid
     // guard like BatchIntervalMinutes/NightlyFitHour get below.
     BackfillEnabled = !bool.TryParse(builder.Configuration["ARGUS_BACKFILL_ENABLED"], out var backfillEnabled) || backfillEnabled,
-    BackfillLookback = builder.Configuration["ARGUS_BACKFILL_LOOKBACK"] ?? "30d",
+    BackfillLookback = builder.Configuration["ARGUS_BACKFILL_LOOKBACK"] ?? "8d",
+    // §7 #12: the gRPC receive limit is nowhere configured, so the clamp is the only thing
+    // between an operator-raised cap and RESOURCE_EXHAUSTED on the Warmup call.
+    BackfillRowCap = Math.Clamp(
+        int.TryParse(builder.Configuration["ARGUS_BACKFILL_ROW_CAP"], out var brc) ? brc : 5000, 1, 20000),
 };
 // WR-04: validate BatchIntervalMinutes — zero or negative causes a tight spin loop or crash
 if (connectionSettings.BatchIntervalMinutes <= 0)
@@ -153,12 +157,13 @@ builder.Services.AddSingleton<AlertStateStore>();
 
 // Register ScoreStreamPipeline (Plan 08; Phase 15-03 backfill deps): bidi ScoreStream loop
 // with hysteresis/frozen/MQTT. Explicit factory (not a bare AddSingleton<T>()) because
-// IInfluxDataSource/IBatchDetectorClient are registered only inside the Influx-configured
-// branch below, THIS registration runs before that branch, and the class has two
-// constructors — an explicit factory removes all constructor-selection ambiguity. GetService
-// (not GetRequiredService) for the two optional deps is what gives D-15's degrade path for
-// free: no InfluxDB configured means both resolve to null means backfill is off, with no
-// separate feature check.
+// IInfluxDataSource is registered in one of the two branches below (InfluxDbReader when
+// influx_url is set, HaRecorderHistorySource otherwise), THIS registration runs before both,
+// and the class has two constructors — an explicit factory removes all constructor-selection
+// ambiguity. GetService (not GetRequiredService) still guards the optional deps, but WS5
+// changed what null means: IInfluxDataSource is now ALWAYS registered, so it resolves to null
+// only when neither branch ran. D-15's degrade path is unchanged and still exercised by
+// BackfillEnabled=false and by a source that returns zero rows.
 builder.Services.AddSingleton<ScoreStreamPipeline>(sp => new ScoreStreamPipeline(
     sp.GetRequiredService<IStatePublisher>(),
     sp.GetRequiredService<ILogger<ScoreStreamPipeline>>(),
@@ -170,6 +175,12 @@ builder.Services.AddSingleton<ScoreStreamPipeline>(sp => new ScoreStreamPipeline
     sp.GetService<IBatchDetectorClient>(),
     sp.GetRequiredService<ConnectionSettings>(),
     sp.GetRequiredService<AlertStateStore>()));
+
+// D-K: the Warmup client is NOT part of the InfluxDB branch. Backfill priming needs it on every
+// deployment — registering it inside the Influx branch is what made HaRecorderHistorySource
+// insufficient on its own: PrimeFromHistoryAsync no-ops when the detector client is null, so an
+// influx_url-less install would have had a history source and still never primed anything.
+builder.Services.AddSingleton<IBatchDetectorClient, BatchDetectorClientAdapter>();
 
 // Register ConfigWriter (Plan 02): atomic /data/entities.yaml write seam (temp-then-rename + SemaphoreSlim)
 builder.Services.AddSingleton<Argus.Orchestrator.Config.ConfigWriter>();
@@ -193,9 +204,6 @@ if (!string.IsNullOrWhiteSpace(connectionSettings.InfluxUrl))
     builder.Services.AddSingleton<GroupInfluxReader>();
     builder.Services.AddSingleton<IGroupInfluxDataSource>(sp => sp.GetRequiredService<GroupInfluxReader>());
 
-    // Register batch detector client adapter (wraps DetectionGateway for IBatchDetectorClient)
-    builder.Services.AddSingleton<IBatchDetectorClient, BatchDetectorClientAdapter>();
-
     // Register BatchSchedulerWorker as hosted service (Plan 02-04 / BTCH-03)
     // Uses factory to inject DetectionGateway directly for INFRA-07 health gate
     builder.Services.AddHostedService<BatchSchedulerWorker>(sp => new BatchSchedulerWorker(
@@ -218,6 +226,11 @@ else
     var startupLogger = entitiesLoggerFactory.CreateLogger<Program>();
     startupLogger.LogInformation(
         "InfluxDB not configured (influx_url empty) — batch path disabled; running streaming-only.");
+
+    // WS5/D-K/F11: the HA Recorder is the only history source on this deployment. Registering it
+    // here is what makes backfill priming reachable at all when influx_url is empty — before this,
+    // GetService<IInfluxDataSource>() returned null and PrimeFromHistoryAsync was dead code.
+    builder.Services.AddHaRecorderHistorySource();
 }
 
 // Kestrel: bind 0.0.0.0:8099 — Supervisor connects from 172.30.32.2 (not loopback).
