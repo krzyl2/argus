@@ -124,4 +124,10 @@ public static class LogEvents
     public static readonly EventId AlertEventStarted        = new(7010, nameof(AlertEventStarted));
     public static readonly EventId AlertEventEnded          = new(7011, nameof(AlertEventEnded));
     public static readonly EventId AlertStormRaised         = new(7012, nameof(AlertStormRaised));
+
+    // WS6 simulator (7013). B8: the ONLY source of simulator RESPONSE TIME. The verdict
+    // latency field (latency_ms, ScoreStreamPipeline) measures how long a single verdict took
+    // and must never be folded into this measurement — they are different quantities with
+    // different acceptance thresholds.
+    public static readonly EventId SimulateCompleted        = new(7013, nameof(SimulateCompleted));
 }
