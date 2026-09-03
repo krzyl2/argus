@@ -307,6 +307,58 @@ public class AlertPolicyTests
         Assert.InRange(onTime, 0.02, 0.08);
     }
 
+    // ─── Independent warm-up per channel ─────────────────────────────────────
+
+    [Fact]
+    public void RawChannel_PrimedFromHistory_FiresBeforeTheRankChannelIsCalibrated()
+    {
+        // The two channels warm up on different clocks and gating them together silences the
+        // sensor that matters. The rank channel needs alert_min_samples VERDICTS — 240 in
+        // production, i.e. ~26 h on lodowkababcia_power at ~225 verdicts/day — while the raw
+        // window is PRIMED FROM HISTORY at startup (SeedHistory/SeedValue on the backfill path)
+        // and is complete before the first verdict arrives. A shared gate meant that after every
+        // restart, and after every parameter change (which mints a fresh policy), the fridge went
+        // quiet for a day with a robust z around 17 the whole time — D-J requires ≥2 episodes on
+        // that sensor, and it is the only one with real precision.
+        var levels = ZamrazarkaLevels();                   // 107 W ± a few W, MAD-derived σ ≈ 2.97
+
+        var policy = new AlertPolicy(FastParams(evidenceMode: "any", alertMinSamples: 240));
+        policy.SeedHistory(levels);                        // backfill priming, no verdicts yet
+
+        int tick = 0;
+        for (int i = 0; i < 20; i++)
+        {
+            policy.ObserveValue(107.0);
+            policy.OnVerdict(0.5, warmedUp: true, suppressed: false, frozen: false, At(tick++));
+        }
+
+        AlertDecision? onset = null;
+        for (int i = 0; i < 5 && onset is null; i++)
+        {
+            policy.ObserveValue(200.0);                    // ~31σ — nothing on this sensor is 200 W
+            var d = policy.OnVerdict(0.5, warmedUp: true, suppressed: false, frozen: false, At(tick++));
+            if (d.EventStarted) onset = d;
+        }
+
+        Assert.False(policy.Calibrated,
+            "Fixture must reproduce the restart case: far fewer than alert_min_samples verdicts so far");
+        Assert.NotNull(onset);
+        Assert.True(onset!.FlagOn);
+        Assert.Equal("raw", onset.Channel);
+
+        // The other half of the rule: the RANK channel stays behind its calibration gate. Rank is
+        // meaningless on a window of 25 scores, so the same run in score_only must produce nothing.
+        var scoreOnly = new AlertPolicy(FastParams(evidenceMode: "score_only", alertMinSamples: 240));
+        scoreOnly.SeedHistory(levels);
+        int t2 = 0;
+        for (int i = 0; i < 25; i++)
+        {
+            scoreOnly.ObserveValue(i < 20 ? 107.0 : 200.0);
+            var d = scoreOnly.OnVerdict(0.5 + i * 0.001, true, false, false, At(t2++));
+            Assert.False(d.FlagOn, "The rank channel must stay uncalibrated until alert_min_samples verdicts");
+        }
+    }
+
     // ─── Calibration floor ───────────────────────────────────────────────────
 
     [Fact]

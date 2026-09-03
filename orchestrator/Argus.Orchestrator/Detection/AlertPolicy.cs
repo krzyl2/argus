@@ -198,21 +198,32 @@ public sealed class AlertPolicy
 
             bool calibrated = IsCalibrated();
 
-            // Not enough history to judge: hold the flag OFF, but close a running event rather
-            // than stranding it. Close ONLY when firing — stamping _lastEventEndedAt on every
-            // calibration tick would drop the first real event into the refractory branch and
-            // it would never be counted.
-            if (!frozen && (!warmedUp || !calibrated))
+            // The two channels warm up INDEPENDENTLY, and gating them together silences the one
+            // sensor that works. The rank channel needs alert_min_samples VERDICTS (240) plus a
+            // 50-deep rank window; the raw channel needs 10 raw VALUES, and backfill priming
+            // (SeedHistory) hands it a full 720-sample window before the first verdict ever
+            // arrives. A single warm-up gate over both meant lodowkababcia_power (~225
+            // verdicts/day) stayed silent for ~26 h after every restart and after every
+            // parameter change — with _lastRawZ around 17 the whole time. That breaks D-J
+            // ("≥2 episodes on the fridge") on the only sensor with real precision.
+            bool scoreReady = warmedUp && calibrated;
+            bool rawReady = _raw.Count >= RollingRobustZ.MinSamples;
+
+            // Neither channel has enough history to judge: hold the flag OFF, but close a running
+            // event rather than stranding it. Close ONLY when firing — stamping _lastEventEndedAt
+            // on every calibration tick would drop the first real event into the refractory
+            // branch and it would never be counted.
+            if (!frozen && !scoreReady && !rawReady)
             {
                 if (_firing)
                     ended = Close(now);
                 return new AlertDecision(false, false, ended, false, rank, _lastRawZ, "none");
             }
 
-            bool scoreHigh = calibrated && rank >= _params.QFire;
-            bool scoreLow = !calibrated || rank < _params.QClear;
-            bool rawHigh = _raw.Count >= RollingRobustZ.MinSamples && _lastRawZ >= _params.ZFire;
-            bool rawLow = _raw.Count < RollingRobustZ.MinSamples || _lastRawZ < _params.ZClear;
+            bool scoreHigh = scoreReady && rank >= _params.QFire;
+            bool scoreLow = !scoreReady || rank < _params.QClear;
+            bool rawHigh = rawReady && _lastRawZ >= _params.ZFire;
+            bool rawLow = !rawReady || _lastRawZ < _params.ZClear;
 
             switch (_params.EvidenceMode)
             {
