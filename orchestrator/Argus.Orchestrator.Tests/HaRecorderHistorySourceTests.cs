@@ -116,40 +116,32 @@ public class HaRecorderHistorySourceTests
 
     // ─── Tests ───────────────────────────────────────────────────────────────
 
-    [Theory]
-    [InlineData("7 days")]
-    [InlineData("d7")]
-    [InlineData("8")]
-    [InlineData("8x")]
-    [InlineData("")]
-    public async Task Lookback_RejectsBadShape_AcceptsCanonical_Rejects(string lookback)
+    [Fact]
+    public async Task Lookback_RejectsBadShape_AcceptsCanonical()
     {
         // The lookback contract belongs to the SEAM (InfluxDbReader.cs:25-26), not to either
         // implementor: if the HA path silently accepted "7 days" as something, the same operator
         // config would mean two different windows depending on whether InfluxDB is configured.
-        var source = MakeSource(new FakeHaHistory());
+        var rejecting = MakeSource(new FakeHaHistory());
+        foreach (var bad in new[] { "7 days", "d7", "8", "8x", "" })
+        {
+            await Assert.ThrowsAsync<ArgumentException>(
+                () => rejecting.QueryHistoryAsync("sensor.x", bad, 720, CancellationToken.None));
+        }
 
-        await Assert.ThrowsAsync<ArgumentException>(
-            () => source.QueryHistoryAsync("sensor.x", lookback, 720, CancellationToken.None));
-    }
+        foreach (var good in new[] { "8d", "24h", "600s" })
+        {
+            var ha = new FakeHaHistory();
+            SeedSeries(ha, "sensor.x", 5, stepSeconds: 10);
 
-    [Theory]
-    [InlineData("8d")]
-    [InlineData("24h")]
-    [InlineData("600s")]
-    public async Task Lookback_RejectsBadShape_AcceptsCanonical_Accepts(string lookback)
-    {
-        var ha = new FakeHaHistory();
-        SeedSeries(ha, "sensor.x", 5, stepSeconds: 10);
-        var source = MakeSource(ha);
+            var rows = await MakeSource(ha).QueryHistoryAsync("sensor.x", good, 720, CancellationToken.None);
 
-        var rows = await source.QueryHistoryAsync("sensor.x", lookback, 720, CancellationToken.None);
-
-        Assert.Equal(5, rows.Count);
+            Assert.Equal(5, rows.Count);
+        }
     }
 
     [Fact]
-    public async Task Lookback_RejectsBadShape_AcceptsCanonical_MatchesInfluxReaderRejection()
+    public async Task Lookback_BadShape_RejectedIdenticallyByBothImplementors()
     {
         // Parity of the rejection itself, not just of the accepted set: both implementors must
         // fail the same input the same way, or a lookback typo becomes an implementor-dependent
