@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 
 namespace Argus.Orchestrator.Logging;
 
@@ -91,6 +91,11 @@ public static class LogEvents
     public static readonly EventId HistoryFetched           = new(5020, nameof(HistoryFetched));
     public static readonly EventId HistoryFetchFailed       = new(5021, nameof(HistoryFetchFailed));
     public static readonly EventId HistoryShort             = new(5022, nameof(HistoryShort));
+
+    // HistoryConnectionOpened is the readable form of the E2 cache criterion: one line per
+    // transient connect, carrying the running count, so "200 queries -> 1 connection" can be
+    // grepped out of a Debug log instead of being asserted only in a unit test.
+    public static readonly EventId HistoryConnectionOpened  = new(5023, nameof(HistoryConnectionOpened));
 
     // Phase 8 UI — Group config UI + algorithm chooser (7009)
     public static readonly EventId GroupUiValidationBlocked = new(7009, nameof(GroupUiValidationBlocked));

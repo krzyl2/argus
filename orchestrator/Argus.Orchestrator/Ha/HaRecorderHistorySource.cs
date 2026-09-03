@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Argus.Orchestrator.Batch;
@@ -147,6 +147,16 @@ internal sealed class HaRecorderHistorySource : IInfluxDataSource
                     ct)
                 .ConfigureAwait(false);
             ConnectionsOpened++;
+
+            // The E2 acceptance criterion ("200 queries inside 60 s open exactly ONE WS
+            // connection") is only checkable if the counter reaches the log — an internal field
+            // nobody can read proves nothing about a running add-on. Debug, because on the happy
+            // path this fires once per entity per minute at most; if it starts repeating, the
+            // cache is not holding and the operator sees it here first.
+            _logger.LogDebug(LogEvents.HistoryConnectionOpened,
+                "HA Recorder history connection opened for {EntityId} (lookback={Lookback}) — "
+                + "connections opened this process: {ConnectionsOpened}",
+                entityId, lookback, ConnectionsOpened);
 
             while (sliceEnd > windowStart
                    && collected.Count < rowCap

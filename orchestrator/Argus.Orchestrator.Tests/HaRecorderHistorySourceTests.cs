@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Ha;
+using Argus.Orchestrator.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -86,6 +87,24 @@ public class HaRecorderHistorySourceTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
+    /// <summary>
+    /// Captures log entries so a criterion phrased as "readable from the log" can be asserted as
+    /// exactly that, and not as an internal field only a test can reach.
+    /// </summary>
+    private sealed class RecordingLogger : ILogger<HaRecorderHistorySource>
+    {
+        public List<(LogLevel Level, EventId Event, string Message)> Entries { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add((logLevel, eventId, formatter(state, exception)));
+        }
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private static readonly DateTimeOffset Now = new(2026, 9, 3, 12, 0, 0, TimeSpan.Zero);
@@ -98,10 +117,11 @@ public class HaRecorderHistorySourceTests
     };
 
     private static HaRecorderHistorySource MakeSource(
-        FakeHaHistory ha, Func<DateTimeOffset>? clock = null, ConnectionSettings? settings = null)
+        FakeHaHistory ha, Func<DateTimeOffset>? clock = null, ConnectionSettings? settings = null,
+        ILogger<HaRecorderHistorySource>? logger = null)
         => new(
             settings ?? Settings(),
-            NullLogger<HaRecorderHistorySource>.Instance,
+            logger ?? NullLogger<HaRecorderHistorySource>.Instance,
             () => new FakeHistoryConnection(ha),
             clock ?? (() => Now));
 
@@ -306,6 +326,30 @@ public class HaRecorderHistorySourceTests
         var ids = root.GetProperty("entity_ids");
         Assert.Equal(1, ids.GetArrayLength());
         Assert.Equal("sensor.lodowkababcia_power", ids[0].GetString());
+    }
+
+    [Fact]
+    public async Task ConnectionCount_IsReadableFromTheDebugLog()
+    {
+        // E2's acceptance criterion is "200 queries in 60 s -> exactly ONE WS connection, counter
+        // in the Debug log". A counter that never reaches the log leaves the criterion
+        // unfalsifiable on a running add-on: the operator cannot tell a working cache from a
+        // broken one. So this asserts the LOG LINE, not ConnectionsOpened.
+        var ha = new FakeHaHistory();
+        SeedSeries(ha, "sensor.load_5m", 50);
+        var log = new RecordingLogger();
+        var source = MakeSource(ha, logger: log);
+
+        for (int i = 0; i < 200; i++)
+            await source.QueryHistoryAsync("sensor.load_5m", "8d", 720, CancellationToken.None);
+
+        var opens = log.Entries.Where(e => e.Event == LogEvents.HistoryConnectionOpened).ToList();
+
+        Assert.Single(opens);
+        Assert.Equal(LogLevel.Debug, opens[0].Level);
+        Assert.Contains("sensor.load_5m", opens[0].Message);
+        Assert.Contains("connections opened this process: 1", opens[0].Message);
+        Assert.Equal(1, ha.Connects);   // and the line does not lie about it
     }
 
     [Fact]
