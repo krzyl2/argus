@@ -85,8 +85,15 @@ RUN pip3 install --no-cache-dir --break-system-packages pyyaml
 # ── Orchestrator publish output (built in the dotnet-build stage above) ────────
 COPY --from=dotnet-build /app/publish/ /opt/argus/orchestrator/
 
-# ── Detector source + pre-generated proto stubs ───────────────────────────────
+# ── Detector source + proto stubs generated AT BUILD TIME ─────────────────────
+# argus_pb2*.py are gitignored (.gitignore:16-19), so a clean checkout carries no
+# stubs and this stage used to produce a detector that could not import its own
+# proto package. gen_proto.py resolves proto/ two levels up from its own path, so
+# the layout under /opt/argus must mirror the repo: detector/ next to proto/.
+# Same sequence deploy/Dockerfile.detector:22-27 has always run.
 COPY detector/ /opt/argus/detector/
+COPY proto/ /opt/argus/proto/
+RUN python3 /opt/argus/detector/scripts/gen_proto.py
 
 # ── s6 init scripts, service run files, and helper scripts ────────────────────
 # Includes:
