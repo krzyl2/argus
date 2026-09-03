@@ -127,6 +127,32 @@ message WarmupResponse {
   bool skipped = 5;
 }
 
+// WS6 simulator (F14 sandbox): replay a stored history through a detector instance
+// that is created, used and discarded inside the call. Own number space — nothing in
+// Point/Verdict is renumbered, so an old detector simply answers UNIMPLEMENTED.
+message SimulateRequest {
+  string entity_id = 1;
+  string detector = 2;
+  map<string, string> params = 3;
+  repeated Point history = 4;
+  string request_id = 5;
+}
+
+message SimulateResponse {
+  bool ok = 1;
+  string error = 2;
+  // packed; len == len(history), 1:1 by index
+  repeated double scores = 3;
+  // packed; len == len(scores), or 0 when the detector computes no robust z
+  repeated double robust_z = 4;
+  // effective warm-up window (hst: window, rmad: min_samples) — without it the UI
+  // cannot write "not enough history ({points}/{window})"
+  uint32 window = 5;
+  // first scorable index; scores[i < idx] == 0.0 and MUST NOT be gated
+  uint32 warmed_up_from_index = 6;
+  string detector_version = 7;
+}
+
 service DetectorService {
   rpc ScoreStream(stream Point) returns (stream Verdict);
   rpc Fit(FitRequest) returns (FitResponse);
@@ -136,4 +162,5 @@ service DetectorService {
   rpc ScoreGroupBatch(GroupScoreRequest) returns (GroupScoreResponse);
   rpc FitGroup(FitGroupRequest) returns (FitGroupResponse);
   rpc Warmup(WarmupRequest) returns (WarmupResponse);
+  rpc Simulate(SimulateRequest) returns (SimulateResponse);
 }
