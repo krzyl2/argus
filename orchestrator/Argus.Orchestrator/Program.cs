@@ -221,6 +221,22 @@ builder.Services.AddSingleton<ScoreStreamPipeline>(sp => new ScoreStreamPipeline
 // influx_url-less install would have had a history source and still never primed anything.
 builder.Services.AddSingleton<IBatchDetectorClient, BatchDetectorClientAdapter>();
 
+// WS6: the replay simulator. Registered with an explicit factory using GetService (the
+// Program.cs:207-214 pattern), NOT AddSingleton<SimulateService>(): IInfluxDataSource is
+// registered in one of the two branches below and can be absent entirely, and a bare
+// AddSingleton would then fail resolution at request time and answer 500 where the endpoint's
+// documented answer is 503. Registered OUTSIDE the Influx branch on purpose — the simulator
+// works from the HA Recorder too (F11: influx_url is empty on the operator's install).
+builder.Services.AddSingleton(sp =>
+{
+    var history = sp.GetService<IInfluxDataSource>();
+    var detectorClient = sp.GetService<IBatchDetectorClient>();
+    if (history is null || detectorClient is null) return new SimulateServiceHandle(null);
+
+    return new SimulateServiceHandle(new SimulateService(
+        history, detectorClient, sp.GetRequiredService<ILogger<SimulateService>>()));
+});
+
 // Register ConfigWriter (Plan 02): atomic /data/entities.yaml write seam (temp-then-rename + SemaphoreSlim)
 builder.Services.AddSingleton<Argus.Orchestrator.Config.ConfigWriter>();
 
@@ -823,6 +839,39 @@ app.MapGet("/api/health", (
 
     return Results.Json(HealthProjection.Build(
         signals, mqtt.IsConnected, registry.GetAll().Count, settings, batchRunStatus.LastRunUtc, DateTimeOffset.UtcNow));
+});
+
+// [10d] POST /api/sensors/{entityId}/simulate — WS6 replay panel.
+// Same IsAuthorizedRequest guard as every other endpoint (precedent Program.cs:285). The
+// decisions live in SimulateEndpoint.HandleAsync so they are unit-testable without an HTTP
+// server, matching this project's endpoint-test convention.
+app.MapPost("/api/sensors/{entityId}/simulate", async (
+    HttpRequest req, string entityId, IHaSensorRegistry registry, ILiveEntitiesConfig liveCfg,
+    SimulateServiceHandle simulate, CancellationToken ct) =>
+{
+    SimulateRequestDto? body;
+    try
+    {
+        body = await req.ReadFromJsonAsync<SimulateRequestDto>(ct);
+    }
+    catch (System.Text.Json.JsonException)
+    {
+        return Results.StatusCode(400);
+    }
+
+    var cfg = liveCfg.Get();
+    var outcome = await SimulateEndpoint.HandleAsync(
+        IsAuthorizedRequest(req.HttpContext),
+        entityId,
+        body,
+        simulate.Service,
+        id => registry.GetAll().Any(e => string.Equals(e.EntityId, id, StringComparison.OrdinalIgnoreCase))
+            || cfg.Entities.Any(e => string.Equals(e.EntityId, id, StringComparison.OrdinalIgnoreCase)),
+        ct);
+
+    return outcome.Payload is null
+        ? Results.StatusCode(outcome.StatusCode)
+        : Results.Json(outcome.Payload);
 });
 
 // [10c] GET /api/anomalies/recent — last N anomalies newest-first (QUICK-dashboard-real-data).
