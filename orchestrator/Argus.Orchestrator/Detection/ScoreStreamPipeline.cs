@@ -447,7 +447,21 @@ public sealed class ScoreStreamPipeline
     }
 
     /// <summary>
-    /// Primes a cold detector and the frozen-sensor window from InfluxDB history before the
+    /// Baseline window rmad needs in hand before its median/MAD estimate is trustworthy (D-A/D-B).
+    /// Used as a FLOOR on the backfill request, not a replacement for the configured window: an
+    /// entity still carrying the legacy hst window (250) must be primed for the detector it is
+    /// about to run, and an entity configured wider than 720 keeps its own number.
+    /// </summary>
+    internal const int RmadBaselineWindow = 720;
+
+    /// <summary>
+    /// Per-entity deadline on one priming attempt (§7 #6). Six entities at startup is therefore a
+    /// bounded ~3 min worst case on the shared fan-out task, not an open-ended stall.
+    /// </summary>
+    private static readonly TimeSpan PrimeTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Primes a cold detector and the frozen-sensor window from history before the
     /// entity's ScoreStream opens (BACKFILL-01..04). Internal (rather than private) so
     /// ScoreStreamPipelineTests can exercise it directly via InternalsVisibleTo — the ten
     /// existing RunAsync(IScoreStreamCall,...) test call sites are the tested surface this
@@ -467,15 +481,37 @@ public sealed class ScoreStreamPipeline
         if (!_connectionSettings.BackfillEnabled)
             return;
 
+        // §7 #6: the fan-out task is a single shared writer on a Wait-mode bounded channel, so a
+        // slow HA does not drop readings — it stalls delivery for EVERY entity. Priming therefore
+        // gets a hard per-entity deadline; the cost of a stalled Recorder is a missing prime, not
+        // a pipeline that never starts.
+        using var primeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        primeCts.CancelAfter(PrimeTimeout);
+        var primeCt = primeCts.Token;
+
         try
         {
-            // D-13: limit is the entity's configured window — exactly the number of points
-            // needed to reach warmed_up.
+            // WS5: ask for the full rmad baseline window, never the legacy 250. min_samples (60)
+            // is the readiness threshold, not the request size — priming only 60 points would
+            // leave MAD estimated from 60 samples and the scale wrong for hours afterwards.
+            var requestedRows = Math.Max(entityState.HstParams.Window, RmadBaselineWindow);
+
             var history = await _historySource.QueryHistoryAsync(
-                entityId, _connectionSettings.BackfillLookback, entityState.HstParams.Window, ct);
+                entityId, _connectionSettings.BackfillLookback, requestedRows, primeCt);
 
             if (history.Count == 0)
-                return; // InfluxDbReader already logged the WARN for an empty/unconfigured result
+                return; // the history source already logged the WARN for an empty result
+
+            if (history.Count < requestedRows)
+            {
+                // Rule 12: an entity the Recorder cannot fill the baseline window for is a real,
+                // silent limit (a sensor slower than ~90 readings/day never fills 720 in 8 days) —
+                // it must be visible by name, not inferred from a flag that never fires.
+                _logger.LogWarning(LogEvents.HistoryShort,
+                    "Only {PointCount} of {RequestedRows} history points available for {EntityId} — "
+                    + "baseline window is not full; flag stays OFF until live readings top it up",
+                    history.Count, requestedRows, entityId);
+            }
 
             var request = new WarmupRequest { EntityId = entityId, Detector = "hst" };
             foreach (var kv in BuildHstParamsMap(entityState.HstParams))
@@ -503,7 +539,7 @@ public sealed class ScoreStreamPipeline
                     entityState.Alert.SeedValue(row.Value);
             }
 
-            var response = await _detectorClient.WarmupAsync(request, ct);
+            var response = await _detectorClient.WarmupAsync(request, primeCt);
 
             if (response.Skipped)
             {
@@ -518,10 +554,16 @@ public sealed class ScoreStreamPipeline
                     entityId, request.History.Count, response.NSeen, response.WarmedUp);
             }
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Must precede the catch-all: a config Save or host shutdown cancels ct on the routine
+            // path, and reporting that as WarmupFailed (5019) would drown the one signature that
+            // line is supposed to carry — "HA is unreachable".
+        }
         catch (Exception ex)
         {
             // D-15: backfill can never fail startup — log and let the caller open the stream
-            // exactly as if InfluxDB had never been configured.
+            // exactly as if no history source had been configured.
             _logger.LogWarning(LogEvents.WarmupFailed, ex,
                 "Backfill priming failed for {EntityId} — proceeding with normal live warm-up", entityId);
         }

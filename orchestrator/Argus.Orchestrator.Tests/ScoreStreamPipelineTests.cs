@@ -637,6 +637,69 @@ public class ScoreStreamPipelineTests
     }
 
     [Fact]
+    public async Task PrimeFromHistory_RequestsWindowRows_Not250()
+    {
+        // WS5: min_samples (60) is when rmad starts answering; 720 is when its median/MAD stop
+        // moving with every new point. Priming only the configured legacy window (250) — or worse,
+        // min_samples — hands the detector a scale estimated from a fraction of the baseline, and
+        // the resulting z-scores are wrong for as long as it takes live traffic to fill the rest
+        // (hours to days on a 225-readings-a-day sensor). The request is the baseline, not the
+        // readiness threshold.
+        var cfg = new EntitiesConfig();
+        cfg.Entities.Add(new EntityConfig
+        {
+            EntityId = "sensor.legacy_window",
+            FriendlyName = "Legacy window",
+            Detectors = new List<DetectorConfig>
+            {
+                new DetectorConfig { Name = "hst", Params = new Dictionary<string, string> { ["window"] = "250" } }
+            }
+        });
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        Assert.Equal(250, entityState.HstParams.Window);
+
+        var historySource = new FakeInfluxHistorySource(MakeHistory(720));
+        var detectorClient = new FakeWarmupDetectorClient();
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient,
+            connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.legacy_window", entityState, CancellationToken.None);
+
+        Assert.Equal(720, historySource.LastLimit);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistory_ConfiguredWindowWiderThanBaseline_KeepsConfiguredWindow()
+    {
+        // The baseline is a FLOOR, not a replacement: an operator who widened the window did so
+        // to get a longer memory, and silently priming only 720 rows would give them a detector
+        // whose configured window can never be filled from history.
+        var cfg = new EntitiesConfig();
+        cfg.Entities.Add(new EntityConfig
+        {
+            EntityId = "sensor.wide",
+            FriendlyName = "Wide",
+            Detectors = new List<DetectorConfig>
+            {
+                new DetectorConfig { Name = "hst", Params = new Dictionary<string, string> { ["window"] = "1500" } }
+            }
+        });
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var historySource = new FakeInfluxHistorySource(MakeHistory(10));
+        var detectorClient = new FakeWarmupDetectorClient();
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: historySource, detectorClient: detectorClient,
+            connectionSettings: new ConnectionSettings());
+
+        await pipeline.PrimeFromHistoryAsync("sensor.wide", entityState, CancellationToken.None);
+
+        Assert.Equal(1500, historySource.LastLimit);
+    }
+
+    [Fact]
     public async Task PrimeFromHistoryAsync_HistoryPointTimestamps_AreAscending()
     {
         var cfg = MakeEntitiesConfig("sensor.asc");
@@ -1250,6 +1313,9 @@ internal sealed class FakeInfluxHistorySource : IInfluxDataSource
 
     public int QueryHistoryCallCount { get; private set; }
 
+    /// <summary>Row count the pipeline asked for on the last call (WS5 baseline-window assertion).</summary>
+    public int LastLimit { get; private set; }
+
     public Task<IReadOnlyList<(DateTime Timestamp, double Value)>> QueryAsync(
         string entityId, CancellationToken ct)
         => Task.FromResult(_rows);
@@ -1258,6 +1324,7 @@ internal sealed class FakeInfluxHistorySource : IInfluxDataSource
         string entityId, string lookback, int limit, CancellationToken ct)
     {
         QueryHistoryCallCount++;
+        LastLimit = limit;
         if (_throwOnHistory is not null)
             throw _throwOnHistory;
         return Task.FromResult(_rows);
