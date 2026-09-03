@@ -3,24 +3,38 @@ using System.Globalization;
 namespace Argus.Orchestrator.Ha;
 
 /// <summary>
-/// Thread-safe implementation of <see cref="IHaSensorRegistry"/> using a volatile immutable-array
-/// reference swap (mirrors ArgusHealthSignals volatile-field pattern).
+/// Thread-safe implementation of <see cref="IHaSensorRegistry"/> using a volatile immutable
+/// state-object reference swap (mirrors ArgusHealthSignals volatile-field pattern).
 ///
-/// Single writer: NetDaemonHaEventSource calls UpdateSnapshot on every HA connect.
+/// Single writer: NetDaemonHaEventSource calls UpdateSnapshot on every HA connect and Upsert on
+/// every state_changed event — both from its own connection loop, so writes never race in
+/// practice. The write lock is defence in depth (copy-on-write read-modify-write would otherwise
+/// lose an update if that ever stopped being true) and costs readers nothing.
 /// Many readers: Kestrel HTTP threads call GetAll/GetFiltered concurrently.
-/// No lock contention; readers always observe a complete snapshot (no torn reads).
+/// Readers always observe a complete snapshot (no torn reads) — the id index and the sorted
+/// list live in ONE object, so they can never disagree.
 /// </summary>
 public sealed class HaSensorRegistry : IHaSensorRegistry
 {
-    private volatile IReadOnlyList<HaSensorEntry> _snapshot = Array.Empty<HaSensorEntry>();
+    /// <summary>Index + sorted projection, swapped together so readers never see a half-update.</summary>
+    private sealed record State(
+        Dictionary<string, HaSensorEntry> ById,
+        IReadOnlyList<HaSensorEntry> Sorted);
+
+    private static readonly State Empty = new(
+        new Dictionary<string, HaSensorEntry>(StringComparer.OrdinalIgnoreCase),
+        Array.Empty<HaSensorEntry>());
+
+    private readonly object _writeLock = new();
+    private volatile State _state = Empty;
 
     /// <inheritdoc/>
-    public IReadOnlyList<HaSensorEntry> GetAll() => _snapshot;
+    public IReadOnlyList<HaSensorEntry> GetAll() => _state.Sorted;
 
     /// <inheritdoc/>
     public IReadOnlyList<HaSensorEntry> GetFiltered(string q)
     {
-        var current = _snapshot;
+        var current = _state.Sorted;
         if (string.IsNullOrEmpty(q))
             return current;
 
@@ -38,27 +52,93 @@ public sealed class HaSensorRegistry : IHaSensorRegistry
         HashSet<string> trackedEntityIds,
         IReadOnlyDictionary<string, string?>? entityAreaNames = null)
     {
-        var entries = states
-            .Where(s => double.TryParse(s.State, NumberStyles.Any, CultureInfo.InvariantCulture, out _))
-            .Select(s =>
+        var now = DateTime.UtcNow;
+
+        lock (_writeLock)
+        {
+            var previous = _state.ById;
+            var next = new Dictionary<string, HaSensorEntry>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var s in states)
             {
-                double.TryParse(s.State, NumberStyles.Any, CultureInfo.InvariantCulture, out var value);
+                if (!double.TryParse(s.State, NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
+                    continue;
+
                 var areaName = entityAreaNames is not null &&
                     entityAreaNames.TryGetValue(s.EntityId, out var area) ? area : null;
-                var dotIndex = s.EntityId.IndexOf('.');
-                var domain = dotIndex > 0 ? s.EntityId[..dotIndex] : s.EntityId;
-                return new HaSensorEntry(
+
+                next[s.EntityId] = new HaSensorEntry(
                     EntityId: s.EntityId,
                     CurrentValue: value,
                     UnitOfMeasurement: s.UnitOfMeasurement,
                     FriendlyName: s.FriendlyName,
                     IsTracked: trackedEntityIds.Contains(s.EntityId),
                     AreaName: areaName,
-                    Domain: domain);
-            })
-            .OrderBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+                    Domain: DomainOf(s.EntityId),
+                    KnownToHa: true,
+                    StaleSince: null);
+            }
 
-        _snapshot = entries;
+            // Merge, do not drop (WS4/F10): an entity the previous snapshot had and this one does
+            // not is kept and stamped stale. StaleSince records the FIRST pass it went missing, so
+            // repeated reconnects do not keep resetting the clock.
+            foreach (var (id, old) in previous)
+            {
+                if (next.ContainsKey(id))
+                    continue;
+
+                next[id] = old with
+                {
+                    IsTracked = trackedEntityIds.Contains(id),
+                    StaleSince = old.StaleSince ?? now,
+                };
+            }
+
+            _state = Materialize(next);
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool Upsert(HaStateDto state, bool isTracked)
+    {
+        // Non-numeric is never a removal — see the interface docs. This is the SAME filter as
+        // UpdateSnapshot's, deliberately: two spellings of "is this a numeric sensor" would mean
+        // an entity could enter the picker one way and be invisible the other.
+        if (!double.TryParse(state.State, NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
+            return false;
+
+        lock (_writeLock)
+        {
+            var previous = _state.ById;
+            var isNew = !previous.TryGetValue(state.EntityId, out var old);
+
+            var next = new Dictionary<string, HaSensorEntry>(previous, StringComparer.OrdinalIgnoreCase)
+            {
+                [state.EntityId] = new HaSensorEntry(
+                    EntityId: state.EntityId,
+                    CurrentValue: value,
+                    UnitOfMeasurement: state.UnitOfMeasurement ?? old?.UnitOfMeasurement,
+                    FriendlyName: state.FriendlyName ?? old?.FriendlyName,
+                    // Area comes from the entity/area registries, which are only fetched per
+                    // connect — a state_changed event carries none, so keep what we had.
+                    IsTracked: isTracked,
+                    AreaName: old?.AreaName,
+                    Domain: DomainOf(state.EntityId),
+                    KnownToHa: true,
+                    StaleSince: null),
+            };
+
+            _state = Materialize(next);
+            return isNew;
+        }
+    }
+
+    private static State Materialize(Dictionary<string, HaSensorEntry> byId) =>
+        new(byId, byId.Values.OrderBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase).ToList());
+
+    private static string DomainOf(string entityId)
+    {
+        var dotIndex = entityId.IndexOf('.');
+        return dotIndex > 0 ? entityId[..dotIndex] : entityId;
     }
 }

@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Argus.Orchestrator.Config;
@@ -355,6 +355,9 @@ internal class FakeHaSensorRegistry : Argus.Orchestrator.Ha.IHaSensorRegistry
     public void UpdateSnapshot(
         IReadOnlyList<Argus.Orchestrator.Ha.HaStateDto> states, HashSet<string> trackedEntityIds,
         IReadOnlyDictionary<string, string?>? entityAreaNames = null)
+        => throw new NotImplementedException();
+
+    public bool Upsert(Argus.Orchestrator.Ha.HaStateDto state, bool isTracked)
         => throw new NotImplementedException();
 }
 

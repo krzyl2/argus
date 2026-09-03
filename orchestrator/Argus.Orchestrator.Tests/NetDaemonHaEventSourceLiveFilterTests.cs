@@ -1,4 +1,4 @@
-using Argus.Orchestrator.Config;
+﻿using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Health;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -38,6 +38,7 @@ public class NetDaemonHaEventSourceLiveFilterTests
         public void UpdateSnapshot(
             IReadOnlyList<HaStateDto> states, HashSet<string> trackedEntityIds,
             IReadOnlyDictionary<string, string?>? entityAreaNames = null) { }
+        public bool Upsert(HaStateDto state, bool isTracked) => false;
     }
 
     private static NetDaemonHaEventSource MakeEventSource(ILiveEntitiesConfig liveConfig) =>

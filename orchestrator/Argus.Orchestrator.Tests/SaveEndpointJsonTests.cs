@@ -1,4 +1,4 @@
-using Argus.Orchestrator.Config;
+﻿using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Web;
 using System.Text;
@@ -28,6 +28,7 @@ public class SaveEndpointJsonTests
             IReadOnlyList<HaStateDto> states, HashSet<string> trackedEntityIds,
             IReadOnlyDictionary<string, string?>? entityAreaNames = null)
             => throw new NotImplementedException();
+        public bool Upsert(HaStateDto state, bool isTracked) => throw new NotImplementedException();
     }
 
     private static HaSensorEntry MakeEntry(string entityId, string? friendlyName = null)
