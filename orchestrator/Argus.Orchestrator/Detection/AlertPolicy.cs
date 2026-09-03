@@ -61,7 +61,7 @@ public sealed class AlertPolicy
     {
         _params = alertParams ?? throw new ArgumentNullException(nameof(alertParams));
         _rank = new RollingRank(Math.Max(1, alertParams.RankWindow));
-        _raw = new RollingRobustZ(Math.Max(1, alertParams.RawWindow));
+        _raw = new RollingRobustZ(Math.Max(1, alertParams.RawWindow), alertParams.ScaleFloor);
     }
 
     private bool _flagPublished;

@@ -40,6 +40,15 @@ public sealed record AlertParams
     /// <summary>Robust z below which the raw channel votes clear.</summary>
     public double ZClear { get; init; } = 3.0;
 
+    /// <summary>
+    /// D-I: floor on the raw channel's scale estimate, in the SENSOR'S OWN UNITS. Shares the
+    /// <c>scale_floor</c> key with <see cref="RmadParams"/> on purpose — the two channels judge
+    /// the same reading, so a floor written for the detector must reach the alert gate too.
+    /// Without it the migration's <c>scale_floor: 0.3</c> for % entities damps only Python, and
+    /// the .NET raw channel keeps firing on memory_use_percent / disk_use_percent (against D-J).
+    /// </summary>
+    public double ScaleFloor { get; init; } = 0.0;
+
     /// <summary>Consecutive agreeing verdicts required to flip state (existing key, shared with HstParams).</summary>
     public int MinConsecutive { get; init; } = 3;
 
@@ -74,6 +83,7 @@ public sealed record AlertParams
             RawWindow = GetInt(p, "raw_window", 720),
             ZFire = GetDouble(p, "z_fire", 5.0),
             ZClear = GetDouble(p, "z_clear", 3.0),
+            ScaleFloor = GetDouble(p, "scale_floor", 0.0),
             MinConsecutive = GetInt(p, "min_consecutive", 3),
             AlertMinSamples = GetInt(p, "alert_min_samples", 240),
             MinDurationSec = GetInt(p, "min_duration_sec", 120),

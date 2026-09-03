@@ -14,10 +14,11 @@ namespace Argus.Orchestrator.Detection;
 /// <c>RmadDetector._scale</c> (detector/argus_detector/rmad_detector.py):
 ///   1. 1.4826 · MAD — the robust default,
 ///   2. mean absolute deviation from the median, over the LIVE slots only,
-///   3. 0.0 = abstain (return z = 0).
+///   3. scale_floor — a floor in the sensor's own units (D-I),
+///   4. 0.0 = abstain (return z = 0).
 /// Rung 2 must never see the whole array: unfilled slots are zeros, and on a 0/984 W duty-cycle
 /// sensor those zeros would look like real readings and deflate the scale into permanent alarm.
-/// Rung 3 is deliberate abstention, not a fallback: a perfectly flat series has no deviation to
+/// Rung 4 is deliberate abstention, not a fallback: a perfectly flat series has no deviation to
 /// report, and after D-H there is no frozen-sensor guard behind it (§7 #8).
 ///
 /// WHY rung 2 is MeanAD and not the IQR or the sample StdDev: on a duty-cycle series (the fridge
@@ -30,14 +31,20 @@ namespace Argus.Orchestrator.Detection;
 /// documented safety margin would not be the one in force. Two channels judging the same reading
 /// have to use the same σ, and the one the plan's numbers are derived from is Python's.
 ///
-/// Python's rung 3 (a scale_floor in the sensor's own units, D-I) has no counterpart here: the
-/// alert layer takes no scale_floor parameter, so the raw channel damps nothing. Its rung 4 also
-/// differs on purpose: a degenerate window scores 1.0 there (frozen coverage) and abstains here.
+/// Rung 3 is <c>scale_floor</c> (D-I), read from the SAME <c>scale_floor</c> key the rmad
+/// detector reads, and applied the same way (<c>if (sigma &lt; floor) sigma = floor</c>) — so it
+/// damps rung 1 as well, which is the mechanism that actually bites: on a percent series
+/// quantized to 0.1 the MAD is 0.1, sigma is 0.148, and a mild 1.1 pp move is z = 7.4. Without a
+/// floor on THIS side the raw channel fires on memory_use_percent and disk_use_percent while the
+/// score channel stays silent — the exact regression D-I exists to prevent, and the direct
+/// opposite of D-J's "0 alarms" on those two sensors. Its rung 4 still differs on purpose: a
+/// degenerate window scores 1.0 there (frozen coverage) and abstains here.
 /// </summary>
 internal sealed class RollingRobustZ
 {
     private readonly double[] _buf;
     private readonly double[] _scratch;
+    private readonly double _scaleFloor;
     private int _head;
     private int _count;
 
@@ -45,12 +52,19 @@ internal sealed class RollingRobustZ
     public const int MinSamples = 10;
 
     /// <param name="windowSize">Number of recent raw values retained. Must be at least 1.</param>
-    public RollingRobustZ(int windowSize)
+    /// <param name="scaleFloor">
+    /// Rung 3: lower bound on the scale estimate, in the sensor's own units (D-I). 0.0 (the
+    /// default) leaves the ladder undamped. Negative values are clamped to 0.0 rather than
+    /// rejected — this comes from operator-editable YAML, and a bad key must not take the
+    /// entity's whole evidence channel down with it.
+    /// </param>
+    public RollingRobustZ(int windowSize, double scaleFloor = 0.0)
     {
         if (windowSize < 1)
             throw new ArgumentOutOfRangeException(nameof(windowSize), windowSize, "Window size must be at least 1.");
         _buf = new double[windowSize];
         _scratch = new double[windowSize];
+        _scaleFloor = double.IsFinite(scaleFloor) && scaleFloor > 0.0 ? scaleFloor : 0.0;
     }
 
     /// <summary>Number of raw values currently held.</summary>
@@ -81,6 +95,8 @@ internal sealed class RollingRobustZ
         double scale = 1.4826 * mad;
         if (scale <= 0.0)
             scale = MeanAbsoluteDeviation(_scratch, _count);
+        if (scale < _scaleFloor)
+            scale = _scaleFloor;
         if (scale <= 0.0)
             return 0.0;
 

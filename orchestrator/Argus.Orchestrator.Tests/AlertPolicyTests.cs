@@ -48,9 +48,11 @@ public class AlertPolicyTests
         double qClear = 0.80,
         double zFire = 5.0,
         double zClear = 3.0,
-        int rawWindow = 720)
+        int rawWindow = 720,
+        double scaleFloor = 0.0)
         => new()
         {
+            ScaleFloor = scaleFloor,
             EvidenceMode = evidenceMode,
             RankWindow = rankWindow,
             AlertMinSamples = alertMinSamples,
@@ -314,6 +316,116 @@ public class AlertPolicyTests
         // past them, which is F1 coming back.
         double onTime = (double)onTicks / series.Length;
         Assert.InRange(onTime, 0.08, 0.20);
+    }
+
+    // ─── D-I / D-J: the raw channel must not fire on the percent sensors ─────
+
+    /// <summary>
+    /// The measured shape of sensor.memory_use_percent: a percent series reported to one
+    /// decimal, so the window holds a handful of levels 0.1 apart, with an occasional mild
+    /// 1.1 pp move. 5653 samples is the measured 24 h count at 15.3 s/sample.
+    /// </summary>
+    private static double[] PercentQuantizedSeries(
+        double baseline = 62.0, double excursion = 1.1, int length = 5653, int seed = 42)
+    {
+        var rnd = new Random(seed);
+        var series = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            // Baseline jitter of ±0.2 pp, quantized to the sensor's own 0.1 resolution.
+            double v = baseline + Math.Round((rnd.NextDouble() - 0.5) * 0.4, 1);
+
+            // A mild excursion every ~700 samples, held for 5 readings — long enough to clear
+            // min_consecutive, i.e. long enough to become an EVENT if the gate lets it.
+            if (i % 700 >= 300 && i % 700 < 305)
+                v += excursion;
+
+            series[i] = Math.Round(v, 1);
+        }
+        return series;
+    }
+
+    [Theory]
+    [InlineData(0.0, false)]   // undamped — the regression D-I exists to prevent
+    [InlineData(0.05, false)]  // measured: 0.05 and 0.1 change nothing
+    [InlineData(0.1, false)]
+    [InlineData(0.3, true)]    // the value the migration writes for a % entity
+    public void RawZ_PercentQuantizedSeries_OnlyScaleFloorSilencesIt(double scaleFloor, bool expectSilent)
+    {
+        // D-I + D-J on the .NET side. D-J requires memory_use_percent to produce EXACTLY 0
+        // alarms in 24 h. The plan measured that on the Python detector, where scale_floor is
+        // rung 3 of the scale ladder — and it measured that 0.0/0.05/0.1 all give 4 episodes /
+        // 7.02 % on-time while 0.3 gives zero. The .NET raw channel judges the SAME reading with
+        // the same ladder and the production default evidence_mode is "any" (either channel may
+        // fire alone), so a floor honoured only by Python leaves the flag firing anyway.
+        //
+        // The mechanism: this series is quantized to 0.1, so MAD = 0.1, sigma = 1.4826·0.1 =
+        // 0.148, and a 1.1 pp move is z = 7.4 — well over z_fire = 5.0. A floor of 0.3 turns the
+        // same move into z = 3.67, under z_fire, and no event is raised. Note the floor damps
+        // rung 1 (a non-zero MAD), not just the degenerate rungs; a floor applied only when the
+        // ladder collapses would leave this series firing and this test failing.
+        var series = PercentQuantizedSeries();
+        var policy = new AlertPolicy(FastParams(
+            evidenceMode: "any", alertMinSamples: 240, rankWindow: 720, scaleFloor: scaleFloor));
+
+        int events = 0, onTicks = 0;
+        for (int i = 0; i < series.Length; i++)
+        {
+            policy.ObserveValue(series[i]);
+            // Constant score: this test isolates the raw channel, and a constant always sits at
+            // mid-rank 0.5, far under q_fire = 0.99.
+            var d = policy.OnVerdict(0.5, warmedUp: true, suppressed: false, frozen: false,
+                At(i, secondsPerTick: 15.3));
+            if (d.EventStarted) events++;
+            if (d.FlagOn) onTicks++;
+        }
+
+        if (expectSilent)
+        {
+            Assert.Equal(0, events);
+            Assert.Equal(0, onTicks);
+        }
+        else
+        {
+            Assert.True(events > 0,
+                $"scale_floor={scaleFloor} must NOT be enough to silence this series — the plan "
+                + "measured 4 episodes at 0.0/0.05/0.1, and a test that passes at every floor "
+                + "pins nothing");
+        }
+    }
+
+    [Theory]
+    [InlineData(0.0, false)]
+    [InlineData(0.5, true)]
+    public void RawZ_DiskPercentOneLsbStep_IsSuppressedOnlyByTheFloor(double scaleFloor, bool expectSilent)
+    {
+        // The measured shape of sensor.disk_use_percent: a flat 45.2 that steps to 45.3 — one
+        // least-significant digit, i.e. nothing at all happened. Undamped this is arbitrarily
+        // loud: with 719 samples at 45.2 and one at 45.3 the MAD is still 0, so rung 2 gives
+        // MeanAD = 0.1/720 and z runs into the hundreds. D-J requires 0 alarms on this sensor,
+        // and only a floor in the sensor's own units can deliver that — no threshold on a
+        // dimensionless z can, because the z here is unbounded.
+        var series = new double[2000];
+        for (int i = 0; i < series.Length; i++)
+            series[i] = i < 1000 ? 45.2 : 45.3;
+
+        var policy = new AlertPolicy(FastParams(
+            evidenceMode: "any", alertMinSamples: 240, rankWindow: 720, scaleFloor: scaleFloor));
+
+        int events = 0;
+        for (int i = 0; i < series.Length; i++)
+        {
+            policy.ObserveValue(series[i]);
+            var d = policy.OnVerdict(0.5, true, false, false, At(i, secondsPerTick: 15.3));
+            if (d.EventStarted) events++;
+        }
+
+        if (expectSilent)
+            Assert.Equal(0, events);
+        else
+            Assert.True(events > 0,
+                "Without a floor a one-digit quantisation step must still be loud — otherwise "
+                + "this fixture does not reproduce the defect and proves nothing about the floor");
     }
 
     /// <summary>
