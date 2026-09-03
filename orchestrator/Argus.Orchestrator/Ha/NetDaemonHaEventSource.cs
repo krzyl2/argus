@@ -140,6 +140,13 @@ public class NetDaemonHaEventSource : IHaEventSource
                     var entityAreaNames = await BuildEntityAreaNamesAsync(client, ct).ConfigureAwait(false);
 
                     // Populate sensor registry on EVERY connect (first + reconnect) — ADR-4: no second WebSocket.
+                    // WS5/D-K scope note: ADR-4 forbids a second PERSISTENT event channel. Recorder
+                    // history queries (HaRecorderHistorySource) open a short-lived, request/response-only
+                    // socket that never subscribes to anything and is closed after the last command, so
+                    // it creates no second stream and cannot consume state_changed frames. Do not
+                    // "restore" ADR-4 by moving those queries onto this socket: it has no message router
+                    // (HaWebSocketClient.cs:35-37), so a history response would be read as an event frame,
+                    // and a >4 MB response would tear down live scoring for every entity.
                     _sensorRegistry.UpdateSnapshot(states, _configuredEntities, entityAreaNames);
                     _logger.LogInformation(LogEvents.SensorRegistryUpdated,
                         "Sensor registry updated: {Count} numeric sensors cached", states.Count(
@@ -364,8 +371,10 @@ public class NetDaemonHaEventSource : IHaEventSource
     /// Builds the WebSocket URI from the configured HA URL. Converts http/https → ws/wss,
     /// preserves an explicit port, and defaults a root path to /api/websocket (direct HA core).
     /// The add-on supplies ws://supervisor/core/websocket (Supervisor proxy) verbatim.
+    /// Internal (not private) so HaRecorderHistorySource resolves the SAME endpoint from the same
+    /// ConnectionSettings — two spellings of the HA URL would be two different failure modes.
     /// </summary>
-    private static Uri BuildWsUri(string? haUrl)
+    internal static Uri BuildWsUri(string? haUrl)
     {
         var raw = string.IsNullOrEmpty(haUrl) ? "ws://supervisor/core/websocket" : haUrl;
         var uri = new Uri(raw, UriKind.Absolute);

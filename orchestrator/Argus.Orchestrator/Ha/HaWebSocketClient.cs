@@ -35,8 +35,12 @@ public sealed record HaEntityRegistryDto(string EntityId, string? AreaId);
 /// Usage is strictly sequential per connection: ConnectAndAuth → (GetStates)* → Subscribe →
 /// ReceiveEvents. All reads share the one socket, so no message router is needed.
 /// The HA token is never logged.
+///
+/// The same class also serves <see cref="IHaHistoryConnection"/> on a SEPARATE, short-lived
+/// connection (ConnectAndAuth → GetHistory* → close). Because there is no router, a history
+/// request must never be issued on a connection that has already subscribed to events.
 /// </summary>
-internal sealed class HaWebSocketClient : IAsyncDisposable
+internal sealed class HaWebSocketClient : IAsyncDisposable, IHaHistoryConnection
 {
     private readonly ClientWebSocket _ws = new();
     private int _id;
@@ -161,6 +165,50 @@ internal sealed class HaWebSocketClient : IAsyncDisposable
                 }
             }
             return list;
+        }
+    }
+
+    /// <summary>
+    /// Sends history/history_during_period for a SINGLE entity and returns the raw <c>result</c>
+    /// element, detached (<c>Clone</c>) from the response document so it stays readable after the
+    /// document is disposed. Shape is 1:1 with <see cref="GetAreaRegistryAsync"/>.
+    ///
+    /// One entity per command on purpose (D-K): the receive path caps a single frame at
+    /// <see cref="MaxMessageBytes"/> (4 MB) and throws past it, so a multi-entity request would
+    /// trade a bounded number of small responses for one response that can kill the connection.
+    /// The response field shape is LOW-confidence (never exercised against a live HA in this
+    /// repo) — parsing is the caller's job and is deliberately defensive there.
+    /// </summary>
+    public async Task<JsonElement> GetHistoryAsync(
+        string entityId, DateTimeOffset start, DateTimeOffset end, CancellationToken ct)
+    {
+        var id = Interlocked.Increment(ref _id);
+        await SendAsync(new
+        {
+            id,
+            type = "history/history_during_period",
+            start_time = start.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
+            end_time = end.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
+            entity_ids = new[] { entityId },
+            minimal_response = true,
+            no_attributes = true,
+            significant_changes_only = false,
+        }, ct).ConfigureAwait(false);
+
+        while (true)
+        {
+            using var doc = await ReceiveMessageAsync(ct).ConfigureAwait(false);
+            var root = doc.RootElement;
+            if (!IsResultFor(root, id))
+                continue;
+
+            if (!(root.TryGetProperty("success", out var s) && s.GetBoolean())
+                || !root.TryGetProperty("result", out var result))
+            {
+                return default; // JsonValueKind.Undefined — caller degrades to zero rows
+            }
+
+            return result.Clone();
         }
     }
 
