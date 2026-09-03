@@ -116,4 +116,49 @@ public class ReadingCadenceTests
 
         Assert.Equal(15.3, cadence.MedianIntervalSec!.Value, 3);
     }
+
+    [Fact]
+    public async Task ObserveOnWriteLoop_ConcurrentWithMedianOnReadLoop_NeverThrows()
+    {
+        // ScoreStreamPipeline calls Observe() from the write loop (one per HA reading) and reads
+        // MedianIntervalSec from the verdict read loop (one per verdict). Queue<T> is not
+        // thread-safe: ToArray() copies from the backing array after reading the size, so a
+        // concurrent Enqueue/Dequeue — or the growth realloc — throws
+        // ArgumentException/IndexOutOfRangeException. That exception lands inside the read loop's
+        // await foreach over the verdict stream and kills verdict processing for the entity,
+        // while the write loop keeps pushing points: the entity stops publishing and nothing
+        // reports it. The rule this pins is not "a lock exists", it is "the two loops may call
+        // this object at the same time".
+        var cadence = new ReadingCadence();
+        var stop = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        Exception? failure = null;
+
+        var writer = Task.Run(() =>
+        {
+            var t = T0;
+            while (!stop.IsCancellationRequested)
+            {
+                cadence.Observe(t);
+                t = t.AddSeconds(1);
+            }
+        });
+
+        var reader = Task.Run(() =>
+        {
+            try
+            {
+                while (!stop.IsCancellationRequested)
+                    _ = cadence.MedianIntervalSec;
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+                stop.Cancel();
+            }
+        });
+
+        await Task.WhenAll(writer, reader);
+
+        Assert.Null(failure);
+    }
 }

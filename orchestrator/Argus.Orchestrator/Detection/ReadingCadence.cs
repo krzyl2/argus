@@ -13,6 +13,14 @@ namespace Argus.Orchestrator.Detection;
 ///
 /// Median, not mean: a reconnect gap or a single stalled reading would drag a mean by hours,
 /// and the number is shown to a human as "≈ 78 h historii".
+///
+/// Thread-safety: <see cref="Observe"/> runs on the pipeline's write loop and
+/// <see cref="MedianIntervalSec"/> is read from its verdict read loop, so both take one lock.
+/// Queue&lt;T&gt; is not thread-safe: <c>ToArray</c> copies from the backing array after reading
+/// the size, so a concurrent Enqueue/Dequeue — or the growth realloc — throws
+/// ArgumentException/IndexOutOfRangeException. That exception surfaces inside the read loop's
+/// <c>await foreach</c> over the verdict stream and kills verdict processing for the entity while
+/// the write loop keeps feeding points: the entity goes silent with nothing failing loudly.
 /// </summary>
 public sealed class ReadingCadence
 {
@@ -30,6 +38,7 @@ public sealed class ReadingCadence
     private const int MinIntervals = 3;
 
     private readonly Queue<double> _intervals = new(MaxIntervals);
+    private readonly object _gate = new();
     private DateTimeOffset? _last;
 
     /// <summary>
@@ -38,24 +47,27 @@ public sealed class ReadingCadence
     /// </summary>
     public void Observe(DateTimeOffset timestamp)
     {
-        if (_last is { } previous)
+        lock (_gate)
         {
-            var seconds = (timestamp - previous).TotalSeconds;
-            if (seconds > 0.0)
+            if (_last is { } previous)
             {
-                if (_intervals.Count >= MaxIntervals)
-                    _intervals.Dequeue();
-                _intervals.Enqueue(seconds);
+                var seconds = (timestamp - previous).TotalSeconds;
+                if (seconds > 0.0)
+                {
+                    if (_intervals.Count >= MaxIntervals)
+                        _intervals.Dequeue();
+                    _intervals.Enqueue(seconds);
+                }
+                else
+                {
+                    // Out-of-order or duplicate timestamp: do not advance _last, so the next
+                    // in-order reading is measured against the newest timestamp actually seen.
+                    return;
+                }
             }
-            else
-            {
-                // Out-of-order or duplicate timestamp: do not advance _last, so the next
-                // in-order reading is measured against the newest timestamp actually seen.
-                return;
-            }
-        }
 
-        _last = timestamp;
+            _last = timestamp;
+        }
     }
 
     /// <summary>
@@ -66,10 +78,15 @@ public sealed class ReadingCadence
     {
         get
         {
-            if (_intervals.Count < MinIntervals)
-                return null;
+            double[] sorted;
+            lock (_gate)
+            {
+                if (_intervals.Count < MinIntervals)
+                    return null;
 
-            var sorted = _intervals.ToArray();
+                sorted = _intervals.ToArray();
+            }
+
             Array.Sort(sorted);
             int n = sorted.Length;
             return n % 2 == 1
