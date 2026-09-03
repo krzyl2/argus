@@ -286,36 +286,47 @@ public class AlertPolicyTests
         // Reducing the design to a rank-on-score gate would silence this sensor outright (its
         // score is flat), so this test fails the moment the raw channel is dropped.
         //
-        // max_event_duration is lifted out of the way ON PURPOSE. The fixture compresses a
-        // 7-day recording into 1546 readings at 391 s each, so each 90-reading "run" is 9.8 h of
-        // wall clock — longer than the 6 h watchdog, which would then split each run into two
-        // events plus a storm. A real compressor run is tens of minutes; the watchdog is a
-        // property of this fixture's time compression, not of the sensor, and it has its own
-        // test (MaxEventDuration_EvidenceHeldTrueForever_ForceClosesAndRaisesStorm).
+        // The cadence is the fixture's own: 1546 readings over 24 h is 55.9 s per reading, so
+        // each 90-reading compressor run is 84 minutes of wall clock. max_event_duration stays
+        // at its PRODUCTION default (6 h) on purpose — this is the only realistic series in the
+        // suite, so it is the only place the gate and the watchdog are exercised together, and
+        // the acceptance criterion it carries (D-J: >= 2 episodes on this sensor) is worthless
+        // if the watchdog that could have force-closed them is switched off for the run.
+        // Feeding it at 391 s/reading (this sensor's measured MEDIAN interval, which belongs to
+        // a 221-reading day, not a 1546-reading one) stretched the fixture to 7 days and made
+        // each run 9.8 h — longer than the watchdog, which then had to be disabled to keep the
+        // test green. That removed the coverage instead of the conflict.
         var series = LodowkaCompressorCycle();
-        var policy = new AlertPolicy(FastParams(
-            evidenceMode: "any", alertMinSamples: 100, maxEventDurationSec: 7 * 24 * 3600));
+        var policy = new AlertPolicy(FastParams(evidenceMode: "any", alertMinSamples: 100));
 
-        int events = 0, onTicks = 0;
+        int events = 0, onTicks = 0, storms = 0;
         for (int i = 0; i < series.Length; i++)
         {
             policy.ObserveValue(series[i]);
-            var d = policy.OnVerdict(0.5, true, false, false, At(i, secondsPerTick: 391.0));
+            var d = policy.OnVerdict(0.5, true, false, false, At(i, secondsPerTick: 55.9));
             if (d.EventStarted) events++;
             if (d.FlagOn) onTicks++;
+            if (d.Storm) storms++;
         }
 
         Assert.Equal(2, events);
+
+        // Two real compressor runs must survive the watchdog intact. A storm here would mean
+        // the F1 backstop is force-closing genuine events on the one sensor D-J protects —
+        // which is how the flag would start cycling 6 h ON / 1 h blind instead of tracking the
+        // compressor.
+        Assert.Equal(0, storms);
 
         // Two events alone are not the criterion — an implementation that fires twice and
         // latches would also score 2. The flag has to cover the compressor runs and then let go:
         // the two runs are 180 of 1546 readings (11.6 %), and the flag goes out within
         // min_consecutive readings of each run ending, because 0 W is the window's median again.
         // Measured: 178 on-ticks = 11.51 %, i.e. the flag covers the runs and nothing else.
-        // Below 8 % it would be missing part of the runs it exists for; above 20 % it is holding
-        // past them, which is F1 coming back.
+        // The band is deliberately narrow around the two runs' own share of the day (180/1546 =
+        // 11.64 %): a wide band stops discriminating between "covers the runs" and "holds past
+        // them", and holding past them is F1 coming back.
         double onTime = (double)onTicks / series.Length;
-        Assert.InRange(onTime, 0.08, 0.20);
+        Assert.InRange(onTime, 0.10, 0.13);
     }
 
     // ─── D-I / D-J: the raw channel must not fire on the percent sensors ─────
