@@ -355,6 +355,87 @@ class TestDegenerateScale:
 
 
 # ---------------------------------------------------------------------------
+# F13 — the remaining two of the five measured sensors
+# ---------------------------------------------------------------------------
+
+
+class TestF13RemainingSensorShapes:
+    """F13 is a FIVE-sensor acceptance criterion (docs/FIX-PLAN.md section 5):
+    zamrazarka 0 ep / 0%, memory 4 ep / 7.02%, load_5m 3 ep / 0.83%,
+    processor_use 1 ep / 2.97%, lodowka 2 ep / 11.6%. Three of those pairs are
+    already pinned above (TestF4RarityInversion, TestDegenerateScale,
+    TestF3RecallPreserved); the two here close the set.
+
+    The rule they encode is the whole point of WS1: the F1 field state was five
+    flags stuck ON at 100/100/99/91/25% on-time. An alarm RATE regression on
+    either of these two shapes — a detector change that quietly doubles the
+    episode count or the time spent in alarm — is exactly the failure this fix
+    exists to prevent, and it would otherwise pass every other test in this
+    file, because none of them measures a rate on a mostly-normal series.
+
+    Both fixtures use the F13 measurement parameters verbatim: window 720,
+    min_samples 60, scale_floor 0.0, gate 0.5 / 0.375 / 3.
+    """
+
+    @staticmethod
+    def _load_5m_series() -> list[float]:
+        """Shape of sensor.load_5m: 5082 samples/24 h (the highest cadence on
+        the installation, section 1 F12), a load average quantised to two
+        decimals, plus three short genuine load bursts."""
+        rng = random.Random(5)
+        series = [round(0.50 + rng.uniform(-0.15, 0.15), 2) for _ in range(5082)]
+        for start in (1200, 2600, 4100):
+            for i in range(14):
+                series[start + i] = round(2.40 + rng.uniform(-0.1, 0.1), 2)
+        return series
+
+    @staticmethod
+    def _processor_use_series() -> list[float]:
+        """Shape of sensor.processor_use: ~1440 samples/24 h (60/h — the plan's
+        "~1 h to min_samples", section 5 F7), a percent series with one decimal
+        idling near 4%, plus one genuine busy burst."""
+        series = [round(4.0 + 0.1 * ((i % 3) - 1), 1) for i in range(1440)]
+        for i in range(43):
+            series[900 + i] = round(28.0 + 0.1 * (i % 5), 1)
+        return series
+
+    def test_load_5m_shape_fires_only_on_the_three_bursts(self):
+        scores = _stream(self._load_5m_series())
+
+        episodes, on_time = _gate_stats(scores)
+        assert episodes == 3
+        assert on_time == pytest.approx(0.83, abs=0.01)  # 42 of 5082 samples
+
+        # The rate is low because the BASELINE is silent, not because the gate
+        # is slow: with HalfSpaceTrees 80% of this sensor's samples scored above
+        # 0.7 (F6). Every score above the fire threshold has to belong to a
+        # burst, or the episode count is right for the wrong reason.
+        burst = set()
+        for start in (1200, 2600, 4100):
+            burst.update(range(start, start + 14))
+        assert all(i in burst for i, s in enumerate(scores) if s > HIGH)
+
+    def test_processor_use_shape_fires_once_and_the_scale_floor_keeps_it(self):
+        series = self._processor_use_series()
+
+        episodes, on_time = _gate_stats(_stream(series))
+        assert episodes == 1
+        assert on_time == pytest.approx(2.97, abs=0.1)  # 43 of 1440 samples
+
+        # D-J asks for "<= 2% on-time" here while F13 measures 2.97% — the plan
+        # records that conflict (section 8) and WS1 ships the measurement, not a
+        # tuned number. Pinning it is what makes the conflict visible if anyone
+        # later "fixes" the criterion by weakening the detector.
+        assert episodes <= 3
+
+        # D-I makes WS2 set scale_floor=0.3 on every percent sensor, and this is
+        # the sensor that proves the floor is safe: it damps the 0.1 pp
+        # quantisation noise (see test_scale_floor_damps_a_low_noise_quantized_
+        # series) WITHOUT costing a real 24 pp excursion its episode.
+        assert _gate_stats(_stream(series, scale_floor=0.3)) == (episodes, on_time)
+
+
+# ---------------------------------------------------------------------------
 # Warm-up contract
 # ---------------------------------------------------------------------------
 
