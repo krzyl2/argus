@@ -9,12 +9,33 @@ public static class UniqueId
     /// <summary>entity_id with "." replaced by "_" (e.g. sensor.salon_temperatura → sensor_salon_temperatura).</summary>
     public static string Slug(string entityId) => entityId.Replace(".", "_");
 
-    /// <summary>argus_{slug}_{detector}_anomaly — binary_sensor unique_id.</summary>
-    public static string AnomalyId(string entityId, string detector)
+    /// <summary>
+    /// argus_{slug}_anomaly — binary_sensor unique_id (D-G).
+    ///
+    /// The detector name is deliberately NOT part of the identity. The state topic
+    /// (argus/{slug}/flag/state) and the availability topics never carried it, so keeping it
+    /// in unique_id/object_id meant that switching an entity's detector (hst -> rmad) created
+    /// a SECOND HA entity fed by the SAME topic, while the first one stayed behind as a
+    /// retained orphan RetractAsync never touches (it only handles removed entities).
+    /// Cutting it here happens once; every future detector change is free.
+    /// </summary>
+    public static string AnomalyId(string entityId)
+        => $"argus_{Slug(entityId)}_anomaly";
+
+    /// <summary>argus_{slug}_score — score sensor unique_id (D-G, see AnomalyId).</summary>
+    public static string ScoreId(string entityId)
+        => $"argus_{Slug(entityId)}_score";
+
+    /// <summary>
+    /// Pre-D-G, detector-scoped binary_sensor unique_id. Retained ONLY so the one-shot
+    /// migration can retract the retained discovery configs it published under the old
+    /// formula; never use it to publish.
+    /// </summary>
+    public static string LegacyAnomalyId(string entityId, string detector)
         => $"argus_{Slug(entityId)}_{detector}_anomaly";
 
-    /// <summary>argus_{slug}_{detector}_score — score sensor unique_id.</summary>
-    public static string ScoreId(string entityId, string detector)
+    /// <summary>Pre-D-G, detector-scoped score sensor unique_id (see LegacyAnomalyId).</summary>
+    public static string LegacyScoreId(string entityId, string detector)
         => $"argus_{Slug(entityId)}_{detector}_score";
 
     /// <summary>

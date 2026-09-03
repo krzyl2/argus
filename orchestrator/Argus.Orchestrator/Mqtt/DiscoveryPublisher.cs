@@ -34,13 +34,12 @@ public class DiscoveryPublisher
 
     /// <summary>
     /// Builds the binary_sensor discovery JSON payload for an entity.
-    /// Uses the first configured detector name, defaulting to "hst".
+    /// D-G: the id is detector-agnostic — see UniqueId.AnomalyId.
     /// </summary>
     public static string BuildBinarySensorConfig(EntityConfig entity)
     {
-        var detector = GetDetectorName(entity);
         var slug = UniqueId.Slug(entity.EntityId);
-        var uniqueId = UniqueId.AnomalyId(entity.EntityId, detector);
+        var uniqueId = UniqueId.AnomalyId(entity.EntityId);
         var friendlyName = FriendlyName.ForAnomaly(entity.FriendlyName);
 
         var payload = new
@@ -75,9 +74,8 @@ public class DiscoveryPublisher
     /// </summary>
     public static string BuildSensorConfig(EntityConfig entity)
     {
-        var detector = GetDetectorName(entity);
         var slug = UniqueId.Slug(entity.EntityId);
-        var uniqueId = UniqueId.ScoreId(entity.EntityId, detector);
+        var uniqueId = UniqueId.ScoreId(entity.EntityId);
         var friendlyName = $"{FriendlyName.ForAnomaly(entity.FriendlyName)} score";
 
         var payload = new
@@ -127,9 +125,8 @@ public class DiscoveryPublisher
     {
         foreach (var entity in entities)
         {
-            var detector = GetDetectorName(entity);
-            var anomalyId = UniqueId.AnomalyId(entity.EntityId, detector);
-            var scoreId   = UniqueId.ScoreId(entity.EntityId, detector);
+            var anomalyId = UniqueId.AnomalyId(entity.EntityId);
+            var scoreId   = UniqueId.ScoreId(entity.EntityId);
 
             await publish(
                 $"homeassistant/binary_sensor/{anomalyId}/config",
@@ -173,9 +170,8 @@ public class DiscoveryPublisher
     {
         foreach (var entity in removedEntities)
         {
-            var detector  = GetDetectorName(entity);
-            var anomalyId = UniqueId.AnomalyId(entity.EntityId, detector);
-            var scoreId   = UniqueId.ScoreId(entity.EntityId, detector);
+            var anomalyId = UniqueId.AnomalyId(entity.EntityId);
+            var scoreId   = UniqueId.ScoreId(entity.EntityId);
 
             await publish(
                 $"homeassistant/binary_sensor/{anomalyId}/config",
@@ -184,6 +180,65 @@ public class DiscoveryPublisher
             await publish(
                 $"homeassistant/sensor/{scoreId}/config",
                 string.Empty, true, ct);
+        }
+    }
+
+    /// <summary>
+    /// Retracts the retained discovery configs published under the PRE-D-G, detector-scoped
+    /// id formula (argus_{slug}_{detector}_anomaly / _score), for every (entity, detector)
+    /// pair present in the configuration as it was BEFORE the schema-2 migration.
+    ///
+    /// RetractAsync cannot do this: it only retracts entities that were REMOVED, and a migrated
+    /// entity is still tracked. Its old retained config would therefore never expire, leaving a
+    /// second HA entity fed by the very same argus/{slug}/flag/state topic.
+    ///
+    /// Every detector name is covered, not just "hst" — an operator may have set "mad" or "stl"
+    /// by hand (InputValidator.KnownDetectors), and those published under the old formula too.
+    /// Each (slug, detector) pair is retracted exactly once even if the pair repeats in config.
+    /// Call once, at the first start after migration, BEFORE the first PublishAllAsync.
+    /// </summary>
+    public static Task RetractLegacyDetectorScopedAsync(
+        MqttConnection mqtt,
+        IReadOnlyList<EntityConfig> preMigration,
+        CancellationToken ct)
+        => RetractLegacyDetectorScopedAsync(
+            (topic, payload, retain, token) => mqtt.PublishAsync(topic, payload, retain, token),
+            preMigration,
+            ct);
+
+    /// <summary>
+    /// Testable overload: accepts a publish delegate instead of a live MqttConnection.
+    /// </summary>
+    public static async Task RetractLegacyDetectorScopedAsync(
+        Func<string, string, bool, CancellationToken, Task> publish,
+        IReadOnlyList<EntityConfig> preMigration,
+        CancellationToken ct)
+    {
+        var seen = new HashSet<(string EntityId, string Detector)>();
+
+        foreach (var entity in preMigration)
+        {
+            // An entity with no detector block still published under the "hst" fallback
+            // GetDetectorName used to apply, so it must be retracted under that name.
+            var detectors = entity.Detectors.Count > 0
+                ? entity.Detectors.Select(d => d.Name)
+                : ["hst"];
+
+            foreach (var detector in detectors)
+            {
+                if (string.IsNullOrWhiteSpace(detector))
+                    continue;
+                if (!seen.Add((entity.EntityId, detector)))
+                    continue;
+
+                await publish(
+                    $"homeassistant/binary_sensor/{UniqueId.LegacyAnomalyId(entity.EntityId, detector)}/config",
+                    string.Empty, true, ct);
+
+                await publish(
+                    $"homeassistant/sensor/{UniqueId.LegacyScoreId(entity.EntityId, detector)}/config",
+                    string.Empty, true, ct);
+            }
         }
     }
 
@@ -220,8 +275,6 @@ public class DiscoveryPublisher
         return JsonSerializer.Serialize(payload, JsonOptions);
     }
 
-    private static string GetDetectorName(EntityConfig entity)
-        => entity.Detectors.Count > 0 ? entity.Detectors[0].Name : "hst";
 
     private static bool IsPeerDivergence(GroupConfig group)
         => string.Equals(group.Mode, "peer_divergence", StringComparison.OrdinalIgnoreCase);

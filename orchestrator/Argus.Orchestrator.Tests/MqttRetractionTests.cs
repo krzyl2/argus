@@ -104,7 +104,7 @@ public class MqttRetractionTests
         await DiscoveryPublisher.RetractAsync(publish, [entity], CancellationToken.None);
 
         // Assert — one of the two topics is binary_sensor
-        var anomalyId = UniqueId.AnomalyId(entity.EntityId, "hst");
+        var anomalyId = UniqueId.AnomalyId(entity.EntityId);
         var expectedTopic = $"homeassistant/binary_sensor/{anomalyId}/config";
         Assert.Contains(calls, c => c.Topic == expectedTopic);
     }
@@ -120,7 +120,7 @@ public class MqttRetractionTests
         await DiscoveryPublisher.RetractAsync(publish, [entity], CancellationToken.None);
 
         // Assert — one of the two topics is sensor (score)
-        var scoreId = UniqueId.ScoreId(entity.EntityId, "hst");
+        var scoreId = UniqueId.ScoreId(entity.EntityId);
         var expectedTopic = $"homeassistant/sensor/{scoreId}/config";
         Assert.Contains(calls, c => c.Topic == expectedTopic);
     }
@@ -182,16 +182,16 @@ public class MqttRetractionTests
         await DiscoveryPublisher.RetractAsync(publish, [removed], CancellationToken.None);
 
         // Assert — no publishes mention the non-removed entity's IDs
-        var notRemovedAnomalyId = UniqueId.AnomalyId(notRemoved.EntityId, "hst");
-        var notRemovedScoreId   = UniqueId.ScoreId(notRemoved.EntityId, "hst");
+        var notRemovedAnomalyId = UniqueId.AnomalyId(notRemoved.EntityId);
+        var notRemovedScoreId   = UniqueId.ScoreId(notRemoved.EntityId);
         Assert.DoesNotContain(calls, c => c.Topic.Contains(notRemovedAnomalyId));
         Assert.DoesNotContain(calls, c => c.Topic.Contains(notRemovedScoreId));
     }
 
-    // ─── GetDetectorName fallback ("hst" when no detectors configured) ────────
+    // ─── D-G: an entity with no detectors retracts under the same detector-agnostic id ───
 
     [Fact]
-    public async Task RetractAsync_EntityWithNoDetectors_UsesFallbackDetectorName()
+    public async Task RetractAsync_EntityWithNoDetectors_UsesDetectorAgnosticId()
     {
         // Arrange
         var (calls, publish) = MakeRecorder();
@@ -199,15 +199,15 @@ public class MqttRetractionTests
         {
             EntityId = "sensor.pressure_indoor",
             FriendlyName = "pressure",
-            Detectors = [],  // empty — should fall back to "hst"
+            Detectors = [],  // empty — the id no longer depends on the detector at all
         };
 
         // Act
         await DiscoveryPublisher.RetractAsync(publish, [entity], CancellationToken.None);
 
-        // Assert — topics use "hst" fallback
-        var anomalyId = UniqueId.AnomalyId("sensor.pressure_indoor", "hst");
-        var scoreId   = UniqueId.ScoreId("sensor.pressure_indoor", "hst");
+        // Assert — topics carry no detector segment
+        var anomalyId = UniqueId.AnomalyId("sensor.pressure_indoor");
+        var scoreId   = UniqueId.ScoreId("sensor.pressure_indoor");
         Assert.Contains(calls, c => c.Topic == $"homeassistant/binary_sensor/{anomalyId}/config");
         Assert.Contains(calls, c => c.Topic == $"homeassistant/sensor/{scoreId}/config");
     }

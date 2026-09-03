@@ -25,7 +25,7 @@ public class DiscoveryPayloadTests
         var doc = JsonDocument.Parse(json);
 
         var uniqueId = doc.RootElement.GetProperty("unique_id").GetString();
-        Assert.Equal("argus_sensor_salon_temperatura_hst_anomaly", uniqueId);
+        Assert.Equal("argus_sensor_salon_temperatura_anomaly", uniqueId);
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public class DiscoveryPayloadTests
 
         var uniqueId = doc.RootElement.GetProperty("unique_id").GetString();
         var objectId = doc.RootElement.GetProperty("object_id").GetString();
-        Assert.Equal("argus_sensor_salon_temperatura_hst_score", uniqueId);
+        Assert.Equal("argus_sensor_salon_temperatura_score", uniqueId);
         Assert.Equal(uniqueId, objectId);
     }
 
