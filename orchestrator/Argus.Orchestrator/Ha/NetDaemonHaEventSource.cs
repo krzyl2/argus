@@ -1,4 +1,4 @@
-using Argus.Orchestrator.Config;
+﻿using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Health;
 using Argus.Orchestrator.Logging;
 using System.Globalization;
@@ -29,6 +29,12 @@ public class NetDaemonHaEventSource : IHaEventSource
     // Reconnect backoff constants (STRM-01): starts at 1s, doubles, capped at 60s
     private const int BackoffInitialSeconds = 1;
     private const int BackoffMaxSeconds = 60;
+
+    // Snapshot pass labels (WS4 D1 probe) — they are grep keys in the operator's log, so they
+    // are constants rather than inline literals.
+    internal const string RegistryPassInitial = "initial";
+    internal const string RegistryPassSettle = "settle";
+    internal const string RegistryPassReconnect = "reconnect";
 
     private readonly ConnectionSettings _settings;
     private readonly ILiveEntitiesConfig _liveConfig;
@@ -131,47 +137,56 @@ public class NetDaemonHaEventSource : IHaEventSource
                     // Reset backoff on successful connection
                     backoffSeconds = BackoffInitialSeconds;
 
-                    // get_states snapshot must happen BEFORE subscribe (no events interleave).
-                    var states = await client.GetStatesAsync(ct).ConfigureAwait(false);
+                    // Snapshot passes must happen BEFORE subscribe (no events interleave) — see
+                    // RunSnapshotPassesAsync for why the ordering is a correctness constraint and
+                    // not a preference.
+                    var wasFirstConnection = isFirstConnection;
+                    await RunSnapshotPassesAsync(
+                        isFirstConnection: wasFirstConnection,
+                        settleSeconds: _settings.RegistrySettleSeconds,
+                        getStates: c => client.GetStatesAsync(c),
+                        onSnapshot: async (snapshot, pass, c) =>
+                        {
+                            // Area/entity registries change far less often than sensor values — fetched
+                            // once per connect (first + reconnect, registries can change while
+                            // disconnected), right after GetStatesAsync and before UpdateSnapshot (SRCH-02/03).
+                            var entityAreaNames = await BuildEntityAreaNamesAsync(client, c).ConfigureAwait(false);
 
-                    // Area/entity registries change far less often than sensor values — fetched
-                    // once per connect (first + reconnect, registries can change while
-                    // disconnected), right after GetStatesAsync and before UpdateSnapshot (SRCH-02/03).
-                    var entityAreaNames = await BuildEntityAreaNamesAsync(client, ct).ConfigureAwait(false);
-
-                    // Populate sensor registry on EVERY connect (first + reconnect) — ADR-4: no second WebSocket.
-                    // WS5/D-K scope note: ADR-4 forbids a second PERSISTENT event channel. Recorder
-                    // history queries (HaRecorderHistorySource) open a short-lived, request/response-only
-                    // socket that never subscribes to anything and is closed after the last command, so
-                    // it creates no second stream and cannot consume state_changed frames. Do not
-                    // "restore" ADR-4 by moving those queries onto this socket: it has no message router
-                    // (HaWebSocketClient.cs:35-37), so a history response would be read as an event frame,
-                    // and a >4 MB response would tear down live scoring for every entity.
-                    _sensorRegistry.UpdateSnapshot(states, _configuredEntities, entityAreaNames);
-                    _logger.LogInformation(LogEvents.SensorRegistryUpdated,
-                        "Sensor registry updated: {Count} numeric sensors cached", states.Count(
-                            s => double.TryParse(s.State, System.Globalization.NumberStyles.Any,
-                                System.Globalization.CultureInfo.InvariantCulture, out _)));
-
-                    if (isFirstConnection)
-                    {
-                        // First connect: log unconfigured numeric sensors (UICFG-05)
-                        LogDiscoverableSensors(states);
-                    }
-                    else
-                    {
-                        // Reconnect: feed current values + start binary_sensor suppression (D-07)
-                        _logger.LogInformation("HA reconnect: feeding get_states snapshot (D-07, PITFALL 4)");
-                        await FeedStatesAsync(states, writer, ct).ConfigureAwait(false);
-                        _cooldown.MarkReconnect(DateTimeOffset.UtcNow);
-                        _logger.LogInformation(
-                            "ReconnectCooldown started — binary_sensor suppressed for {Seconds}s",
-                            ReconnectCooldown.SuppressionWindowSeconds);
-                    }
+                            // Populate sensor registry on EVERY connect (first + reconnect) — ADR-4: no second WebSocket.
+                            // WS5/D-K scope note: ADR-4 forbids a second PERSISTENT event channel. Recorder
+                            // history queries (HaRecorderHistorySource) open a short-lived, request/response-only
+                            // socket that never subscribes to anything and is closed after the last command, so
+                            // it creates no second stream and cannot consume state_changed frames. Do not
+                            // "restore" ADR-4 by moving those queries onto this socket: it has no message router
+                            // (HaWebSocketClient.cs:35-37), so a history response would be read as an event frame,
+                            // and a >4 MB response would tear down live scoring for every entity.
+                            _sensorRegistry.UpdateSnapshot(snapshot, _configuredEntities, entityAreaNames);
+                            LogRegistryPass(snapshot, pass);
+                            LogGhostEntities();
+                        },
+                        afterSnapshots: async (snapshot, c) =>
+                        {
+                            if (wasFirstConnection)
+                            {
+                                // First connect: log unconfigured numeric sensors (UICFG-05)
+                                LogDiscoverableSensors(snapshot);
+                            }
+                            else
+                            {
+                                // Reconnect: feed current values + start binary_sensor suppression (D-07)
+                                _logger.LogInformation("HA reconnect: feeding get_states snapshot (D-07, PITFALL 4)");
+                                await FeedStatesAsync(snapshot, writer, c).ConfigureAwait(false);
+                                _cooldown.MarkReconnect(DateTimeOffset.UtcNow);
+                                _logger.LogInformation(
+                                    "ReconnectCooldown started — binary_sensor suppressed for {Seconds}s",
+                                    ReconnectCooldown.SuppressionWindowSeconds);
+                            }
+                        },
+                        subscribe: c => client.SubscribeStateChangedAsync(c),
+                        delay: (d, c) => Task.Delay(d, c),
+                        ct: ct).ConfigureAwait(false);
 
                     isFirstConnection = false;
-
-                    await client.SubscribeStateChangedAsync(ct).ConfigureAwait(false);
 
                     // Stream state_changed events until the socket closes or CT fires.
                     await client.ReceiveEventsAsync(dto => OnStateChanged(dto, writer), ct)
@@ -212,6 +227,87 @@ public class NetDaemonHaEventSource : IHaEventSource
         finally
         {
             writer.Complete();
+        }
+    }
+
+    /// <summary>
+    /// Runs the get_states passes for ONE connection and then subscribes (WS4/F10).
+    ///
+    /// Ordering here is a correctness constraint, not a preference: <see cref="HaWebSocketClient"/>
+    /// has no message router (see its class docs), so a get_states issued AFTER
+    /// <c>subscribe_events</c> would read <c>state_changed</c> frames as its own command reply.
+    /// Every snapshot pass must therefore complete before the subscription opens.
+    ///
+    /// On the FIRST connection only, and only when <paramref name="settleSeconds"/> is above zero,
+    /// a SECOND snapshot is taken after a delay. At add-on boot several HA integrations are still
+    /// loading and report <c>unknown</c>/<c>unavailable</c>; with a connect-only snapshot those
+    /// entities were invisible until the next reconnect — F10's leading hypothesis (H1).
+    ///
+    /// Delegate-based so the ordering contract is testable without a live socket.
+    /// </summary>
+    internal static async Task RunSnapshotPassesAsync(
+        bool isFirstConnection,
+        int settleSeconds,
+        Func<CancellationToken, Task<IReadOnlyList<HaStateDto>>> getStates,
+        Func<IReadOnlyList<HaStateDto>, string, CancellationToken, Task> onSnapshot,
+        Func<IReadOnlyList<HaStateDto>, CancellationToken, Task> afterSnapshots,
+        Func<CancellationToken, Task> subscribe,
+        Func<TimeSpan, CancellationToken, Task> delay,
+        CancellationToken ct)
+    {
+        var states = await getStates(ct).ConfigureAwait(false);
+        await onSnapshot(states, isFirstConnection ? RegistryPassInitial : RegistryPassReconnect, ct)
+            .ConfigureAwait(false);
+
+        if (isFirstConnection && settleSeconds > 0)
+        {
+            await delay(TimeSpan.FromSeconds(settleSeconds), ct).ConfigureAwait(false);
+            states = await getStates(ct).ConfigureAwait(false);
+            await onSnapshot(states, RegistryPassSettle, ct).ConfigureAwait(false);
+        }
+
+        // Discovery logging / reconnect feed run on the FRESHEST snapshot — after settle, an
+        // entity that was `unknown` at connect now has a real value to feed.
+        await afterSnapshots(states, ct).ConfigureAwait(false);
+
+        await subscribe(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// D1 probe for F10: three counters, not one. "157 numeric sensors cached" cannot distinguish
+    /// "HA only told us about 157" from "HA told us about 403 and 246 were non-numeric at that
+    /// instant" — and those two point at completely different causes (H3 vs H1). Splitting the
+    /// counters is what makes the diagnosis falsifiable from a log line.
+    /// </summary>
+    private void LogRegistryPass(IReadOnlyList<HaStateDto> states, string pass)
+    {
+        var numeric = states.Count(s =>
+            double.TryParse(s.State, NumberStyles.Any, CultureInfo.InvariantCulture, out _));
+
+        _logger.LogInformation(LogEvents.SensorRegistryUpdated,
+            "Sensor registry updated: {Numeric} numeric / {Total} states / {NonNumeric} non-numeric ({Pass} pass)",
+            numeric, states.Count, states.Count - numeric, pass);
+    }
+
+    /// <summary>
+    /// Fail-loud line for F9: an entity Argus is SCORING that the registry cannot see. That state
+    /// used to be silent — <c>sensor.zamrazarkapiwnica_power</c> was scored at 0.996 while being
+    /// absent from the picker, so it could be neither inspected nor untracked from the UI.
+    /// </summary>
+    private void LogGhostEntities()
+    {
+        var known = _sensorRegistry.GetAll()
+            .Select(e => e.EntityId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var id in _configuredEntities)
+        {
+            if (known.Contains(id))
+                continue;
+
+            _logger.LogWarning(LogEvents.SensorRegistryGhost,
+                "Tracked entity {EntityId} is absent from the HA snapshot — scored but not listed by HA",
+                id);
         }
     }
 
@@ -276,8 +372,21 @@ public class NetDaemonHaEventSource : IHaEventSource
     {
         try
         {
+            var configured = _configuredEntities;
+
+            // WS4/F10: feed the registry BEFORE the configured-entity filter. The state_changed
+            // subscription is global, so every entity that ever changes state becomes pickable
+            // without a second WebSocket (ADR-4) — that is the whole mechanism by which an entity
+            // missing from the boot snapshot is recovered.
+            if (_sensorRegistry.Upsert(dto, configured.Contains(dto.EntityId)))
+            {
+                _logger.LogDebug(LogEvents.SensorRegistryUpserted,
+                    "Sensor registry discovered {EntityId} from state_changed (absent from snapshot)",
+                    dto.EntityId);
+            }
+
             var suppress = _cooldown.IsSuppressed(DateTimeOffset.UtcNow);
-            if (TryMap(dto.EntityId, dto.State, dto.LastChangedUtc, _configuredEntities, suppress, out var reading))
+            if (TryMap(dto.EntityId, dto.State, dto.LastChangedUtc, configured, suppress, out var reading))
             {
                 if (!writer.TryWrite(reading!))
                 {

@@ -1,4 +1,4 @@
-using Argus.Orchestrator;
+﻿using Argus.Orchestrator;
 using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Detection;
@@ -92,6 +92,10 @@ var connectionSettings = new ConnectionSettings
     // between an operator-raised cap and RESOURCE_EXHAUSTED on the Warmup call.
     BackfillRowCap = Math.Clamp(
         int.TryParse(builder.Configuration["ARGUS_BACKFILL_ROW_CAP"], out var brc) ? brc : 5000, 1, 20000),
+    // WS4/F10: same D-15 rule — a garbage value degrades to the default instead of killing
+    // startup, and the clamp keeps the post-connect settle delay bounded (0 = pre-WS4 behaviour).
+    RegistrySettleSeconds = Math.Clamp(
+        int.TryParse(builder.Configuration["ARGUS_REGISTRY_SETTLE_SEC"], out var rss) ? rss : 60, 0, 600),
 };
 // WR-04: validate BatchIntervalMinutes — zero or negative causes a tight spin loop or crash
 if (connectionSettings.BatchIntervalMinutes <= 0)

@@ -1,4 +1,4 @@
-namespace Argus.Orchestrator.Config;
+﻿namespace Argus.Orchestrator.Config;
 
 /// <summary>
 /// Orchestrator connection settings bound from IConfiguration / environment variables.
@@ -28,6 +28,7 @@ namespace Argus.Orchestrator.Config;
 ///                                deliberately absent from argus/config.yaml and 10-config-gen.sh
 ///   ARGUS_BACKFILL_LOOKBACK   -> BackfillLookback (default: "8d") — same as above
 ///   ARGUS_BACKFILL_ROW_CAP    -> BackfillRowCap (default: 5000, clamped 1..20000) — same as above
+///   ARGUS_REGISTRY_SETTLE_SEC -> RegistrySettleSeconds (default: 60, clamped 0..600) — same as above
 /// </summary>
 public class ConnectionSettings
 {
@@ -84,4 +85,15 @@ public class ConnectionSettings
     /// number of 24 h slices the Recorder walk issues. Consumers clamp to 1..20000.
     /// </summary>
     public int BackfillRowCap { get; set; } = 5000;
+
+    /// <summary>
+    /// WS4/F10: seconds to wait after the FIRST connect before taking a second get_states
+    /// snapshot. At add-on boot some HA integrations are still loading, so their entities report
+    /// <c>unknown</c>/<c>unavailable</c>, fail the numeric filter, and — with a connect-only
+    /// snapshot — stay invisible until the next reconnect. Orchestrator-only knob
+    /// (<c>ARGUS_REGISTRY_SETTLE_SEC</c>, D-13/D-16): deliberately absent from argus/config.yaml
+    /// and the translations. 0 disables the second pass (pre-WS4 behaviour). Consumers clamp
+    /// to 0..600 and never throw (D-15).
+    /// </summary>
+    public int RegistrySettleSeconds { get; set; } = 60;
 }

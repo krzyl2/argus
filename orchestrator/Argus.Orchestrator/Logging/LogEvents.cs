@@ -109,6 +109,14 @@ public static class LogEvents
     // silence would make it (§5.3, case (e)).
     public static readonly EventId HistoryEmpty             = new(5024, nameof(HistoryEmpty));
 
+    // WS4 — sensor registry (F9/F10). SensorRegistryUpserted is the receipt that an entity the
+    // boot snapshot never showed us became pickable purely from state_changed; SensorRegistryGhost
+    // is the fail-loud line for the opposite direction — an entity we are SCORING that HA does not
+    // list (F9: sensor.zamrazarkapiwnica_power, scored 0.996 while invisible in the UI).
+    // 5023/5024 are taken by WS5, so WS4's pair is 5025/5026.
+    public static readonly EventId SensorRegistryUpserted   = new(5025, nameof(SensorRegistryUpserted));
+    public static readonly EventId SensorRegistryGhost      = new(5026, nameof(SensorRegistryGhost));
+
     // Phase 8 UI — Group config UI + algorithm chooser (7009)
     public static readonly EventId GroupUiValidationBlocked = new(7009, nameof(GroupUiValidationBlocked));
 
