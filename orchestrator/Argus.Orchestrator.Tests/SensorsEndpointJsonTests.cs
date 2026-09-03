@@ -52,9 +52,19 @@ public class SensorsEndpointJsonTests
     /// keep compiling; warm-up status is looked up for tracked entities only.
     /// </summary>
     private static IEnumerable<object> ProjectEntries(
-        IReadOnlyList<HaSensorEntry> entries, EntitiesConfig config, IEntityStatusCache? cache = null)
+        IReadOnlyList<HaSensorEntry> snapshotEntries, EntitiesConfig config, IEntityStatusCache? cache = null)
     {
         var trackedIds = SensorTracking.TrackedIds(config);
+
+        // WS4/F9: the handler answers with the UNION of the snapshot and the tracked set, using
+        // the real SensorTracking.GhostEntries — a tracked entity HA does not list must still
+        // appear, or it is scored invisibly and cannot be unticked.
+        var ghosts = SensorTracking.GhostEntries(snapshotEntries, config, "");
+        var entries = ghosts.Count == 0
+            ? snapshotEntries
+            : snapshotEntries.Concat(ghosts)
+                .OrderBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
         // D-N: same single-pass dictionary the handler builds outside the Select.
         var configuredById = config.Entities
@@ -74,9 +84,14 @@ public class SensorsEndpointJsonTests
             {
                 entityId = e.EntityId,
                 friendlyName = showFriendlyName ? e.FriendlyName : null,
-                currentValue = e.CurrentValue.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
+                currentValue = e.KnownToHa
+                    ? e.CurrentValue.ToString("G", System.Globalization.CultureInfo.InvariantCulture)
+                    : null,
                 unitOfMeasurement = e.UnitOfMeasurement,
                 isTracked = tracked,
+                areaName = e.AreaName,
+                domain = e.Domain,
+                knownToHa = e.KnownToHa,
                 detectors = tracked && configured is not null
                     ? configured.Detectors.Select(d => new { name = d.Name, @params = d.Params }).ToList()
                     : null,
@@ -444,5 +459,76 @@ public class SensorsEndpointJsonTests
         Assert.Null(result[0].calibratedExpected);
         Assert.Null(result[0].calibratedLower);
         Assert.Null(result[0].calibratedUpper);
+    }
+    // -----------------------------------------------------------------------
+    // WS4/F9 — union with the tracked set
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void GetSensors_TrackedEntityMissingFromSnapshot_IsStillReturnedWithKnownToHaFalse()
+    {
+        // WHY (F9): sensor.zamrazarkapiwnica_power was in entities.yaml and being scored (0.996)
+        // while GET /api/sensors never mentioned it — so the operator could neither see it nor
+        // untick it. "Tracked but absent from the response" must be unreachable by construction.
+        var registry = new FakeRegistry(MakeEntry("sensor.lodowkababcia_power", value: 984.0, unit: "W"));
+        var config = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig { EntityId = "sensor.lodowkababcia_power", FriendlyName = "", Detectors = [] },
+                new EntityConfig
+                {
+                    EntityId = "sensor.zamrazarkapiwnica_power",
+                    FriendlyName = "Zamrażarka piwnica",
+                    Detectors = [new DetectorConfig { Name = "rmad", Params = [] }],
+                },
+            ],
+        };
+
+        var result = ProjectEntries(registry.GetAll(), config).Cast<dynamic>().ToList();
+
+        Assert.Equal(2, result.Count);
+        var ghost = result.Single(r => (string)r.entityId == "sensor.zamrazarkapiwnica_power");
+        Assert.False((bool)ghost.knownToHa);
+        Assert.True((bool)ghost.isTracked);
+        // No fabricated reading — HA has never reported one for this entity.
+        Assert.Null((string?)ghost.currentValue);
+        Assert.Equal("sensor", (string)ghost.domain);
+        Assert.Equal("Zamrażarka piwnica", (string)ghost.friendlyName);
+        // The row stays editable: its saved detector list still round-trips (D-N).
+        Assert.NotNull(ghost.detectors);
+
+        // The real entity is untouched and still reads as known.
+        var real = result.Single(r => (string)r.entityId == "sensor.lodowkababcia_power");
+        Assert.True((bool)real.knownToHa);
+        Assert.Equal("984", (string)real.currentValue);
+    }
+
+    [Fact]
+    public void GetSensors_UnionDoesNotDuplicate_WhenEntityIsBothTrackedAndInSnapshot()
+    {
+        // WHY: the union must not turn the normal case (tracked AND present in HA) into two rows —
+        // a duplicated row would double-render the checkbox and make the save's alphabetical
+        // entity-index correlation ambiguous.
+        var registry = new FakeRegistry(
+            MakeEntry("sensor.a_temp"),
+            MakeEntry("sensor.b_temp"));
+        var config = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig { EntityId = "sensor.a_temp", FriendlyName = "", Detectors = [] },
+                new EntityConfig { EntityId = "SENSOR.B_TEMP", FriendlyName = "", Detectors = [] },
+            ],
+        };
+
+        var result = ProjectEntries(registry.GetAll(), config).Cast<dynamic>().ToList();
+
+        Assert.Equal(2, result.Count);
+        Assert.All(result, r => Assert.True((bool)r.knownToHa));
+        // Case-insensitive: HA entity ids are compared OrdinalIgnoreCase everywhere else.
+        Assert.Equal(
+            ["sensor.a_temp", "sensor.b_temp"],
+            result.Select(r => (string)r.entityId).ToList());
     }
 }

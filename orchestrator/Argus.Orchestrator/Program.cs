@@ -344,19 +344,30 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
     if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
 
     var q = req.Query["q"].FirstOrDefault() ?? "";
-    var entries = registry.GetFiltered(q);
+    var snapshotEntries = registry.GetFiltered(q);
 
     // G-14-1 fix #2: derive isTracked from the live config (always fresh after a save's Swap),
     // not the HA registry snapshot (e.IsTracked), which only refreshes on an HA WebSocket
     // reconnect and is not reconciled by Swap — see SensorTracking.cs.
-    var trackedIds = SensorTracking.TrackedIds(liveCfg.Get());
+    var cfg = liveCfg.Get();
+    var trackedIds = SensorTracking.TrackedIds(cfg);
+
+    // WS4/F9: the response is the UNION of the HA snapshot and the tracked set. A tracked entity
+    // HA does not list is synthesized rather than omitted — otherwise it is scored invisibly and
+    // cannot even be unticked. Re-sorted because the ghosts interleave alphabetically.
+    var ghosts = SensorTracking.GhostEntries(snapshotEntries, cfg, q);
+    var entries = ghosts.Count == 0
+        ? snapshotEntries
+        : snapshotEntries.Concat(ghosts)
+            .OrderBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     // D-N: the saved detector list must round-trip to the editor. Built ONCE, outside the
     // Select — a per-row lookup over liveCfg.Entities would be O(n*m) across ~400 entities.
     // Without this the editor seeds a fresh default block on every load and the first Save
     // from ANY screen (including the pattern textareas in Settings) writes those defaults back
     // over every tracked sensor — i.e. it silently undoes the migration.
-    var configuredById = liveCfg.Get().Entities
+    var configuredById = cfg.Entities
         .GroupBy(x => x.EntityId, StringComparer.OrdinalIgnoreCase)
         .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
@@ -378,11 +389,18 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
         {
             entityId = e.EntityId,
             friendlyName = showFriendlyName ? e.FriendlyName : null,
-            currentValue = e.CurrentValue.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
+            // Null for a synthesized row: HA has never reported a value, and inventing one
+            // (0, or the last score's expected band) would read as a live measurement.
+            currentValue = e.KnownToHa
+                ? e.CurrentValue.ToString("G", System.Globalization.CultureInfo.InvariantCulture)
+                : null,
             unitOfMeasurement = e.UnitOfMeasurement,
             isTracked = tracked,
             areaName = e.AreaName,
             domain = e.Domain,
+            // WS4/F9: false means "Argus tracks this, HA does not list it" — rendered as a chip,
+            // never as a silently missing row.
+            knownToHa = e.KnownToHa,
             // D-N: name + params exactly as stored, so the editor hydrates from disk.
             detectors = tracked && configured is not null
                 ? configured.Detectors.Select(d => new { name = d.Name, @params = d.Params }).ToList()
