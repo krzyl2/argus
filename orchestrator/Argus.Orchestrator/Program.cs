@@ -501,8 +501,13 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
 
         // Resolve: GlobExpander.Resolve with selectedIds as manuallyChecked, [] as manuallyUnchecked
         // (the UI model: checkboxes ARE the manual selection — patterns feed the base set)
+        // WS4/F9: currentlyTrackedIds keeps an entity that is in entities.yaml but absent from the
+        // HA snapshot resolvable. Without it, EVERY save (including one triggered from the pattern
+        // textareas in Settings) quietly dropped such an entity from the config.
+        var preSaveConfig = liveCfg.Get();
         var resolvedIds = GlobExpander.Resolve(
-            registry.GetAll(), include, exclude, selectedIds, []);
+            registry.GetAll(), include, exclude, selectedIds, [],
+            SensorTracking.TrackedIds(preSaveConfig));
 
         // Build parsedDetectors keyed by entity index — index = position in the sorted
         // (alphabetical EntityId) resolvedIds list, exactly like the v3.0 form-parsing path.
@@ -539,10 +544,17 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         var snapshotById = registry.GetAll()
             .ToDictionary(e => e.EntityId, StringComparer.OrdinalIgnoreCase);
 
+        var preSaveById = preSaveConfig.Entities
+            .GroupBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
         var entities = sortedIds
             .Select((id, ei) =>
             {
                 snapshotById.TryGetValue(id, out var entry);
+                // WS4/F9: an entity HA is not listing has no snapshot friendly-name. Falling back
+                // to the stored one keeps a ghost's label instead of blanking it on every save.
+                preSaveById.TryGetValue(id, out var stored);
 
                 // Get detector list for this entity index; default to HST if empty (Pitfall 7 / CFG-03)
                 // D-A: rmad is the default detector for a newly tracked entity. Empty params
@@ -554,7 +566,7 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
                 return new EntityConfig
                 {
                     EntityId = id,
-                    FriendlyName = entry?.FriendlyName ?? "",
+                    FriendlyName = entry?.FriendlyName ?? stored?.FriendlyName ?? "",
                     Detectors = detectors,
                 };
             })

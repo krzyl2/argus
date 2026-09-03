@@ -1,4 +1,4 @@
-using Argus.Orchestrator.Config;
+﻿using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Ha;
 using Xunit;
 
@@ -213,5 +213,59 @@ public class GlobExpanderTests
 
         Assert.DoesNotContain("sensor.injected_fake_entity", result);
         Assert.Contains("sensor.outdoor_temp", result);
+    }
+    // -----------------------------------------------------------------------
+    // WS4/F9 — an already-tracked entity absent from the HA snapshot
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Expand_TrackedGhostEntity_SurvivesSave()
+    {
+        // WHY (F9, close relative of G-14-1): sensor.zamrazarkapiwnica_power was in entities.yaml
+        // and being scored, but absent from the HA snapshot — so `allIds.Contains(id)` rejected it
+        // and EVERY save (including one triggered from the pattern textareas in Settings) silently
+        // deleted it from the config. Data loss must not be a side effect of an unrelated save.
+        var snapshot = MakeSnapshot("sensor.lodowkababcia_power");
+
+        var result = GlobExpander.Resolve(
+            snapshot,
+            includePatterns: [],
+            excludePatterns: [],
+            manuallyChecked: ["sensor.lodowkababcia_power", "sensor.zamrazarkapiwnica_power"],
+            manuallyUnchecked: [],
+            currentlyTrackedIds: ["sensor.lodowkababcia_power", "sensor.zamrazarkapiwnica_power"]);
+
+        Assert.Contains("sensor.zamrazarkapiwnica_power", result);
+        Assert.Contains("sensor.lodowkababcia_power", result);
+
+        // ...and unticking it must still work — the row is fully interactive, not merely visible.
+        var afterUntick = GlobExpander.Resolve(
+            snapshot,
+            includePatterns: [],
+            excludePatterns: [],
+            manuallyChecked: ["sensor.lodowkababcia_power"],
+            manuallyUnchecked: ["sensor.zamrazarkapiwnica_power"],
+            currentlyTrackedIds: ["sensor.lodowkababcia_power", "sensor.zamrazarkapiwnica_power"]);
+
+        Assert.DoesNotContain("sensor.zamrazarkapiwnica_power", afterUntick);
+    }
+
+    [Fact]
+    public void Expand_ArbitraryUnknownId_StillRejected()
+    {
+        // WHY (WR-03): the F9 widening must not become "accept anything the form posts". Only ids
+        // the orchestrator ALREADY tracks are added — an id that is in neither the snapshot nor the
+        // live config is still refused, so a tampered POST cannot create entities.
+        var snapshot = MakeSnapshot("sensor.lodowkababcia_power");
+
+        var result = GlobExpander.Resolve(
+            snapshot,
+            includePatterns: [],
+            excludePatterns: [],
+            manuallyChecked: ["sensor.lodowkababcia_power", "sensor.not_a_real_entity", "'; DROP TABLE"],
+            manuallyUnchecked: [],
+            currentlyTrackedIds: ["sensor.lodowkababcia_power"]);
+
+        Assert.Equal(["sensor.lodowkababcia_power"], result.ToList());
     }
 }

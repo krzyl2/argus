@@ -1,4 +1,4 @@
-using Argus.Orchestrator.Ha;
+﻿using Argus.Orchestrator.Ha;
 using System.IO.Enumeration;
 
 namespace Argus.Orchestrator.Config;
@@ -30,6 +30,13 @@ public static class GlobExpander
     /// <param name="excludePatterns">Glob patterns for entities to exclude from the include set.</param>
     /// <param name="manuallyChecked">Entity ids explicitly checked by the user; added after excludes.</param>
     /// <param name="manuallyUnchecked">Entity ids explicitly unchecked by the user; removed last.</param>
+    /// <param name="currentlyTrackedIds">
+    /// Entity ids ALREADY in the live config (WS4/F9). Treated as valid ids alongside the snapshot,
+    /// so a tracked entity HA does not currently list survives a save instead of being silently
+    /// dropped from entities.yaml — a direct relative of G-14-1. This does NOT weaken WR-03:
+    /// arbitrary form-submitted strings are still rejected, because the only ids added here are
+    /// ones the orchestrator is already tracking.
+    /// </param>
     /// <returns>
     /// A <see cref="HashSet{T}"/> (OrdinalIgnoreCase) of resolved entity_ids.
     /// </returns>
@@ -38,12 +45,23 @@ public static class GlobExpander
         IEnumerable<string> includePatterns,
         IEnumerable<string> excludePatterns,
         IEnumerable<string> manuallyChecked,
-        IEnumerable<string> manuallyUnchecked)
+        IEnumerable<string> manuallyUnchecked,
+        IEnumerable<string>? currentlyTrackedIds = null)
     {
-        // Step 1: all entity ids from snapshot into a case-insensitive set
+        // Step 1: all entity ids from snapshot into a case-insensitive set, plus the ids already
+        // tracked in the live config (WS4/F9 — an entity HA stopped listing is still a real entity).
         var allIds = snapshot
             .Select(e => e.EntityId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (currentlyTrackedIds is not null)
+        {
+            foreach (var id in currentlyTrackedIds)
+            {
+                if (!string.IsNullOrWhiteSpace(id))
+                    allIds.Add(id);
+            }
+        }
 
         // Step 2: filter out empty/whitespace patterns
         var includes = includePatterns
@@ -79,8 +97,10 @@ public static class GlobExpander
         }
 
         // Step 5: add manually-checked entities (overrides exclusion)
-        // Only IDs present in the live snapshot are accepted — rejects arbitrary form-submitted strings
-        // that do not correspond to a real HA entity (WR-03).
+        // Only IDs the orchestrator already knows are accepted — the live snapshot, plus (WS4/F9)
+        // the ids already in entities.yaml. Arbitrary form-submitted strings are still rejected
+        // (WR-03); widening the set to already-tracked ids is what stops a save from ANY screen
+        // silently deleting an entity HA happens not to be listing right now.
         foreach (var id in manuallyChecked)
         {
             if (!string.IsNullOrWhiteSpace(id) && allIds.Contains(id))
