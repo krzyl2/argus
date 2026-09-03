@@ -51,6 +51,33 @@ class TestRegistryPerEntityIsolation:
         registry.score_one("sensor.x", 21.0)
         assert not registry.is_warmed_up("sensor.x")
 
+    def test_score_one_dispatches_on_detector_name(self):
+        """score_one used to hard-wire EntityDetector regardless of the
+        detector argument, so selecting any other algorithm silently scored
+        with HST. The key is (entity_id, detector), so the two engines keep
+        fully separate state and a rollback rmad -> hst is free."""
+        registry = DetectorRegistry()
+
+        registry.score_one("sensor.a", 21.0, detector="rmad")
+        from argus_detector.rmad_detector import RmadDetector
+        from argus_detector.hst_detector import EntityDetector
+        assert isinstance(registry._detectors[("sensor.a", "rmad")], RmadDetector)
+
+        # "mad" is a batch detector: score_one must NOT quietly build an
+        # EntityDetector for it (that is what the old code did).
+        with pytest.raises(AttributeError):
+            registry.score_one("sensor.a", 21.0, detector="mad")
+        assert not isinstance(registry._detectors[("sensor.a", "mad")], EntityDetector)
+
+    def test_direct_score_one_with_unknown_detector_raises_valueerror(self):
+        """_create_detector's ValueError is now reachable from the score path.
+        That is deliberate and it is the servicer's job to catch it — an
+        unguarded abort() there would tear down the whole multiplexed stream
+        for every entity, not just the misconfigured one."""
+        registry = DetectorRegistry()
+        with pytest.raises(ValueError, match="Unknown detector"):
+            registry.score_one("sensor.a", 21.0, detector="does_not_exist")
+
     def test_custom_params_propagated(self):
         """score_one with params overrides creates a detector with those params."""
         registry = DetectorRegistry()
@@ -203,6 +230,21 @@ class TestRegistryCreateDetector:
         det = registry._create_detector("hst")
         from argus_detector.hst_detector import EntityDetector
         assert isinstance(det, EntityDetector)
+
+    def test_create_detector_rmad_and_hst_honour_params(self):
+        """The factory used to build EntityDetector() bare, silently dropping a
+        configured window on every fit_one/warmup_one path. Both streaming
+        branches must thread params, or an operator's window setting is a no-op
+        on exactly the paths that prime a cold entity."""
+        registry = DetectorRegistry()
+
+        rmad = registry._create_detector("rmad", {"window": "99"})
+        from argus_detector.rmad_detector import RmadDetector
+        assert isinstance(rmad, RmadDetector)
+        assert rmad.baseline_window == 99
+
+        hst = registry._create_detector("hst", {"window": "50"})
+        assert hst._model.window_size == 50
 
     def test_create_detector_unknown_raises(self):
         """Unknown detector name raises ValueError."""

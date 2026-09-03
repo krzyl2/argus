@@ -66,6 +66,28 @@ class TestPickleSizeAndDeepcopyLatency:
         print(f"MEASURED deepcopy latency: {elapsed_ms:.1f} ms")
         assert elapsed_ms < 500
 
+    def test_rmad_pickle_size_and_deepcopy_latency(self):
+        """checkpoint_dirty deep-copies UNDER the per-entity lock (D-06), so the
+        deepcopy cost is latency added to the hot ScoreStream path once per
+        checkpoint tick. HST measures 200 KB-1.2 MB and 56-96 ms; rmad's two
+        flat containers measure ~13 KB and ~0.3 ms, i.e. ~250x less exposure to
+        the unresolved torn-snapshot race."""
+        from argus_detector.rmad_detector import RmadDetector
+
+        det = RmadDetector()
+        for i in range(2000):
+            det.score_one(20.0 + (i % 37) * 0.1)
+
+        size = len(pickle.dumps(det))
+        print(f"MEASURED rmad pickle size: {size} bytes")
+        assert size < 32768
+
+        t0 = time.perf_counter()
+        copy.deepcopy(det)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        print(f"MEASURED rmad deepcopy latency: {elapsed_ms:.2f} ms")
+        assert elapsed_ms < 5.0
+
 
 class TestSaveLoadCheckpointRoundTrip:
     def test_round_trip_preserves_n_seen_and_window(self, tmp_path):
@@ -205,6 +227,25 @@ class TestCheckpointDirty:
         registry.checkpoint_dirty(store)
 
         assert (tmp_path / "sensor_h" / "hst" / "checkpoint.pkl").exists()
+        assert not (tmp_path / "sensor_m" / "mad").exists()
+
+    def test_rmad_entities_are_checkpointed_and_mad_is_still_skipped(self, tmp_path):
+        """rmad holds a 720-sample rolling window that is rebuilt one reading at
+        a time, so a restart without a checkpoint costs up to ~6.5 h of silence
+        on a 225-samples/day sensor. The batch detectors are refit from history
+        and must stay out of the sweep. The hst and rmad checkpoint directories
+        are disjoint, which is what makes a rollback to hst free (D-F)."""
+        registry = DetectorRegistry()
+        store = ModelStore(root=tmp_path)
+
+        registry.score_one("sensor.r", 21.0, detector="rmad")
+        registry.score_one("sensor.r", 21.0, detector="hst")
+        registry.fit_one("sensor.m", "mad", [1.0] * 10)  # batch — must be skipped
+
+        registry.checkpoint_dirty(store)
+
+        assert (tmp_path / "sensor_r" / "rmad" / "checkpoint.pkl").exists()
+        assert (tmp_path / "sensor_r" / "hst" / "checkpoint.pkl").exists()
         assert not (tmp_path / "sensor_m" / "mad").exists()
 
     def test_failing_write_does_not_block_other_entities_or_advance_baseline(self, tmp_path):

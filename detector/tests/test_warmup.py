@@ -82,6 +82,52 @@ class TestWarmupOnePrimesColdEntity:
         assert second == (True, 250, 250, True)
 
 
+class TestWarmupOnePrimesRmad:
+    """The backfill path (WS5) primes whatever detector the entity is
+    configured with. warmup_one used to build an EntityDetector unconditionally,
+    so priming an rmad entity would have filled an HST model under the wrong
+    key and left the rmad window empty — hours of silence on exactly the slow
+    sensors backfill exists for."""
+
+    def test_warmup_primes_rmad_window_and_stays_idempotent(self, registry):
+        from argus_detector.rmad_detector import RmadDetector
+
+        values = [20.0 + (i % 13) * 0.1 for i in range(300)]
+        warmed_up, n_seen, window, skipped = registry.warmup_one(
+            "sensor.r", "rmad", values, {"window": "720", "min_samples": "60"}
+        )
+
+        det = registry._detectors[("sensor.r", "rmad")]
+        assert isinstance(det, RmadDetector)
+        assert skipped is False
+        assert n_seen == 300
+        assert warmed_up is True
+        assert window == 60  # min_samples, the gate that actually applies
+        assert det.baseline_window == 720
+        assert len(det._values) == 300
+
+        # Left deliberately dirty so the next checkpoint tick persists the prime.
+        assert ("sensor.r", "rmad") not in registry._last_checkpointed
+
+        # A second Warmup for an already-primed entity must not double-feed it.
+        second = registry.warmup_one("sensor.r", "rmad", values, {"window": "720"})
+        assert second == (True, 300, 60, True)
+
+    def test_warmup_one_unknown_detector_degrades_to_hst(self, registry):
+        """Warmup is called for every stream the orchestrator opens. A name it
+        cannot build must degrade, not raise: this path never raised before."""
+        from argus_detector.hst_detector import EntityDetector
+
+        warmed_up, n_seen, window, skipped = registry.warmup_one(
+            "sensor.u", "no_such_detector", [20.0] * 10, {"window": "250"}
+        )
+
+        assert skipped is False
+        assert n_seen == 10
+        assert isinstance(registry._detectors[("sensor.u", "hst")], EntityDetector)
+        assert ("sensor.u", "no_such_detector") not in registry._detectors
+
+
 class TestWarmupOneCheckpointRestoredIsNeverRePrimed:
     def test_checkpoint_restored_entity_returns_skipped_true(self, registry):
         from argus_detector.hst_detector import EntityDetector

@@ -22,13 +22,20 @@ from argus_detector.hst_detector import EntityDetector
 
 logger = logging.getLogger(__name__)
 
+# Detectors that hold per-entity ROLLING state fed one reading at a time, and
+# are therefore the ones worth checkpointing (D-05) and priming (D-12). The
+# batch detectors ("mad"/"stl"/the group ones) are refit from history instead.
+STREAMING_DETECTORS = frozenset({"hst", "rmad"})
+
 
 class DetectorRegistry:
     """Registry keyed by (entity_id, detector_name) -> detector instance.
 
     score_one(entity_id, value, detector="hst", params=None) -> float
-      Lazily creates an EntityDetector on first sight of a (entity_id, detector) pair.
-      Returns the anomaly score from that detector.
+      Lazily creates the detector named by `detector` on first sight of an
+      (entity_id, detector) pair, then re-applies `params` to it on every call
+      if it supports apply_params (rmad does; hst and the batch detectors do
+      not, and stay byte-identical). Returns the anomaly score.
 
     is_warmed_up(entity_id, detector="hst") -> bool
       Returns whether the entity's detector has processed >= window_size readings.
@@ -45,7 +52,8 @@ class DetectorRegistry:
 
     _create_detector(detector) -> object
       Factory: "mad"/"robust_zscore" -> PyODDetector; "stl" -> StlDetector; "hst" -> EntityDetector;
-      "peer_divergence" -> PeerDivergenceDetector; "ecod"/"copod"/"pca"/"iforest" -> GroupMultivariateDetector.
+      "rmad" -> RmadDetector; "peer_divergence" -> PeerDivergenceDetector;
+      "ecod"/"copod"/"pca"/"iforest" -> GroupMultivariateDetector.
 
     Group entries (Plan 05-04, GRP-03..07) reuse this same registry/_detectors dict —
     keyed as (group_slug, detector) where group_slug = f"group_{group_id}" (see
@@ -71,14 +79,23 @@ class DetectorRegistry:
         entity_id: str,
         detector: str,
         params: dict[str, str] | None,
-    ) -> EntityDetector:
+    ) -> object:
         key = (entity_id, detector)
         # T-06-01: always hold the lock for both read and write to avoid
         # unsafe concurrent dict access during a resize (WR-01).
         with self._lock:
             if key not in self._detectors:
-                self._detectors[key] = EntityDetector.from_params(params or {})
-            return self._detectors[key]
+                self._detectors[key] = self._create_detector(detector, params)
+            det = self._detectors[key]
+            # A detector restored from a checkpoint was built from the params
+            # baked in at SAVE time, so without this an operator editing the
+            # window in the UI would never see it take effect on that entity.
+            # The getattr guard keeps EntityDetector / PyODDetector /
+            # StlDetector on the exact pre-existing code path.
+            apply = getattr(det, "apply_params", None)
+            if params and apply is not None:
+                apply(params)
+            return det
 
     def score_one(
         self,
@@ -89,9 +106,11 @@ class DetectorRegistry:
     ) -> float:
         """Score a single sensor reading for the given entity.
 
-        Lazily creates an EntityDetector on first call for (entity_id, detector).
-        Params are only applied at creation time; subsequent calls with the same
-        (entity_id, detector) reuse the existing instance.
+        Lazily creates the named detector on first call for (entity_id, detector).
+        Params are applied at creation time and, for detectors that expose
+        apply_params (rmad), re-applied on every call so a live config change
+        reaches an instance restored from a checkpoint. Detectors without
+        apply_params keep the old "creation time only" semantics.
 
         Args:
             entity_id: HA entity ID (e.g. "sensor.salon_temperatura")
@@ -101,6 +120,11 @@ class DetectorRegistry:
 
         Returns:
             Anomaly score float in [0, 1].
+
+        Raises:
+            ValueError: if detector is not a name _create_detector knows. The
+                servicer is the only guarded caller — it falls back to "hst"
+                rather than aborting the whole multiplexed stream.
         """
         det = self._get_or_create(entity_id, detector, params)
         return det.score_one(value)
@@ -151,17 +175,21 @@ class DetectorRegistry:
                 self._entity_locks[key] = threading.Lock()
             return self._entity_locks[key]
 
-    def _hst_keys(self) -> list[tuple[str, str]]:
-        """Snapshot list of registry keys whose detector is "hst".
+    def _streaming_keys(self) -> list[tuple[str, str]]:
+        """Snapshot list of registry keys whose detector holds rolling state.
+
+        Without "rmad" in STREAMING_DETECTORS here, rmad models would never be
+        checkpointed at all and every restart would cost a full re-warm (up to
+        ~6.5 h to the first verdict on a 225-samples/day sensor).
 
         Taken under self._lock so the checkpoint sweep never iterates a dict
         another thread may resize.
         """
         with self._lock:
-            return [key for key in self._detectors if key[1] == "hst"]
+            return [key for key in self._detectors if key[1] in STREAMING_DETECTORS]
 
     def checkpoint_dirty(self, model_store: object) -> int:
-        """Write a checkpoint for every dirty "hst" entity (D-05/D-06).
+        """Write a checkpoint for every dirty streaming entity (D-05/D-06).
 
         Dirty = current n_seen differs from the value recorded at the last
         successful checkpoint. For each dirty entity: snapshot (deepcopy)
@@ -187,7 +215,7 @@ class DetectorRegistry:
             Count of entities actually written this call.
         """
         written = 0
-        for key in self._hst_keys():
+        for key in self._streaming_keys():
             entity_id, detector = key
             lock = self._entity_lock(key)
 
@@ -247,7 +275,10 @@ class DetectorRegistry:
 
         Args:
             entity_id: HA entity ID.
-            detector: Detector name (e.g. "hst").
+            detector: Detector name; anything outside STREAMING_DETECTORS is
+                coerced to "hst", because priming only means anything for a
+                detector fed one reading at a time and the batch detectors have
+                no score_one to feed.
             values: Historical values, chronologically ascending.
             params: optional string param overrides, applied only when a
                 fresh detector is created (mirrors fit_one's semantics).
@@ -258,6 +289,13 @@ class DetectorRegistry:
             restored from a checkpoint); in that case n_seen/window/warmed_up
             reflect the EXISTING entry, untouched.
         """
+        # Guard: this path never raised before, and the orchestrator calls it
+        # for every stream it opens. Letting an unknown name through would now
+        # hit _create_detector's ValueError, and a batch detector would fail on
+        # .score_one below.
+        if detector not in STREAMING_DETECTORS:
+            detector = "hst"
+
         key = (entity_id, detector)
         lock = self._entity_lock(key)
         with lock:
@@ -265,7 +303,7 @@ class DetectorRegistry:
             if existing is not None and existing.n_seen > 0:
                 return (existing.is_warmed_up, existing.n_seen, existing.window, True)
 
-            det = existing if existing is not None else EntityDetector.from_params(params or {})
+            det = existing if existing is not None else self._create_detector(detector, params)
             for value in values:
                 det.score_one(value)
             self._detectors[key] = det
@@ -448,11 +486,18 @@ class DetectorRegistry:
         """Factory: map detector name to a fresh (unfitted) detector instance.
 
         Args:
-            detector: "mad" | "robust_zscore" | "stl" | "hst" |
+            detector: "mad" | "robust_zscore" | "stl" | "hst" | "rmad" |
                       "peer_divergence" | "ecod" | "copod" | "pca" | "iforest"
             params: optional string param overrides (ALGO-01/02) — threaded
-                into the two group-detector branches; ignored by per-entity
-                branches (default None keeps existing call sites unchanged).
+                into the group-detector and streaming branches; ignored by the
+                stateless per-entity branches (default None keeps existing call
+                sites unchanged).
+
+        Deliberately does NOT warn about the legacy "hst" choice: fit_one calls
+        this on every cold-start ScoreBatch, so a warning here would be log
+        spam on a path nobody chose. The one-per-entity warning lives in the
+        servicer, where the algorithm is actually selected for a live stream
+        (D-F).
 
         Returns:
             Fresh detector instance.
@@ -469,7 +514,12 @@ class DetectorRegistry:
             from argus_detector.stl_detector import StlDetector  # lazy import
             return StlDetector()
         if detector == "hst":
-            return EntityDetector()
+            # from_params, not EntityDetector(): the bare constructor silently
+            # dropped a configured window on the fit_one/warmup_one paths.
+            return EntityDetector.from_params(params or {})
+        if detector == "rmad":
+            from argus_detector.rmad_detector import RmadDetector  # lazy import
+            return RmadDetector.from_params(params or {})
         if detector == "peer_divergence":
             # GRP-03/04: stateless cross-member robust-statistic scorer.
             from argus_detector.group.peer_divergence import PeerDivergenceDetector  # lazy import
