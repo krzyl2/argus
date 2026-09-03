@@ -66,6 +66,45 @@ public class ScoreStreamPipelineTests
             Window = window,
         };
 
+    /// <summary>
+    /// Builds per-entity state from a raw params map, wiring BOTH HstParams and AlertParams the
+    /// way BuildEntityStates does — the alert keys share the HST params map, so a test that only
+    /// built HstParams would silently exercise the default gate instead of the configured one.
+    /// </summary>
+    private static EntityRuntimeState MakeState(Dictionary<string, string> p)
+        => new(HstParams.From(p), AlertParams.From(p));
+
+    /// <summary>
+    /// Params that make the adaptive gate reachable inside a unit test: a short rank window, a
+    /// low calibration target, and no min-duration hold. The gating RULES are untouched — the
+    /// fire quantile is still 0.99 and the flag still only moves on a transition.
+    /// </summary>
+    private static Dictionary<string, string> FastAlertParams(int minConsecutive = 1)
+        => new()
+        {
+            ["window"] = "1",
+            ["min_consecutive"] = minConsecutive.ToString(),
+            ["rank_window"] = "200",
+            ["alert_min_samples"] = "50",
+            ["min_duration_sec"] = "0",
+        };
+
+    /// <summary>
+    /// Drives an entity through <paramref name="count"/> strictly increasing scores. Each score
+    /// is a new maximum, so its mid-rank is 1.0 and the score channel is saturated — the last
+    /// verdict is guaranteed to be past calibration and above q_fire.
+    /// </summary>
+    private static async Task DriveToFiringAsync(
+        ScoreStreamPipeline pipeline, EntityRuntimeState state, string entityId, int count = 60)
+    {
+        for (int i = 0; i < count; i++)
+            await pipeline.ProcessVerdictAsync(
+                MakeReading(entityId),
+                MakeVerdict(entityId, score: 0.5 + i * 0.001, warmedUp: true, nSeen: i + 1, window: 1),
+                state,
+                CancellationToken.None);
+    }
+
     private static EntitiesConfig MakeEntitiesConfig(string entityId = "sensor.test")
     {
         var cfg = new EntitiesConfig();
@@ -86,44 +125,19 @@ public class ScoreStreamPipelineTests
     [Fact]
     public async Task OnVerdict_NotSuppressed_PublishesFlag()
     {
-        // Arrange: 3 high-score verdicts (min_consecutive=3) with no suppression
+        // Rewritten for the adaptive gate. The old body fed three verdicts at a constant 0.9 and
+        // relied on an absolute threshold; under a rank gate a constant score sits at mid-rank
+        // 0.5 forever and would never fire, so the driver now supplies a genuinely rising score
+        // that ends on a unique maximum — the shape that SHOULD raise a flag.
         var publisher = new FakeStatePublisher();
-
-        // Feed 3 consecutive high verdicts to flip hysteresis ON
-        // Warm-up: default window=250 readings; we set window=1 via override params
-        var cfg = new EntitiesConfig();
-        cfg.Entities.Add(new EntityConfig
-        {
-            EntityId = "sensor.test",
-            FriendlyName = "Test",
-            Detectors = new List<DetectorConfig>
-            {
-                new DetectorConfig
-                {
-                    Name = "hst",
-                    Params = new Dictionary<string, string>
-                    {
-                        // window=1 so WarmedUp after 1 reading
-                        ["window"] = "1",
-                        ["min_consecutive"] = "1",
-                    }
-                }
-            }
-        });
-
-        var entityState = new EntityRuntimeState(HstParams.From(
-            cfg.Entities[0].Detectors[0].Params));
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(FastAlertParams());
 
         var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
-        var reading = MakeReading(suppress: false);
-        // D-01/WARM-01: warmed-up now comes from the verdict, not a local counter.
-        var verdict = MakeVerdict(score: 0.9, warmedUp: true, nSeen: 1, window: 1);
+        await DriveToFiringAsync(pipeline, state, "sensor.test");
 
-        // Act
-        await pipeline.ProcessVerdictAsync(reading, verdict, entityState, CancellationToken.None);
-
-        // Assert
-        Assert.True(publisher.FlagPublished, "Flag should be published when not suppressed and warmed up");
+        Assert.True(publisher.FlagPublished, "Flag should be published when not suppressed");
+        Assert.True(publisher.LastFlagValue, "A unique-maximum score past calibration must raise the flag");
     }
 
     [Fact]
@@ -165,26 +179,27 @@ public class ScoreStreamPipelineTests
     }
 
     [Fact]
-    public async Task OnVerdict_NotWarmedUp_DoesNotPublishFlag()
+    public async Task OnVerdict_NotWarmedUp_PublishesOffExactlyOnce_NeverOn()
     {
-        // Arrange: entity not warmed up (window=250, 0 readings)
+        // Assertion deliberately INVERTED from the pre-WS2 version. Warm-up used to suppress the
+        // publish itself, which left HA holding whatever retained ON survived the last restart —
+        // a flag nobody could explain and nothing could clear. Warm-up now suppresses the flag's
+        // VALUE instead: exactly one explicit OFF goes out, clearing any stale retained ON, and
+        // it is never republished while nothing changes.
         var publisher = new FakeStatePublisher();
         var cfg = MakeEntitiesConfig(); // default window=250
 
-        var entityState = new EntityRuntimeState(
-            HstParams.From(cfg.Entities[0].Detectors[0].Params));
-        // Do NOT call RecordReading — not warmed up
+        var entityState = MakeState(cfg.Entities[0].Detectors[0].Params);
 
         var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
-        var reading = MakeReading(suppress: false);
-        var verdict = MakeVerdict(score: 0.9);
 
-        // Act
-        await pipeline.ProcessVerdictAsync(reading, verdict, entityState, CancellationToken.None);
+        for (int i = 0; i < 5; i++)
+            await pipeline.ProcessVerdictAsync(MakeReading(suppress: false), MakeVerdict(score: 0.9),
+                entityState, CancellationToken.None);
 
-        // Assert: score published, flag NOT (not warmed up — PITFALL 8)
         Assert.True(publisher.ScorePublished);
-        Assert.False(publisher.FlagPublished, "Flag must be suppressed during warm-up");
+        Assert.Equal(1, publisher.FlagPublishCount);
+        Assert.Equal(new[] { false }, publisher.FlagHistory);
     }
 
     // ─── Recording-gate tests (QUICK-dashboard-real-data) ────────────────────
@@ -192,38 +207,19 @@ public class ScoreStreamPipelineTests
     [Fact]
     public async Task OnVerdict_PublishedAndAnomalous_RecordsRecentAnomaly()
     {
+        // Same rewrite as OnVerdict_NotSuppressed_PublishesFlag: a constant score has no rank,
+        // so the driver must actually produce an anomaly for the recording gate to be exercised.
         var publisher = new FakeStatePublisher();
-        var cfg = new EntitiesConfig();
-        cfg.Entities.Add(new EntityConfig
-        {
-            EntityId = "sensor.test",
-            FriendlyName = "Test",
-            Detectors = new List<DetectorConfig>
-            {
-                new DetectorConfig
-                {
-                    Name = "hst",
-                    Params = new Dictionary<string, string>
-                    {
-                        ["window"] = "1",
-                        ["min_consecutive"] = "1",
-                    }
-                }
-            }
-        });
-
-        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(FastAlertParams());
 
         var recentAnomalies = new RecentAnomaliesCache();
         var pipeline = new ScoreStreamPipeline(
             publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), recentAnomalies: recentAnomalies);
-        var reading = MakeReading(suppress: false);
-        var verdict = MakeVerdict(score: 0.9, warmedUp: true, nSeen: 1, window: 1);
 
-        await pipeline.ProcessVerdictAsync(reading, verdict, entityState, CancellationToken.None);
+        await DriveToFiringAsync(pipeline, state, "sensor.test");
 
-        var recorded = recentAnomalies.GetRecent();
-        var entry = Assert.Single(recorded);
+        var entry = Assert.Single(recentAnomalies.GetRecent());
         Assert.Equal("sensor.test", entry.EntityId);
         Assert.Null(entry.GroupId);
     }
@@ -340,6 +336,13 @@ public class ScoreStreamPipelineTests
         Assert.Contains("sensor.frozen", publisher.FlaggedEntities);
         Assert.Contains("sensor.verdict", publisher.FlaggedEntities);
         Assert.Empty(publisher.FlaggedEntitiesWithoutScore());
+
+        // WS2: the frozen path keeps publishing a flag (it is the ONLY guaranteed publish path
+        // for an entity whose detector returns no verdict), but change-only — a second frozen
+        // reading must not repeat it. Both halves matter: dropping the publish would strand the
+        // entity, repeating it is F8.
+        await pipeline.PublishFrozenAsync("sensor.frozen", frozenState, CancellationToken.None);
+        Assert.Equal(1, publisher.FlagPublishCounts["sensor.frozen"]);
     }
 
     // ─── Test 3: RpcException → availability offline (RES-01) ────────────────
@@ -619,6 +622,10 @@ public class ScoreStreamPipelineTests
         Assert.Equal("hst", request.Detector);
         Assert.Equal(250, request.History.Count);
         Assert.Equal("250", request.Params["window"]);
+        // WS2: the same rows must also seed the raw-evidence window. Without this the robust-z
+        // channel starts empty after every restart and abstains for its first 10 live readings —
+        // on a 225-readings-a-day sensor that is hours of silence the history could have covered.
+        Assert.Equal(history.Count, entityState.Alert.RawSampleCount);
     }
 
     [Fact]
@@ -661,6 +668,7 @@ public class ScoreStreamPipelineTests
         await pipeline.PrimeFromHistoryAsync("sensor.frozen_prime", entityState, CancellationToken.None);
 
         Assert.True(entityState.FrozenDetector.IsFrozen);
+        Assert.Equal(history.Count, entityState.Alert.RawSampleCount);
     }
 
     [Fact]
@@ -898,6 +906,128 @@ public class ScoreStreamPipelineTests
             "Frozen detector must be primed from history even when the detector-side Warmup RPC reports skipped");
     }
 
+    // ─── WS2: publish hygiene, legacy fallback, raw channel ──────────────────
+
+    [Fact]
+    public async Task OnVerdict_UnchangedFlagValueAcrossManyVerdicts_PublishesFlagExactlyOnce()
+    {
+        // F8, measured: ~4 lines of `Flag <entity> -> ...` every 15 s per entity, at
+        // Information level, with the flag value unchanged the whole time. LastPublishedFlag
+        // existed but was write-only. One hundred verdicts at a value that never changes must
+        // produce exactly one publish — the initial explicit OFF.
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(cfg.Entities[0].Detectors[0].Params);
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        for (int i = 0; i < 100; i++)
+            await pipeline.ProcessVerdictAsync(
+                MakeReading(), MakeVerdict(score: 0.42, warmedUp: true, nSeen: i + 1, window: 250),
+                state, CancellationToken.None);
+
+        Assert.Equal(1, publisher.FlagPublishCount);
+    }
+
+    [Fact]
+    public async Task OnVerdict_FlagTransitionOffOnOff_PublishesAllThreeValuesInOrder()
+    {
+        // Change-only publishing must not become publish-once: every real transition still goes
+        // out, in order. The OFF→ON→OFF sequence is the shape F1 says was impossible in the
+        // field (five flags, zero genuine ON→OFF transitions in 24 h).
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(FastAlertParams());
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        await DriveToFiringAsync(pipeline, state, "sensor.test");
+        Assert.True(publisher.LastFlagValue);
+
+        // Back into the middle of its own distribution → rank collapses → flag clears.
+        for (int i = 0; i < 5; i++)
+            await pipeline.ProcessVerdictAsync(
+                MakeReading(), MakeVerdict(score: 0.50, warmedUp: true, nSeen: 100 + i, window: 1),
+                state, CancellationToken.None);
+
+        Assert.Equal(new[] { false, true, false }, publisher.FlagHistory);
+    }
+
+    [Fact]
+    public async Task OnVerdict_LegacyMode_UsesHysteresisGateAndPublishesEveryTick()
+    {
+        // A13: alert_mode: legacy is the no-redeploy rollback path — an operator edits
+        // /data/entities.yaml, the file watcher reloads, and the pre-WS2 behaviour is back:
+        // absolute thresholds via HysteresisGate, published on every tick. If this branch ever
+        // stops existing, the rollback story is a claim rather than a feature.
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(new Dictionary<string, string>
+        {
+            ["window"] = "1",
+            ["min_consecutive"] = "1",
+            ["alert_mode"] = "legacy",
+        });
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        for (int i = 0; i < 3; i++)
+            await pipeline.ProcessVerdictAsync(
+                MakeReading(), MakeVerdict(score: 0.9, warmedUp: true, nSeen: 1, window: 1),
+                state, CancellationToken.None);
+
+        Assert.Equal(3, publisher.FlagPublishCount);
+        Assert.Equal(new[] { true, true, true }, publisher.FlagHistory);
+    }
+
+    [Fact]
+    public async Task RunAsync_WriteLoop_FeedsRawChannelWithRealReadingValues()
+    {
+        // The verdict read loop constructs a SYNTHETIC HaReading with value 0.0 (it has no
+        // reading in hand — only a verdict). If the raw-evidence channel were fed from there,
+        // every robust-z would be computed against a constant zero and the channel that carries
+        // sensor.lodowkababcia_power's real alarms would be silently dead. This test fails the
+        // moment ObserveValue moves out of the write loop.
+        var fakeCall = new OrderTrackingDuplexCall(new List<string>());
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig("sensor.raw");
+        var state = MakeState(cfg.Entities[0].Detectors[0].Params);
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        using var cts = new CancellationTokenSource();
+        var values = Enumerable.Range(0, 100).Select(i => MakeReading("sensor.raw", 100.0 + i % 5))
+            .Append(MakeReading("sensor.raw", 984.0));
+        var readings = AsyncEnumerableHelper.FromItems(values, cancellationToken: cts.Token);
+
+        await pipeline.RunAsync(fakeCall, "sensor.raw", readings, state, cts.Token);
+
+        Assert.Equal(101, state.Alert.RawSampleCount);
+        Assert.True(state.Alert.LastRawZ > 1.0,
+            $"Raw channel must see real reading values (z was {state.Alert.LastRawZ:F3})");
+        Assert.Equal(984.0, state.LastValue);
+    }
+
+    [Fact]
+    public async Task RecentAnomalies_OneHundredVerdictsInOneEvent_RecordsExactlyOneEntry()
+    {
+        // The Dashboard's "Recent anomalies" list is a list of EPISODES. Recording per verdict
+        // meant a single firing entity flushed the 50-entry cache within minutes and buried
+        // every other sensor's history under its own repetition.
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(FastAlertParams());
+        var recent = new RecentAnomaliesCache();
+        var pipeline = new ScoreStreamPipeline(
+            publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), recentAnomalies: recent);
+
+        await DriveToFiringAsync(pipeline, state, "sensor.test");
+
+        // Stay inside the same event: 100 more verdicts, each a new maximum.
+        for (int i = 0; i < 100; i++)
+            await pipeline.ProcessVerdictAsync(
+                MakeReading(), MakeVerdict(score: 1.0 + i, warmedUp: true, nSeen: 200 + i, window: 1),
+                state, CancellationToken.None);
+
+        Assert.Single(recent.GetRecent());
+    }
+
     [Fact]
     public void ScoreStreamPipeline_ResolvesFromDI_WithNoInfluxConfigured()
     {
@@ -912,6 +1042,7 @@ public class ScoreStreamPipelineTests
         services.AddSingleton(GrpcChannel.ForAddress("http://localhost:1"));
         services.AddSingleton<DetectionGateway>();
         services.AddSingleton(new ConnectionSettings());
+        services.AddSingleton<AlertStateStore>();
         // Deliberately NOT registering IInfluxDataSource / IBatchDetectorClient.
 
         services.AddSingleton<ScoreStreamPipeline>(sp => new ScoreStreamPipeline(
@@ -923,7 +1054,8 @@ public class ScoreStreamPipelineTests
             sp.GetService<IRecentAnomaliesCache>(),
             sp.GetService<IInfluxDataSource>(),
             sp.GetService<IBatchDetectorClient>(),
-            sp.GetRequiredService<ConnectionSettings>()));
+            sp.GetRequiredService<ConnectionSettings>(),
+            sp.GetRequiredService<AlertStateStore>()));
 
         using var provider = services.BuildServiceProvider();
         var pipeline = provider.GetRequiredService<ScoreStreamPipeline>();
@@ -939,6 +1071,12 @@ internal sealed class FakeStatePublisher : IStatePublisher
 {
     public bool FlagPublished { get; private set; }
     public bool LastFlagValue { get; private set; }
+
+    /// <summary>Number of flag publishes — the executable form of F8 (change-only publishing).</summary>
+    public int FlagPublishCount { get; private set; }
+
+    /// <summary>Every flag value published, in order, so transitions can be asserted as a sequence.</summary>
+    public List<bool> FlagHistory { get; } = new();
     public bool ScorePublished { get; private set; }
     public double LastScoreValue { get; private set; }
     public bool AvailabilityPublished { get; private set; }
@@ -948,6 +1086,8 @@ internal sealed class FakeStatePublisher : IStatePublisher
     {
         FlagPublished = true;
         LastFlagValue = on;
+        FlagPublishCount++;
+        FlagHistory.Add(on);
         return Task.CompletedTask;
     }
 
@@ -982,6 +1122,9 @@ internal sealed class CoherenceTrackingPublisher : IStatePublisher
     public HashSet<string> FlaggedEntities { get; } = new();
     public HashSet<string> ScoredEntities { get; } = new();
 
+    /// <summary>Flag publishes per entity — proves the frozen path publishes change-only (F8).</summary>
+    public Dictionary<string, int> FlagPublishCounts { get; } = new();
+
     /// <summary>Entities that had a flag published but never a score — must be empty.</summary>
     public IReadOnlyCollection<string> FlaggedEntitiesWithoutScore()
         => FlaggedEntities.Where(e => !ScoredEntities.Contains(e)).ToList();
@@ -989,6 +1132,7 @@ internal sealed class CoherenceTrackingPublisher : IStatePublisher
     public Task PublishFlagAsync(string entityId, bool on, CancellationToken ct)
     {
         FlaggedEntities.Add(entityId);
+        FlagPublishCounts[entityId] = FlagPublishCounts.GetValueOrDefault(entityId) + 1;
         return Task.CompletedTask;
     }
 

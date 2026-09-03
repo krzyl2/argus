@@ -53,8 +53,25 @@ public sealed class EntityRuntimeState
     /// </summary>
     public int WarmUpWindow { get; private set; }
 
-    /// <summary>Last flag value published to MQTT (for change detection).</summary>
-    public bool LastPublishedFlag { get; set; }
+    /// <summary>Resolved alert-layer params for this entity (WS2/D-C, D-D).</summary>
+    public AlertParams AlertParams { get; }
+
+    /// <summary>
+    /// Per-entity event layer used on the adaptive path (WS2). Survives config rebuilds when
+    /// supplied by AlertStateStore; owns LastPublishedFlag, so an unchanged flag is never
+    /// republished (F8).
+    /// </summary>
+    public AlertPolicy Alert { get; }
+
+    /// <summary>Last raw reading value seen by the write loop (WS2 raw evidence channel).</summary>
+    public double LastValue { get; set; }
+
+    /// <summary>
+    /// FrozenSensorDetector verdict for the latest reading, latched in the write loop so the
+    /// verdict read loop can feed it into the alert layer as evidence instead of the write loop
+    /// forcing the flag ON behind the gate's back.
+    /// </summary>
+    public bool FrozenNow { get; set; }
 
     /// <summary>
     /// Tracks whether the binary_sensor flag should be suppressed for the current reading
@@ -65,8 +82,11 @@ public sealed class EntityRuntimeState
 
     /// <summary>
     /// Creates per-entity state from resolved HST params.
+    /// <paramref name="alertParams"/> and <paramref name="alert"/> are optional so the 37 existing
+    /// construction sites keep compiling; production passes the store-owned policy so calibration
+    /// survives a config reload.
     /// </summary>
-    public EntityRuntimeState(HstParams hstParams)
+    public EntityRuntimeState(HstParams hstParams, AlertParams? alertParams = null, AlertPolicy? alert = null)
     {
         Hysteresis = new HysteresisGate(
             hstParams.HighThreshold,
@@ -78,6 +98,8 @@ public sealed class EntityRuntimeState
             hstParams.FrozenVarianceThreshold);
 
         HstParams = hstParams;
+        AlertParams = alertParams ?? new AlertParams();
+        Alert = alert ?? new AlertPolicy(AlertParams);
         WarmUpWindow = hstParams.Window;
     }
 

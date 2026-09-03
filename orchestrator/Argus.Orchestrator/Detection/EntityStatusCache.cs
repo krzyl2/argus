@@ -9,7 +9,14 @@ public sealed record EntityStatusEntry(
     string EntityId,
     bool WarmedUp,
     int ReadingCount,
-    int WarmUpWindow);
+    int WarmUpWindow,
+    // WS2: alert-layer calibration progress and state, surfaced by GET /api/sensors so a
+    // "calibrating" or "storm" entity is visible rather than silently not alarming (A14).
+    // Optional so the existing construction sites keep compiling unchanged.
+    bool Calibrated = false,
+    int CalibrationCount = 0,
+    int CalibrationTarget = 0,
+    string AlertState = "");
 
 /// <summary>
 /// In-memory last-status cache backing GET /api/sensors's per-entity warm-up projection

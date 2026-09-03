@@ -87,4 +87,9 @@ public static class LogEvents
 
     // Phase 8 UI — Group config UI + algorithm chooser (7009)
     public static readonly EventId GroupUiValidationBlocked = new(7009, nameof(GroupUiValidationBlocked));
+
+    // WS2 alert layer — event onsets/ends and the fail-loud storm signal (D-D)
+    public static readonly EventId AlertEventStarted        = new(7010, nameof(AlertEventStarted));
+    public static readonly EventId AlertEventEnded          = new(7011, nameof(AlertEventEnded));
+    public static readonly EventId AlertStormRaised         = new(7012, nameof(AlertStormRaised));
 }

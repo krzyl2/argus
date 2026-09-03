@@ -42,6 +42,7 @@ public sealed class ScoreStreamPipeline
     private readonly IInfluxDataSource? _historySource;
     private readonly IBatchDetectorClient? _detectorClient;
     private readonly ConnectionSettings? _connectionSettings;
+    private readonly AlertStateStore? _alertStore;
 
     /// <summary>
     /// Production constructor — includes DetectionGateway for opening live streams.
@@ -60,7 +61,8 @@ public sealed class ScoreStreamPipeline
         IRecentAnomaliesCache? recentAnomalies = null,
         IInfluxDataSource? historySource = null,
         IBatchDetectorClient? detectorClient = null,
-        ConnectionSettings? connectionSettings = null)
+        ConnectionSettings? connectionSettings = null,
+        AlertStateStore? alertStore = null)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -71,6 +73,7 @@ public sealed class ScoreStreamPipeline
         _historySource = historySource;
         _detectorClient = detectorClient;
         _connectionSettings = connectionSettings;
+        _alertStore = alertStore;
     }
 
     /// <summary>
@@ -81,7 +84,8 @@ public sealed class ScoreStreamPipeline
         ILogger<ScoreStreamPipeline> logger,
         ILiveEntitiesConfig liveConfig,
         IEntityStatusCache? statusCache = null,
-        IRecentAnomaliesCache? recentAnomalies = null)
+        IRecentAnomaliesCache? recentAnomalies = null,
+        AlertStateStore? alertStore = null)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -89,6 +93,7 @@ public sealed class ScoreStreamPipeline
         _gateway = null;
         _statusCache = statusCache;
         _recentAnomalies = recentAnomalies;
+        _alertStore = alertStore;
     }
 
     /// <summary>
@@ -172,7 +177,14 @@ public sealed class ScoreStreamPipeline
             entityState.FrozenDetector.AddReading(reading.Value);
             entityState.SuppressBinarySensor = reading.SuppressBinarySensor;
 
-            if (entityState.FrozenDetector.IsFrozen)
+            // WS2: the raw-evidence channel is fed HERE, from the real reading value. The
+            // verdict read loop only ever sees the synthetic HaReading below (value 0.0), so
+            // moving ObserveValue there would compute every z-score against a constant zero.
+            entityState.LastValue = reading.Value;
+            entityState.Alert.ObserveValue(reading.Value);
+            entityState.FrozenNow = entityState.FrozenDetector.IsFrozen;
+
+            if (entityState.FrozenNow)
             {
                 _logger.LogWarning(
                     "Entity {EntityId} is frozen (variance < threshold) — publishing frozen flag",
@@ -194,10 +206,18 @@ public sealed class ScoreStreamPipeline
     }
 
     /// <summary>
-    /// Processes a single verdict: publishes score always; publishes binary_sensor flag
-    /// only when not suppressed and warmed up (PITFALL 8/D-07).
-    /// Applies hysteresis gate (STRM-05) before flag publish.
-    /// Logs per-verdict latency (OBS-01/STRM-04).
+    /// Processes a single verdict: publishes score always; publishes the binary_sensor flag
+    /// only on a CHANGE of value and only when not suppressed (PITFALL 8/D-07, F8).
+    ///
+    /// Two gates live here, selected by alert_mode:
+    ///  - "adaptive" (default, WS2): AlertPolicy — per-entity rank + robust-z evidence,
+    ///    min-duration/refractory/rate-cap/watchdog, change-only publishing.
+    ///  - "legacy": the original HysteresisGate against absolute thresholds, kept verbatim as a
+    ///    no-redeploy rollback path (A13).
+    ///
+    /// Warm-up/calibration suppress the flag's VALUE (an explicit OFF clears a retained ON);
+    /// the post-reconnect cooldown suppresses the PUBLISH itself.
+    /// Logs per-verdict latency at Debug (OBS-01/STRM-04).
     /// </summary>
     public async Task ProcessVerdictAsync(
         Ha.HaReading reading,
@@ -212,32 +232,102 @@ public sealed class ScoreStreamPipeline
         // single point where WarmedUp/ReadingCount/WarmUpWindow change value.
         entityState.ApplyVerdictWarmup(verdict.WarmedUp, verdict.NSeen, verdict.Window);
 
-        // D-10: status cache write relocated here from the write loop — the data now
-        // arrives with the verdict, not the raw reading.
-        _statusCache?.Set(new EntityStatusEntry(
-            reading.EntityId, entityState.WarmedUp, entityState.ReadingCount, entityState.WarmUpWindow));
-
         // Always publish score (raw metric visible even during warm-up)
         await _publisher.PublishScoreAsync(reading.EntityId, score, ct);
 
-        // Apply hysteresis gate
+        if (string.Equals(entityState.AlertParams.Mode, "legacy", StringComparison.OrdinalIgnoreCase))
+        {
+            await ProcessVerdictLegacyAsync(reading, score, entityState, startedAt, ct);
+            return;
+        }
+
+        var decision = entityState.Alert.OnVerdict(
+            score,
+            entityState.WarmedUp,
+            reading.SuppressBinarySensor,
+            entityState.FrozenNow,
+            DateTimeOffset.UtcNow);
+
+        // D-10: status cache write relocated here from the write loop — the data now
+        // arrives with the verdict, not the raw reading. Alert calibration rides along so
+        // "calibrating"/"storm" is visible in GET /api/sensors (A14).
+        _statusCache?.Set(new EntityStatusEntry(
+            reading.EntityId, entityState.WarmedUp, entityState.ReadingCount, entityState.WarmUpWindow,
+            entityState.Alert.Calibrated, entityState.Alert.SampleCount,
+            entityState.AlertParams.AlertMinSamples, entityState.Alert.State));
+
+        // F8: publish ONLY on a transition. The cooldown (D-07) still blocks the publish itself.
+        bool published = false;
+        if (!reading.SuppressBinarySensor && entityState.Alert.LastPublishedFlag != decision.FlagOn)
+        {
+            await _publisher.PublishFlagAsync(reading.EntityId, decision.FlagOn, ct);
+            entityState.Alert.LastPublishedFlag = decision.FlagOn;
+            published = true;
+        }
+
+        if (decision.EventStarted)
+        {
+            // One entry per EVENT, not per verdict — the Dashboard's "Recent anomalies" list
+            // counts episodes, and a firing entity produces a verdict every tick.
+            _recentAnomalies?.Record(new RecentAnomaly(reading.EntityId, null, score, "hst", DateTimeOffset.UtcNow));
+            _logger.LogInformation(LogEvents.AlertEventStarted,
+                "Alert started for {EntityId}: rank={Rank:F4} z={Z:F2} channel={Channel}",
+                reading.EntityId, decision.Rank, decision.RawZ, decision.Channel);
+        }
+
+        if (decision.EventEnded)
+        {
+            _logger.LogInformation(LogEvents.AlertEventEnded,
+                "Alert ended for {EntityId}: rank={Rank:F4} z={Z:F2}",
+                reading.EntityId, decision.Rank, decision.RawZ);
+        }
+
+        if (decision.Storm)
+        {
+            // Rule 12: an alarm suppressed by the rate cap or force-closed by the watchdog
+            // must never be silent — this WARN is the only trace it leaves.
+            _logger.LogWarning(LogEvents.AlertStormRaised,
+                "Alert storm for {EntityId} — rate cap or max event duration hit; suppressing onsets for {HoldSec}s",
+                reading.EntityId, entityState.AlertParams.StormHoldSec);
+        }
+
+        var latencyMs = (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;
+        _logger.LogDebug(
+            "Verdict: entity={EntityId} score={Score:F4} anomalous={IsAnomalous} flagPublished={FlagPublished} " +
+            "rank={Rank:F4} z={Z:F2} state={AlertState} published={Published} latency_ms={LatencyMs:F1}",
+            reading.EntityId, score, decision.FlagOn, published,
+            decision.Rank, decision.RawZ, entityState.Alert.State, published, latencyMs);
+    }
+
+    /// <summary>
+    /// The pre-WS2 absolute-threshold path, reachable with alert_mode: legacy in an entity's
+    /// detector params. Kept byte-for-byte in behaviour (HysteresisGate + publish every tick)
+    /// so it is a real rollback and not a second, subtly different gate.
+    /// </summary>
+    private async Task ProcessVerdictLegacyAsync(
+        Ha.HaReading reading,
+        double score,
+        EntityRuntimeState entityState,
+        DateTimeOffset startedAt,
+        CancellationToken ct)
+    {
+        _statusCache?.Set(new EntityStatusEntry(
+            reading.EntityId, entityState.WarmedUp, entityState.ReadingCount, entityState.WarmUpWindow,
+            Calibrated: entityState.WarmedUp, CalibrationCount: entityState.ReadingCount,
+            CalibrationTarget: entityState.WarmUpWindow, AlertState: "legacy"));
+
         bool isAnomalous = entityState.Hysteresis.Apply(score);
 
-        // Publish binary_sensor flag only when not suppressed and HST has warmed up (PITFALL 8/D-07)
         bool canPublishFlag = !reading.SuppressBinarySensor && entityState.WarmedUp;
         if (canPublishFlag)
         {
             await _publisher.PublishFlagAsync(reading.EntityId, isAnomalous, ct);
-            entityState.LastPublishedFlag = isAnomalous;
+            entityState.Alert.LastPublishedFlag = isAnomalous;
 
-            // QUICK-dashboard-real-data: record only when the flag was actually published AND
-            // the reading is anomalous — warm-up/cooldown-suppressed readings must never appear
-            // in the Dashboard's "Recent anomalies" list.
             if (isAnomalous)
                 _recentAnomalies?.Record(new RecentAnomaly(reading.EntityId, null, score, "hst", DateTimeOffset.UtcNow));
         }
 
-        // OBS-01/STRM-04: structured per-verdict latency log
         var latencyMs = (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;
         _logger.LogDebug(
             "Verdict: entity={EntityId} score={Score:F4} anomalous={IsAnomalous} flagPublished={FlagPublished} latency_ms={LatencyMs:F1}",
@@ -266,9 +356,15 @@ public sealed class ScoreStreamPipeline
         // Keep the flag/score pair coherent — publish the score before the forced-ON flag
         await _publisher.PublishScoreAsync(entityId, FrozenScore, ct);
 
-        // Frozen is an anomaly — force binary_sensor ON regardless of warm-up/suppression
-        await _publisher.PublishFlagAsync(entityId, on: true, ct);
-        entityState.LastPublishedFlag = true;
+        // Frozen forces binary_sensor ON regardless of warm-up/suppression, but change-only
+        // (F8): repeating ON on every frozen reading was ~4 publishes per 15 s per entity.
+        // The invariant this path exists for — a frozen entity whose detector emits no verdict
+        // still gets a flag — is preserved; only the repetition is gone.
+        if (entityState.Alert.LastPublishedFlag != true)
+        {
+            await _publisher.PublishFlagAsync(entityId, on: true, ct);
+            entityState.Alert.LastPublishedFlag = true;
+        }
 
         // Sensor is present and reporting (just frozen), so availability stays online
         await _publisher.PublishAvailabilityAsync(entityId, online: true, ct);
@@ -385,6 +481,11 @@ public sealed class ScoreStreamPipeline
             foreach (var kv in BuildHstParamsMap(entityState.HstParams))
                 request.Params[kv.Key] = kv.Value;
 
+            // WS2: seed the raw-evidence window from the same rows, but only when it is still
+            // empty — the decision is hoisted out of the loop on purpose, since re-evaluating it
+            // per row would seed exactly one point and leave the channel permanently abstaining.
+            bool seedRaw = entityState.Alert.RawSampleCount == 0;
+
             // D-14: history rows are already in hand — feed the frozen detector in the same
             // loop that builds the WarmupRequest's points, in the ascending order the query
             // already returns them (BACKFILL-01/D-13).
@@ -398,6 +499,8 @@ public sealed class ScoreStreamPipeline
                         DateTime.SpecifyKind(row.Timestamp, DateTimeKind.Utc)),
                 });
                 entityState.FrozenDetector.AddReading(row.Value);
+                if (seedRaw)
+                    entityState.Alert.SeedValue(row.Value);
             }
 
             var response = await _detectorClient.WarmupAsync(request, ct);
@@ -448,8 +551,15 @@ public sealed class ScoreStreamPipeline
             var hstParams = hstDetector is not null
                 ? HstParams.From(hstDetector.Params)
                 : new HstParams();
-            states[entity.EntityId] = new EntityRuntimeState(hstParams);
+            // WS2: alert params come from the SAME params map as HstParams (no new YAML block).
+            var alertParams = AlertParams.From(hstDetector?.Params ?? new Dictionary<string, string>());
+            states[entity.EntityId] = new EntityRuntimeState(
+                hstParams, alertParams, _alertStore?.GetOrCreate(entity.EntityId, alertParams));
         }
+
+        // Config reloads rebuild this map on every Save; the store keeps each entity's rank/raw
+        // calibration across those rebuilds, so untracked entities must be dropped explicitly.
+        _alertStore?.PruneTo(states.Keys);
         return states;
     }
 

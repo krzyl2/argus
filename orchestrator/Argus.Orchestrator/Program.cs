@@ -145,6 +145,12 @@ builder.Services.AddHostedService<HealthPublisherWorker>();
 // ILiveEntitiesConfig and ConnectionSettings are already registered singletons above.
 builder.Services.AddHostedService<ConfigFileWatcherService>();
 
+// WS2: process-lifetime home for per-entity AlertPolicy instances. Registered as a singleton
+// (not owned by ScoreStreamPipeline) precisely because HaListenerWorker rebuilds every
+// EntityRuntimeState on each config Save — without this, one unrelated Save would restart
+// calibration on every entity.
+builder.Services.AddSingleton<AlertStateStore>();
+
 // Register ScoreStreamPipeline (Plan 08; Phase 15-03 backfill deps): bidi ScoreStream loop
 // with hysteresis/frozen/MQTT. Explicit factory (not a bare AddSingleton<T>()) because
 // IInfluxDataSource/IBatchDetectorClient are registered only inside the Influx-configured
@@ -162,7 +168,8 @@ builder.Services.AddSingleton<ScoreStreamPipeline>(sp => new ScoreStreamPipeline
     sp.GetService<IRecentAnomaliesCache>(),
     sp.GetService<IInfluxDataSource>(),
     sp.GetService<IBatchDetectorClient>(),
-    sp.GetRequiredService<ConnectionSettings>()));
+    sp.GetRequiredService<ConnectionSettings>(),
+    sp.GetRequiredService<AlertStateStore>()));
 
 // Register ConfigWriter (Plan 02): atomic /data/entities.yaml write seam (temp-then-rename + SemaphoreSlim)
 builder.Services.AddSingleton<Argus.Orchestrator.Config.ConfigWriter>();
@@ -316,6 +323,12 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
             warmedUp = status?.WarmedUp,
             readingCount = status?.ReadingCount,
             warmUpWindow = status?.WarmUpWindow,
+            // WS2 (A14): alert-layer calibration/state. Additive JSON — the SPA's types.ts
+            // ignores unknown fields, so no client change is required to ship this.
+            calibrated = status?.Calibrated,
+            calibrationCount = status?.CalibrationCount,
+            calibrationTarget = status?.CalibrationTarget,
+            alertState = status?.AlertState,
         };
     });
 
