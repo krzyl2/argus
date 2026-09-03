@@ -276,6 +276,39 @@ public class HaRecorderHistorySourceTests
     }
 
     [Fact]
+    public void HistoryRequest_DisablesStartTimeState_AndAsksForOneEntity()
+    {
+        // D-K pins the wire payload, and include_start_time_state is the one flag whose DEFAULT is
+        // wrong for us: HA defaults it to true and then prepends a synthetic row stamped at
+        // start_time carrying whatever the entity held before the window opened. History is walked
+        // in 24 h slices (SliceHours), so on the default every slice boundary would hand back one
+        // such row - a copy of the neighbouring slice's reading - and an 8 d backfill would prime
+        // the baseline with ~8 fabricated points. They sit inside the F12 tolerance (+/-20), so
+        // nothing fails loudly; the median/MAD just quietly gets data HA invented.
+        var request = HaWebSocketClient.BuildHistoryRequest(
+            7, "sensor.lodowkababcia_power",
+            new DateTimeOffset(2026, 8, 27, 5, 18, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 9, 3, 12, 0, 0, TimeSpan.Zero));
+
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(request));
+        var root = doc.RootElement;
+
+        Assert.False(root.GetProperty("include_start_time_state").GetBoolean());
+        Assert.Equal("history/history_during_period", root.GetProperty("type").GetString());
+        Assert.True(root.GetProperty("minimal_response").GetBoolean());
+        Assert.True(root.GetProperty("no_attributes").GetBoolean());
+        Assert.False(root.GetProperty("significant_changes_only").GetBoolean());
+        Assert.Equal(7, root.GetProperty("id").GetInt32());
+
+        // One entity per command, asserted in the payload itself - the 4 MB frame cap turns a
+        // batched request into a whole-query loss, not a truncation (OneCommandPerEntity covers
+        // the calling side).
+        var ids = root.GetProperty("entity_ids");
+        Assert.Equal(1, ids.GetArrayLength());
+        Assert.Equal("sensor.lodowkababcia_power", ids[0].GetString());
+    }
+
+    [Fact]
     public void HistorySourceRegistered_WhenInfluxUrlNull()
     {
         // F11: influx_url is empty on the operator's install, so before WS5 the container resolved

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Net.WebSockets;
 using System.Text.Json;
 
@@ -179,11 +179,19 @@ internal sealed class HaWebSocketClient : IAsyncDisposable, IHaHistoryConnection
     /// The response field shape is LOW-confidence (never exercised against a live HA in this
     /// repo) — parsing is the caller's job and is deliberately defensive there.
     /// </summary>
-    public async Task<JsonElement> GetHistoryAsync(
-        string entityId, DateTimeOffset start, DateTimeOffset end, CancellationToken ct)
-    {
-        var id = Interlocked.Increment(ref _id);
-        await SendAsync(new
+    /// <summary>
+    /// Builds the history/history_during_period request. Extracted from the send path so the
+    /// wire contract from D-K is assertable without a live socket.
+    ///
+    /// <c>include_start_time_state = false</c> is load-bearing, not decoration: HA defaults it to
+    /// TRUE and then synthesises an extra row AT <c>start_time</c> carrying the state the entity
+    /// already held before the window opened. History is walked in 24 h slices, so with the
+    /// default every slice boundary would hand back one such row — a copy of the neighbouring
+    /// slice's reading, stamped at the boundary — quietly inflating the primed baseline by one
+    /// fabricated point per slice.
+    /// </summary>
+    internal static object BuildHistoryRequest(
+        int id, string entityId, DateTimeOffset start, DateTimeOffset end) => new
         {
             id,
             type = "history/history_during_period",
@@ -193,7 +201,14 @@ internal sealed class HaWebSocketClient : IAsyncDisposable, IHaHistoryConnection
             minimal_response = true,
             no_attributes = true,
             significant_changes_only = false,
-        }, ct).ConfigureAwait(false);
+            include_start_time_state = false,
+        };
+
+    public async Task<JsonElement> GetHistoryAsync(
+        string entityId, DateTimeOffset start, DateTimeOffset end, CancellationToken ct)
+    {
+        var id = Interlocked.Increment(ref _id);
+        await SendAsync(BuildHistoryRequest(id, entityId, start, end), ct).ConfigureAwait(false);
 
         while (true)
         {
