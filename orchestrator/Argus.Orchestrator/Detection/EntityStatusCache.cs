@@ -16,7 +16,19 @@ public sealed record EntityStatusEntry(
     bool Calibrated = false,
     int CalibrationCount = 0,
     int CalibrationTarget = 0,
-    string AlertState = "");
+    string AlertState = "",
+    // WS3 (D-E, F6-2): the calibrated band in the SENSOR'S OWN units, taken from
+    // Verdict.expected/lower/upper (already on the wire — proto unchanged). This is what makes
+    // one dimensionless threshold legible: the same high_threshold 0.5 renders as
+    // "Norma: 107 W · alarm poza 92–122 W" on one sensor and a completely different band on
+    // the next. Null before the first verdict — the UI must show "calibrating", never a
+    // fabricated band.
+    double? CalibratedExpected = null,
+    double? CalibratedLower = null,
+    double? CalibratedUpper = null,
+    // Measured wall-clock spacing between readings, so the UI can turn a window in SAMPLES
+    // into a span in hours (§7 #14: 720 samples is ~3 h on one sensor and ~78 h on another).
+    double? MedianIntervalSec = null);
 
 /// <summary>
 /// In-memory last-status cache backing GET /api/sensors's per-entity warm-up projection

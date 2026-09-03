@@ -55,6 +55,11 @@ public class SensorsEndpointJsonTests
     {
         var trackedIds = SensorTracking.TrackedIds(config);
 
+        // D-N: same single-pass dictionary the handler builds outside the Select.
+        var configuredById = config.Entities
+            .GroupBy(x => x.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
         return entries.Select(e =>
         {
             var showFriendlyName = !string.IsNullOrEmpty(e.FriendlyName) &&
@@ -62,6 +67,7 @@ public class SensorsEndpointJsonTests
 
             var tracked = trackedIds.Contains(e.EntityId);
             var status = tracked ? cache?.Get(e.EntityId) : null;
+            configuredById.TryGetValue(e.EntityId, out var configured);
 
             return new
             {
@@ -70,6 +76,13 @@ public class SensorsEndpointJsonTests
                 currentValue = e.CurrentValue.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
                 unitOfMeasurement = e.UnitOfMeasurement,
                 isTracked = tracked,
+                detectors = tracked && configured is not null
+                    ? configured.Detectors.Select(d => new { name = d.Name, @params = d.Params }).ToList()
+                    : null,
+                calibratedExpected = status?.CalibratedExpected,
+                calibratedLower = status?.CalibratedLower,
+                calibratedUpper = status?.CalibratedUpper,
+                medianIntervalSec = status?.MedianIntervalSec,
                 warmedUp = status?.WarmedUp,
                 readingCount = status?.ReadingCount,
                 warmUpWindow = status?.WarmUpWindow,
@@ -312,5 +325,123 @@ public class SensorsEndpointJsonTests
         Assert.Null(result[0].warmedUp);
         Assert.Null(result[0].readingCount);
         Assert.Null(result[0].warmUpWindow);
+    }
+
+    // -----------------------------------------------------------------------
+    // D-N: saved detectors round-trip, and the calibrated band
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Without this projection the editor has nothing to hydrate from and seeds a fresh default
+    /// block instead. Because save() replaces the ENTIRE entities list, the first Save from any
+    /// screen -- including the pattern textareas in Settings -- would then write those defaults
+    /// back over every tracked sensor. That is how a one-way migration silently reverts on the
+    /// first click, so this projection is a prerequisite of the migration, not a nicety.
+    /// </summary>
+    [Fact]
+    public void TrackedEntity_Projection_ReturnsSavedDetectorsAndParams()
+    {
+        var registry = new FakeRegistry(MakeEntry("sensor.load_5m", isTracked: true));
+        var tuned = new Dictionary<string, string>(DetectorDefaults.Get("rmad")!)
+        {
+            ["window"] = "240",
+            ["high_threshold"] = "0.615",
+        };
+        var config = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig
+                {
+                    EntityId = "sensor.load_5m",
+                    FriendlyName = "",
+                    Detectors = [new DetectorConfig { Name = "rmad", Params = tuned }],
+                }
+            ],
+        };
+
+        var result = ProjectEntries(registry.GetFiltered(""), config).Cast<dynamic>().ToList();
+
+        var detectors = result[0].detectors;
+        Assert.NotNull(detectors);
+        Assert.Single(detectors);
+        Assert.Equal("rmad", (string)detectors[0].name);
+        // The TUNED values, not the defaults -- that is the whole point.
+        Assert.Equal("240", (string)detectors[0].@params["window"]);
+        Assert.Equal("0.615", (string)detectors[0].@params["high_threshold"]);
+    }
+
+    [Fact]
+    public void UntrackedEntity_Projection_ReturnsNullDetectors()
+    {
+        var registry = new FakeRegistry(MakeEntry("sensor.load_5m", isTracked: true));
+
+        var result = ProjectEntries(registry.GetFiltered(""), new EntitiesConfig()).Cast<dynamic>().ToList();
+
+        Assert.Null(result[0].detectors);
+    }
+
+    /// <summary>
+    /// F6-2: the same dimensionless threshold must read as a DIFFERENT band in each sensor own
+    /// units, or the operator has no way to judge whether 0.5 is right there. The numbers are
+    /// the worked example: median 107 W, MAD 2 W, sigma 1.4826*2 = 2.965, z = 5 gives 92..122 W.
+    /// </summary>
+    [Fact]
+    public void CalibratedBand_IsProjectedFromStatusCache()
+    {
+        var registry = new FakeRegistry(MakeEntry("sensor.zamrazarkapiwnica_power", isTracked: true));
+        var config = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig
+                {
+                    EntityId = "sensor.zamrazarkapiwnica_power",
+                    FriendlyName = "",
+                    Detectors = [new DetectorConfig { Name = "rmad", Params = [] }],
+                }
+            ],
+        };
+        var cache = new EntityStatusCache();
+        cache.Set(new EntityStatusEntry(
+            "sensor.zamrazarkapiwnica_power", WarmedUp: true, ReadingCount: 720, WarmUpWindow: 60,
+            CalibratedExpected: 107.0, CalibratedLower: 92.0, CalibratedUpper: 122.0,
+            MedianIntervalSec: 384.0));
+
+        var result = ProjectEntries(registry.GetFiltered(""), config, cache).Cast<dynamic>().ToList();
+
+        Assert.Equal(107.0, (double)result[0].calibratedExpected);
+        Assert.Equal(92.0, (double)result[0].calibratedLower);
+        Assert.Equal(122.0, (double)result[0].calibratedUpper);
+        Assert.Equal(384.0, (double)result[0].medianIntervalSec);
+    }
+
+    /// <summary>
+    /// Before the first verdict there is no band. The projection must pass the nulls through
+    /// unchanged so the UI can say "calibrating" -- a zero or an invented band would read as a
+    /// measured statement about a sensor nothing has measured yet.
+    /// </summary>
+    [Fact]
+    public void CalibratedBand_BeforeFirstVerdict_IsNull()
+    {
+        var registry = new FakeRegistry(MakeEntry("sensor.load_5m", isTracked: true));
+        var config = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig
+                {
+                    EntityId = "sensor.load_5m", FriendlyName = "",
+                    Detectors = [new DetectorConfig { Name = "rmad", Params = [] }],
+                }
+            ],
+        };
+
+        var result = ProjectEntries(registry.GetFiltered(""), config, new EntityStatusCache())
+            .Cast<dynamic>().ToList();
+
+        Assert.Null(result[0].calibratedExpected);
+        Assert.Null(result[0].calibratedLower);
+        Assert.Null(result[0].calibratedUpper);
     }
 }

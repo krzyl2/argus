@@ -19,7 +19,42 @@ var builder = WebApplication.CreateBuilder(args);
 var entitiesPath = builder.Configuration["ARGUS_ENTITIES_PATH"] ?? "entities.yaml";
 var entitiesLoggerFactory = LoggerFactory.Create(b => b.AddConsole());
 var entitiesLogger = entitiesLoggerFactory.CreateLogger<EntitiesConfigLoader>();
+// D-L: one-shot schema_version 2 migration, BEFORE the first Load. It runs here — ahead of DI,
+// ahead of the HA snapshot — because every later reader must already see the migrated shape;
+// the cost is that no unit_of_measurement is available for D-I, which the migrator says out loud.
+//
+// The pre-migration entity list is captured first and, if (and only if) a migration actually
+// happened, handed to MqttPublisherWorker so it can retract the retained discovery configs
+// those entities published under the OLD detector-scoped unique_id (D-G). Without that, HA
+// keeps a second, orphaned entity per sensor fed by the same argus/{slug}/flag/state topic.
+var preMigrationEntities = TryReadEntitiesQuietly(entitiesPath);
+var didMigrate = EntitiesSchemaMigrator.MigrateIfNeeded(entitiesPath, entitiesLogger);
+builder.Services.AddSingleton(didMigrate
+    ? new LegacyDiscoveryRetraction(preMigrationEntities)
+    : LegacyDiscoveryRetraction.None);
+
 var entitiesConfig = EntitiesConfigLoader.Load(entitiesPath, entitiesLogger);
+
+// Best-effort read used ONLY to reconstruct old discovery ids. A config too broken to load is
+// not a startup failure here — EntitiesConfigLoader.Load below is the real gate, and it fails
+// loud on its own terms rather than as a confusing error from a retraction helper.
+static IReadOnlyList<EntityConfig> TryReadEntitiesQuietly(string path)
+{
+    try
+    {
+        if (!File.Exists(path)) return Array.Empty<EntityConfig>();
+        var deserializer = new DeserializerBuilder()
+            .WithNamingConvention(UnderscoredNamingConvention.Instance)
+            .IgnoreUnmatchedProperties()
+            .Build();
+        return deserializer.Deserialize<EntitiesConfig>(File.ReadAllText(path))?.Entities
+            ?? (IReadOnlyList<EntityConfig>)Array.Empty<EntityConfig>();
+    }
+    catch
+    {
+        return Array.Empty<EntityConfig>();
+    }
+}
 // CFG-04: wrap raw EntitiesConfig in ILiveEntitiesConfig singleton so all consumers
 // read the current reference and react to ConfigChanged (Plan 03-02 DI migration).
 var liveConfig = new LiveEntitiesConfig(entitiesConfig);
@@ -312,6 +347,15 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
     // reconnect and is not reconciled by Swap — see SensorTracking.cs.
     var trackedIds = SensorTracking.TrackedIds(liveCfg.Get());
 
+    // D-N: the saved detector list must round-trip to the editor. Built ONCE, outside the
+    // Select — a per-row lookup over liveCfg.Entities would be O(n*m) across ~400 entities.
+    // Without this the editor seeds a fresh default block on every load and the first Save
+    // from ANY screen (including the pattern textareas in Settings) writes those defaults back
+    // over every tracked sensor — i.e. it silently undoes the migration.
+    var configuredById = liveCfg.Get().Entities
+        .GroupBy(x => x.EntityId, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
     var payload = entries.Select(e =>
     {
         // Friendly name: only surfaced when present and differs from entity_id (exact v3.0 rule)
@@ -324,6 +368,8 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
         // received its first reading (pipeline hasn't scored it — acceptable MVP behavior).
         var status = tracked ? statusCache.Get(e.EntityId) : null;
 
+        configuredById.TryGetValue(e.EntityId, out var configured);
+
         return new
         {
             entityId = e.EntityId,
@@ -333,6 +379,17 @@ app.MapGet("/api/sensors", (HttpRequest req, IHaSensorRegistry registry, ILiveEn
             isTracked = tracked,
             areaName = e.AreaName,
             domain = e.Domain,
+            // D-N: name + params exactly as stored, so the editor hydrates from disk.
+            detectors = tracked && configured is not null
+                ? configured.Detectors.Select(d => new { name = d.Name, @params = d.Params }).ToList()
+                : null,
+            // D-E/F6-2: the calibrated band in the SENSOR'S OWN units, so one dimensionless
+            // threshold reads differently (and correctly) on every sensor. Null until the first
+            // verdict — the UI must degrade to "calibrating", never invent a band.
+            calibratedExpected = status?.CalibratedExpected,
+            calibratedLower = status?.CalibratedLower,
+            calibratedUpper = status?.CalibratedUpper,
+            medianIntervalSec = status?.MedianIntervalSec,
             warmedUp = status?.WarmedUp,
             readingCount = status?.ReadingCount,
             warmUpWindow = status?.WarmUpWindow,
@@ -357,6 +414,19 @@ app.MapGet("/api/detectors/defaults", (HttpRequest req) =>
     if (!IsAuthorizedRequest(req.HttpContext)) return Results.StatusCode(403);
 
     var name = (req.Query["name"].FirstOrDefault() ?? "").ToLowerInvariant();
+
+    // No ?name= — the whole table plus the single-sensor sensitivity presets, in one request.
+    // WR-02 is withdrawn: the SPA no longer mirrors these numbers, it fetches them, so
+    // DetectorDefaults.cs is the single source of truth for both sides.
+    if (name.Length == 0)
+    {
+        return Results.Json(new
+        {
+            defaults = DetectorDefaults.All(),
+            presets = new { rmad = SensorPresets.Get("rmad") },
+        });
+    }
+
     var defaults = DetectorDefaults.Get(name);
 
     if (defaults is null) return Results.StatusCode(400);
@@ -453,9 +523,11 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
                 snapshotById.TryGetValue(id, out var entry);
 
                 // Get detector list for this entity index; default to HST if empty (Pitfall 7 / CFG-03)
+                // D-A: rmad is the default detector for a newly tracked entity. Empty params
+                // means "use all defaults", which RmadParams.From and DetectorDefaults agree on.
                 var detectors = parsedDetectors.TryGetValue(ei, out var dets) && dets.Count > 0
                     ? dets
-                    : [new DetectorConfig { Name = "hst", Params = [] }];
+                    : [new DetectorConfig { Name = "rmad", Params = [] }];
 
                 return new EntityConfig
                 {
@@ -486,8 +558,13 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         // still holds the pre-save config here (Swap happens below), so its Groups are the
         // current on-disk groups. Symmetric with /api/groups/save (Program.cs:521-556), which
         // preserves entities:/_patterns: the same way.
+        // D-L: schema_version FIRST and on BOTH writers. If either writer omitted it, the next
+        // save would strip the stamp and the migrator would rewrite the file on every boot —
+        // and every rewrite is a rename, i.e. a ConfigFileWatcherService Swap that resets every
+        // entity's alert gate.
         var root = new Dictionary<string, object>
         {
+            ["schema_version"] = EntitiesSchemaMigrator.TargetSchemaVersion,
             ["_patterns"] = patternsMap,
             ["entities"] = entities,
             ["groups"] = liveCfg.Get().Groups,
@@ -518,10 +595,12 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         logger.LogInformation(LogEvents.UiSaveSuccess,
             "UI save succeeded: {EntityCount} entities written to {Path}", entities.Count, entitiesPath);
 
-        // SC5: pass real hasHst so the ~4-min warm-up note renders when HST detectors are present.
-        var hasHst = entities.Any(e => e.Detectors.Any(
-            d => d.Name.Equals("hst", StringComparison.OrdinalIgnoreCase)));
-        return Results.Json(new { ok = true, count = entities.Count, hasHst });
+        // SC5: the warm-up note renders for any STREAMING detector, not hst alone — rmad warms
+        // up too (min_samples), and after the migration hst is the exception, not the rule.
+        var hasStreaming = entities.Any(e => e.Detectors.Any(
+            d => d.Name.Equals("rmad", StringComparison.OrdinalIgnoreCase) ||
+                 d.Name.Equals("hst", StringComparison.OrdinalIgnoreCase)));
+        return Results.Json(new { ok = true, count = entities.Count, hasStreaming });
     }
     catch (Exception ex)
     {
@@ -628,8 +707,10 @@ app.MapPost("/api/groups/save", async (HttpRequest req, IHaSensorRegistry regist
                 existingPatterns = patternsObj;
         }
 
+        // D-L: the groups writer stamps schema_version too — see /api/sensors/save above.
         var root = new Dictionary<string, object>
         {
+            ["schema_version"] = EntitiesSchemaMigrator.TargetSchemaVersion,
             ["_patterns"] = existingPatterns,
             ["entities"] = currentConfig.Entities,
             ["groups"] = groups,

@@ -23,6 +23,7 @@ public sealed class MqttPublisherWorker : BackgroundService
     private readonly StatePublisher _statePublisher;
     private readonly ILiveEntitiesConfig _liveConfig;
     private readonly ILogger<MqttPublisherWorker> _logger;
+    private readonly LegacyDiscoveryRetraction _legacyRetraction;
 
     // Stored stoppingToken used in the ConfigChanged fire-and-forget handler.
     // Set at ExecuteAsync entry before the ConfigChanged subscription.
@@ -45,12 +46,16 @@ public sealed class MqttPublisherWorker : BackgroundService
         MqttConnection mqtt,
         StatePublisher statePublisher,
         ILiveEntitiesConfig liveConfig,
-        ILogger<MqttPublisherWorker> logger)
+        ILogger<MqttPublisherWorker> logger,
+        LegacyDiscoveryRetraction? legacyRetraction = null)
     {
         _mqtt = mqtt ?? throw new ArgumentNullException(nameof(mqtt));
         _statePublisher = statePublisher ?? throw new ArgumentNullException(nameof(statePublisher));
         _liveConfig = liveConfig ?? throw new ArgumentNullException(nameof(liveConfig));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        // Optional so the existing construction sites keep compiling; "none pending" is the
+        // correct default on every boot except the first one after a schema-2 migration.
+        _legacyRetraction = legacyRetraction ?? LegacyDiscoveryRetraction.None;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -138,6 +143,20 @@ public sealed class MqttPublisherWorker : BackgroundService
 
         try
         {
+            // D-G: retract the PRE-migration, detector-scoped retained discovery configs FIRST.
+            // Order matters: the new configs published below carry detector-agnostic ids, so
+            // doing this afterwards would be racing the broker to delete a config HA may already
+            // have turned into a duplicate entity on the same state topic.
+            if (_legacyRetraction.IsPending)
+            {
+                await DiscoveryPublisher.RetractLegacyDetectorScopedAsync(
+                    _mqtt, _legacyRetraction.Entities, stoppingToken);
+                _logger.LogInformation(LogEvents.MqttDiscoveryPublished,
+                    "Retracted legacy detector-scoped discovery for {Count} pre-migration entities "
+                    + "(entity_id changes once; see argus/CHANGELOG.md)",
+                    _legacyRetraction.Entities.Count);
+            }
+
             // Publish retained discovery configs for all entities (MQTT-01/03/04)
             await DiscoveryPublisher.PublishAllAsync(_mqtt, _liveConfig.Get().Entities, stoppingToken);
             _logger.LogInformation(LogEvents.MqttDiscoveryPublished,

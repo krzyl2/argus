@@ -15,6 +15,12 @@ public static class LogEvents
     public static readonly EventId GroupConfigLoaded = new(1004, nameof(GroupConfigLoaded));
     public static readonly EventId GroupRejected = new(1005, nameof(GroupRejected));
 
+    // entities.yaml schema migration (D-L)
+    public static readonly EventId EntityConfigMigrated = new(1006, nameof(EntityConfigMigrated));
+    public static readonly EventId EntityConfigMigrationTuned = new(1007, nameof(EntityConfigMigrationTuned));
+    public static readonly EventId EntityConfigMigrationRefused = new(1008, nameof(EntityConfigMigrationRefused));
+    public static readonly EventId EntityConfigMigrationFailed = new(1009, nameof(EntityConfigMigrationFailed));
+
     // gRPC channel
     public static readonly EventId ChannelEstablished = new(2001, nameof(ChannelEstablished));
     public static readonly EventId ChannelFailed = new(2002, nameof(ChannelFailed));

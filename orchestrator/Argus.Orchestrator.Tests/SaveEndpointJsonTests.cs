@@ -12,7 +12,7 @@ namespace Argus.Orchestrator.Tests;
 /// form-encoded + HTML-banner tests). Exercises the same pipeline Program.cs's handler
 /// runs (GlobExpander.Resolve -> InputValidator.Validate -> EntityConfig build -> YAML
 /// serialize -> ConfigWriter.WriteAsync -> EntitiesConfigLoader.Load -> liveCfg.Swap),
-/// asserting on the { ok, count, hasHst } / { ok:false, kind, ... } JSON discriminant shape
+/// asserting on the { ok, count, hasStreaming } / { ok:false, kind, ... } JSON discriminant shape
 /// instead of HTML banner strings. Fully offline — no HTTP server needed.
 /// </summary>
 public class SaveEndpointJsonTests
@@ -106,16 +106,16 @@ public class SaveEndpointJsonTests
             Exclude = "",
         };
 
-        var (ok, kind, count, hasHst, errorCount) = await RunSavePipelineAsync(registry, body);
+        var (ok, kind, count, hasStreaming, errorCount) = await RunSavePipelineAsync(registry, body);
 
         Assert.True(ok);
         Assert.Null(kind);
         Assert.Equal(1, count);
-        Assert.True(hasHst);
+        Assert.True(hasStreaming);
     }
 
     [Fact]
-    public async Task SavePipeline_MadOnlyEntity_ProducesSuccessResultWithHasHstFalse()
+    public async Task SavePipeline_MadOnlyEntity_ProducesSuccessResultWithHasStreamingFalse()
     {
         var registry = new FakeRegistry(MakeEntry("sensor.outdoor_humidity"));
         var body = new SaveRequest
@@ -130,11 +130,11 @@ public class SaveEndpointJsonTests
             ],
         };
 
-        var (ok, kind, count, hasHst, _) = await RunSavePipelineAsync(registry, body);
+        var (ok, kind, count, hasStreaming, _) = await RunSavePipelineAsync(registry, body);
 
         Assert.True(ok);
         Assert.Equal(1, count);
-        Assert.False(hasHst);
+        Assert.False(hasStreaming);
     }
 
     // -----------------------------------------------------------------------
@@ -383,7 +383,7 @@ public class SaveEndpointJsonTests
     // Pipeline harness — mirrors Program.cs's POST /api/sensors/save handler
     // -----------------------------------------------------------------------
 
-    private static async Task<(bool ok, string? kind, int count, bool hasHst, int errorCount)> RunSavePipelineAsync(
+    private static async Task<(bool ok, string? kind, int count, bool hasStreaming, int errorCount)> RunSavePipelineAsync(
         IHaSensorRegistry registry, SaveRequest body, string? entitiesPathOverride = null,
         LiveEntitiesConfig? liveCfg = null)
     {
@@ -421,7 +421,7 @@ public class SaveEndpointJsonTests
                 snapshotById.TryGetValue(id, out var entry);
                 var detectors = parsedDetectors.TryGetValue(ei, out var dets) && dets.Count > 0
                     ? dets
-                    : [new DetectorConfig { Name = "hst", Params = [] }];
+                    : [new DetectorConfig { Name = "rmad", Params = [] }];
                 return new EntityConfig { EntityId = id, FriendlyName = entry?.FriendlyName ?? "", Detectors = detectors };
             })
             .ToList();
@@ -433,6 +433,7 @@ public class SaveEndpointJsonTests
                 .Build();
             var root = new Dictionary<string, object>
             {
+                ["schema_version"] = EntitiesSchemaMigrator.TargetSchemaVersion,
                 ["_patterns"] = new Dictionary<string, object> { ["include"] = include.ToList(), ["exclude"] = exclude.ToList() },
                 ["entities"] = entities,
                 ["groups"] = liveCfg is not null ? liveCfg.Get().Groups : new List<GroupConfig>(),
@@ -450,7 +451,9 @@ public class SaveEndpointJsonTests
             }
         }
 
-        var hasHst = entities.Any(e => e.Detectors.Any(d => d.Name.Equals("hst", StringComparison.OrdinalIgnoreCase)));
-        return (true, null, entities.Count, hasHst, 0);
+        var hasStreaming = entities.Any(e => e.Detectors.Any(
+            d => d.Name.Equals("rmad", StringComparison.OrdinalIgnoreCase) ||
+                 d.Name.Equals("hst", StringComparison.OrdinalIgnoreCase)));
+        return (true, null, entities.Count, hasStreaming, 0);
     }
 }

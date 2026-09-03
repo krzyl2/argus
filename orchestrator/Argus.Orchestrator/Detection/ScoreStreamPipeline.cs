@@ -255,7 +255,12 @@ public sealed class ScoreStreamPipeline
         _statusCache?.Set(new EntityStatusEntry(
             reading.EntityId, entityState.WarmedUp, entityState.ReadingCount, entityState.WarmUpWindow,
             entityState.Alert.Calibrated, entityState.Alert.SampleCount,
-            entityState.AlertParams.AlertMinSamples, entityState.Alert.State));
+            entityState.AlertParams.AlertMinSamples, entityState.Alert.State,
+            // WS3/D-E: the detector already puts its band on the wire (Verdict.expected/lower/
+            // upper). Carrying it through unchanged — nulls included — is what lets the editor
+            // render the threshold in the sensor's own units instead of a bare 0.5, and what
+            // keeps it honest before the first band exists.
+            verdict.Expected, verdict.Lower, verdict.Upper));
 
         // F8: publish ONLY on a transition. The cooldown (D-07) still blocks the publish itself.
         bool published = false;
