@@ -527,6 +527,47 @@ public class ScoreStreamPipelineTests
         Assert.False(entry.WarmedUp);
     }
 
+    // ─── Test 6b: F6-3 — measured cadence reaches the status cache ───────────
+
+    [Fact]
+    public async Task RunAsync_MeasuresReadingCadence_AndPublishesItOnTheStatusCache()
+    {
+        // F6-3: window is configured in SAMPLES. Without a measured cadence on the entry the
+        // editor degrades to the bare number and the operator cannot see that the SAME
+        // window: 720 is ~78 h of baseline on this sensor. The gap this pins is that the two
+        // halves existed but were never joined: the write loop is the only place a real HA
+        // timestamp exists, and the status cache is written from the verdict read loop.
+        var fakeCall = new OrderTrackingDuplexCall(new List<string>()); // yields zero verdicts
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var cache = new EntityStatusCache();
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), statusCache: cache);
+        var entityState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+
+        using var cts = new CancellationTokenSource();
+        // lodowkababcia_power's measured spacing: 391 s between readings.
+        var t0 = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var readings = AsyncEnumerableHelper.FromItems(
+            Enumerable.Range(0, 9).Select(i => new HaReading("sensor.test", 100.0 + i, t0.AddSeconds(391.0 * i), false)),
+            cancellationToken: cts.Token);
+
+        await pipeline.RunAsync(fakeCall, "sensor.test", readings, entityState, cts.Token);
+
+        // The verdict read loop is what writes the cache — the cadence must survive the hop.
+        await pipeline.ProcessVerdictAsync(
+            MakeReading("sensor.test"),
+            MakeVerdict("sensor.test", score: 0.1, warmedUp: true, nSeen: 720, window: 720),
+            entityState,
+            CancellationToken.None);
+
+        var entry = cache.Get("sensor.test");
+        Assert.NotNull(entry);
+        Assert.NotNull(entry!.MedianIntervalSec);
+        Assert.Equal(391.0, entry.MedianIntervalSec!.Value, 3);
+        // 720 samples at that cadence is 78 h, i.e. past the 48 h the editor warns on.
+        Assert.True(720 * entry.MedianIntervalSec!.Value / 3600.0 > 48.0);
+    }
+
     // ─── Test 7: D-01 — restored-warm entity is not re-suppressed after restart ─
 
     [Fact]

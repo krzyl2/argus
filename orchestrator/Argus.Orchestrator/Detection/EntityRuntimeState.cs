@@ -99,6 +99,14 @@ public sealed class EntityRuntimeState
     public bool SuppressBinarySensor { get; set; }
 
     /// <summary>
+    /// Measured spacing between this entity's readings (F6-3). Fed from the write loop, which
+    /// is the only place a real HaReading timestamp exists — the verdict read loop builds a
+    /// synthetic HaReading stamped DateTimeOffset.UtcNow, so observing there would measure the
+    /// detector's response time instead of the sensor's cadence.
+    /// </summary>
+    public ReadingCadence Cadence { get; } = new();
+
+    /// <summary>
     /// Creates per-entity state from resolved HST params.
     /// <paramref name="alertParams"/> and <paramref name="alert"/> are optional so the 37 existing
     /// construction sites keep compiling; production passes the store-owned policy so calibration

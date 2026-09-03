@@ -178,6 +178,11 @@ public sealed class ScoreStreamPipeline
             entityState.FrozenDetector.AddReading(reading.Value);
             entityState.SuppressBinarySensor = reading.SuppressBinarySensor;
 
+            // F6-3: measure the sensor's own cadence here, from the reading's HA timestamp.
+            // window is configured in SAMPLES, so without this the editor cannot tell the
+            // operator whether 720 samples is 3 h of baseline or 78 h.
+            entityState.Cadence.Observe(reading.LastChanged);
+
             // WS2: the raw-evidence channel is fed HERE, from the real reading value. The
             // verdict read loop only ever sees the synthetic HaReading below (value 0.0), so
             // moving ObserveValue there would compute every z-score against a constant zero.
@@ -260,7 +265,8 @@ public sealed class ScoreStreamPipeline
             // upper). Carrying it through unchanged — nulls included — is what lets the editor
             // render the threshold in the sensor's own units instead of a bare 0.5, and what
             // keeps it honest before the first band exists.
-            verdict.Expected, verdict.Lower, verdict.Upper));
+            verdict.Expected, verdict.Lower, verdict.Upper,
+            entityState.Cadence.MedianIntervalSec));
 
         // F8: publish ONLY on a transition. The cooldown (D-07) still blocks the publish itself.
         bool published = false;
@@ -320,7 +326,8 @@ public sealed class ScoreStreamPipeline
         _statusCache?.Set(new EntityStatusEntry(
             reading.EntityId, entityState.WarmedUp, entityState.ReadingCount, entityState.WarmUpWindow,
             Calibrated: entityState.WarmedUp, CalibrationCount: entityState.ReadingCount,
-            CalibrationTarget: entityState.WarmUpWindow, AlertState: "legacy"));
+            CalibrationTarget: entityState.WarmUpWindow, AlertState: "legacy",
+            MedianIntervalSec: entityState.Cadence.MedianIntervalSec));
 
         bool isAnomalous = entityState.Hysteresis.Apply(score);
 
