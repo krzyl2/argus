@@ -270,10 +270,12 @@ public sealed class ScoreStreamPipeline
 
         // F8: publish ONLY on a transition. The cooldown (D-07) still blocks the publish itself.
         bool published = false;
-        if (!reading.SuppressBinarySensor && entityState.Alert.LastPublishedFlag != decision.FlagOn)
+        // TryClaimFlagPublish, not a read + a write: PublishFrozenAsync runs the same
+        // compare-then-set on the WRITE loop, and interleaved the two could agree that neither
+        // has to publish the OFF (see AlertPolicy.TryClaimFlagPublish).
+        if (!reading.SuppressBinarySensor && entityState.Alert.TryClaimFlagPublish(decision.FlagOn))
         {
             await _publisher.PublishFlagAsync(reading.EntityId, decision.FlagOn, ct);
-            entityState.Alert.LastPublishedFlag = decision.FlagOn;
             published = true;
         }
 
@@ -373,11 +375,8 @@ public sealed class ScoreStreamPipeline
         // (F8): repeating ON on every frozen reading was ~4 publishes per 15 s per entity.
         // The invariant this path exists for — a frozen entity whose detector emits no verdict
         // still gets a flag — is preserved; only the repetition is gone.
-        if (entityState.Alert.LastPublishedFlag != true)
-        {
+        if (entityState.Alert.TryClaimFlagPublish(true))
             await _publisher.PublishFlagAsync(entityId, on: true, ct);
-            entityState.Alert.LastPublishedFlag = true;
-        }
 
         // Sensor is present and reporting (just frozen), so availability stays online
         await _publisher.PublishAvailabilityAsync(entityId, online: true, ct);

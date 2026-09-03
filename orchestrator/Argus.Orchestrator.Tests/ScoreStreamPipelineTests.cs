@@ -1226,6 +1226,43 @@ public class ScoreStreamPipelineTests
     {
         Assert.True(ScoreStreamPipeline.SupportsRmad);
     }
+
+    // ─── F1 again, by a new route: the two loops racing on the published flag ─
+
+    [Fact]
+    public async Task FlagPublish_WriteLoopInterleavedWithReadLoop_StillPublishesTheNextOff()
+    {
+        // The verdict read loop and the write loop (PublishFrozenAsync) both decide "publish or
+        // not" by comparing the flag they are about to send with the last one published. If that
+        // compare and the matching set are not ONE critical section, the write loop can publish
+        // ON and record it while the read loop — which compared before its own publish completed
+        // — then records its own OFF over the top. The policy is left believing OFF is what HA
+        // holds, so the NEXT genuine OFF is skipped as "unchanged", and the flag topic is
+        // retained: the ON stays in HA until something else moves it. That is F1 with a new
+        // mechanism, and this test is the only place the interleaving is forced.
+        var publisher = new GatedFlagPublisher();
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(FastAlertParams());
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        // Read loop: not warmed up → decision OFF, nothing published yet → publishes OFF and
+        // parks inside the broker call, exactly where the two loops can interleave.
+        var readLoop = pipeline.ProcessVerdictAsync(
+            MakeReading(suppress: false), MakeVerdict(score: 0.9), state, CancellationToken.None);
+        await publisher.FirstFlagInFlight;
+
+        // Write loop, concurrently: a frozen reading forces the flag ON.
+        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+
+        publisher.ReleaseFirstFlag();
+        await readLoop;
+
+        // The next verdict still says OFF. HA is holding a retained ON, so this OFF MUST go out.
+        await pipeline.ProcessVerdictAsync(
+            MakeReading(suppress: false), MakeVerdict(score: 0.9), state, CancellationToken.None);
+
+        Assert.Equal(new[] { false, true, false }, publisher.FlagHistory);
+    }
 }
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
@@ -1486,4 +1523,42 @@ internal static class AsyncEnumerableHelper
             yield return reading;
         await Task.CompletedTask;
     }
+}
+
+/// <summary>
+/// Publisher whose FIRST flag publish parks until the test releases it, so the interleaving of
+/// the verdict read loop and the write loop's PublishFrozenAsync can be reproduced exactly
+/// instead of being waited for.
+/// </summary>
+internal sealed class GatedFlagPublisher : IStatePublisher
+{
+    private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _flagCalls;
+
+    /// <summary>Every flag value published, in the order the publish was ISSUED.</summary>
+    public List<bool> FlagHistory { get; } = new();
+
+    /// <summary>Completes once the first flag publish is in flight and parked.</summary>
+    public Task FirstFlagInFlight => _entered.Task;
+
+    public void ReleaseFirstFlag() => _release.TrySetResult();
+
+    public async Task PublishFlagAsync(string entityId, bool on, CancellationToken ct)
+    {
+        bool first = Interlocked.Increment(ref _flagCalls) == 1;
+        lock (FlagHistory)
+            FlagHistory.Add(on);
+
+        if (first)
+        {
+            _entered.TrySetResult();
+            await _release.Task;
+        }
+    }
+
+    public Task PublishScoreAsync(string entityId, double score, CancellationToken ct) => Task.CompletedTask;
+    public Task PublishAvailabilityAsync(string entityId, bool online, CancellationToken ct) => Task.CompletedTask;
+    public Task PublishGroupFlagAsync(string groupId, string? memberId, bool on, CancellationToken ct) => Task.CompletedTask;
+    public Task PublishGroupScoreAsync(string groupId, string? memberId, double score, CancellationToken ct) => Task.CompletedTask;
 }

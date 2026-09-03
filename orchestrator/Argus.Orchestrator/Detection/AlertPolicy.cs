@@ -64,12 +64,57 @@ public sealed class AlertPolicy
         _raw = new RollingRobustZ(Math.Max(1, alertParams.RawWindow));
     }
 
+    private bool _flagPublished;
+    private bool _lastPublishedFlag;
+
     /// <summary>
     /// Last flag value actually published to MQTT for this entity, or null when nothing has been
     /// published yet. Read (not just written) by the pipeline so an unchanged flag is never
     /// republished — this is the whole of F8.
+    ///
+    /// Guarded by <see cref="_gate"/> like the rest of the class: a <c>bool?</c> is TWO fields
+    /// (has-value + value), so an unsynchronised write from the write loop
+    /// (<c>PublishFrozenAsync</c>) can be read torn by the verdict read loop. A torn
+    /// <c>(hasValue: true, value: false)</c> makes the read loop believe OFF was already
+    /// published and skip it — and the flag topic is retained, so HA keeps a retained ON that
+    /// nothing puts out. That is F1 with a new mechanism.
     /// </summary>
-    public bool? LastPublishedFlag { get; set; }
+    public bool? LastPublishedFlag
+    {
+        get { lock (_gate) return _flagPublished ? _lastPublishedFlag : null; }
+        set
+        {
+            lock (_gate)
+            {
+                _flagPublished = value.HasValue;
+                _lastPublishedFlag = value ?? false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Atomically claims the right to publish <paramref name="value"/>: returns true (and records
+    /// it) only when it differs from the last published flag.
+    ///
+    /// WHY a method and not a read followed by a write: the read loop and the write loop
+    /// (<c>PublishFrozenAsync</c>) both do compare-then-set on this field. Interleaved, the write
+    /// loop can publish ON and record it AFTER the read loop has already compared against the old
+    /// value and concluded that its OFF needs no publish — leaving a retained ON in HA against a
+    /// gate that says OFF. Making the compare and the set one critical section removes that
+    /// window; the claim is taken BEFORE the publish, so a lost claim is a skipped duplicate,
+    /// never a skipped transition.
+    /// </summary>
+    public bool TryClaimFlagPublish(bool value)
+    {
+        lock (_gate)
+        {
+            if (_flagPublished && _lastPublishedFlag == value)
+                return false;
+            _flagPublished = true;
+            _lastPublishedFlag = value;
+            return true;
+        }
+    }
 
     /// <summary>Verdicts observed since this policy was created.</summary>
     public int SampleCount { get { lock (_gate) return _samples; } }
