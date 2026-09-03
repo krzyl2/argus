@@ -26,7 +26,8 @@ namespace Argus.Orchestrator.Config;
 ///   ARGUS_NIGHTLY_FIT_HOUR    -> NightlyFitHour (default: 2)
 ///   ARGUS_BACKFILL_ENABLED    -> BackfillEnabled (default: true) — D-16: orchestrator-only,
 ///                                deliberately absent from argus/config.yaml and 10-config-gen.sh
-///   ARGUS_BACKFILL_LOOKBACK   -> BackfillLookback (default: "30d") — same as above
+///   ARGUS_BACKFILL_LOOKBACK   -> BackfillLookback (default: "8d") — same as above
+///   ARGUS_BACKFILL_ROW_CAP    -> BackfillRowCap (default: 5000, clamped 1..20000) — same as above
 /// </summary>
 public class ConnectionSettings
 {
@@ -69,5 +70,18 @@ public class ConnectionSettings
     // the Python detector has no InfluxDB client (RESEARCH.md Pitfall 3). Defaults are
     // correct for the operator's deployment and are NOT surfaced in the add-on options UI.
     public bool BackfillEnabled { get; set; } = true;
-    public string BackfillLookback { get; set; } = "30d";
+
+    /// <summary>
+    /// WS5/D-K: 8 days, because the HA Recorder on this deployment keeps 7 (F12) and 8 covers the
+    /// boundary — asking for 30d returns the same 1546 rows for the reference sensor, at the cost
+    /// of walking 22 days of empty slices.
+    /// </summary>
+    public string BackfillLookback { get; set; } = "8d";
+
+    /// <summary>
+    /// WS5/D-K: ceiling on rows pulled per history query. Bounds both the gRPC Warmup message
+    /// (~57 B/Point, so 5000 rows is ~285 kB against an unconfigured 4 MB receive limit) and the
+    /// number of 24 h slices the Recorder walk issues. Consumers clamp to 1..20000.
+    /// </summary>
+    public int BackfillRowCap { get; set; } = 5000;
 }

@@ -85,6 +85,13 @@ public static class LogEvents
     public static readonly EventId WarmupSkipped            = new(5018, nameof(WarmupSkipped));
     public static readonly EventId WarmupFailed             = new(5019, nameof(WarmupFailed));
 
+    // WS5 — HA Recorder as the history source (D-K). HistoryFetched is the per-entity receipt
+    // that priming actually had data to work with; HistoryShort is the fail-loud line for an
+    // entity the Recorder cannot fill the baseline window for (Rule 12).
+    public static readonly EventId HistoryFetched           = new(5020, nameof(HistoryFetched));
+    public static readonly EventId HistoryFetchFailed       = new(5021, nameof(HistoryFetchFailed));
+    public static readonly EventId HistoryShort             = new(5022, nameof(HistoryShort));
+
     // Phase 8 UI — Group config UI + algorithm chooser (7009)
     public static readonly EventId GroupUiValidationBlocked = new(7009, nameof(GroupUiValidationBlocked));
 
