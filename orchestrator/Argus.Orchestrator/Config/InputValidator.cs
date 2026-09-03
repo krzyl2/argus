@@ -127,6 +127,110 @@ public static class InputValidator
         // frozen_variance_threshold: number ≥ 0
         if (!TryGetDouble(p, "frozen_variance_threshold", out var fvt) || fvt < 0.0)
             errors.Add("Must be 0 or greater.");
+
+        ValidateAlertKeys(p, errors);
+    }
+
+    /// <summary>
+    /// Validates the WS2 alert-layer keys, which share the HST params map.
+    ///
+    /// Every key is checked ONLY when present. WHY: the SPA never sends these keys, so treating
+    /// a missing key as an error (the rule the HST keys above follow) would make every Save from
+    /// every screen fail validation. Absent means "use the default", which is always in range.
+    /// </summary>
+    private static void ValidateAlertKeys(Dictionary<string, string> p, List<string> errors)
+    {
+        if (p.TryGetValue("alert_mode", out var mode) &&
+            mode?.Trim().ToLowerInvariant() is not ("adaptive" or "legacy"))
+            errors.Add("Must be \"adaptive\" or \"legacy\".");
+
+        if (p.TryGetValue("evidence_mode", out var evidence) &&
+            evidence?.Trim().ToLowerInvariant() is not ("any" or "both" or "score_only" or "raw_only"))
+            errors.Add("Must be \"any\", \"both\", \"score_only\" or \"raw_only\".");
+
+        // rank_window ≥ 50: below 50 samples a mid-rank cannot reach 0.99 at all, so a smaller
+        // window silently disables the score channel instead of tightening it.
+        ValidateOptionalIntAtLeast(p, "rank_window", 50, "Must be a whole number ≥ 50.", errors);
+        ValidateOptionalIntAtLeast(p, "raw_window", 10, "Must be a whole number ≥ 10.", errors);
+        ValidateOptionalIntAtLeast(p, "alert_min_samples", 50, "Must be a whole number ≥ 50.", errors);
+        ValidateOptionalIntAtLeast(p, "min_duration_sec", 0, "Must be a whole number ≥ 0.", errors);
+        ValidateOptionalIntAtLeast(p, "refractory_sec", 0, "Must be a whole number ≥ 0.", errors);
+        ValidateOptionalIntAtLeast(p, "storm_hold_sec", 0, "Must be a whole number ≥ 0.", errors);
+        ValidateOptionalIntAtLeast(p, "max_events_per_hour", 1, "Must be a whole number ≥ 1.", errors);
+        // max_event_duration_sec ≥ 60: the watchdog is the last line against F1; a sub-minute
+        // value would chop every real event instead of catching a stuck one.
+        ValidateOptionalIntAtLeast(p, "max_event_duration_sec", 60, "Must be a whole number ≥ 60.", errors);
+
+        bool hasQFire = TryGetOptionalDouble(p, "q_fire", out var qFire, out var qFireOk);
+        if (hasQFire && (!qFireOk || qFire <= 0.0 || qFire >= 1.0))
+            errors.Add("Must be between 0 and 1, and greater than clear quantile.");
+
+        bool hasQClear = TryGetOptionalDouble(p, "q_clear", out var qClear, out var qClearOk);
+        if (hasQClear && (!qClearOk || qClear < 0.0 || qClear >= 1.0))
+            errors.Add("Must be between 0 and 1, and less than fire quantile.");
+
+        bool hasZFire = TryGetOptionalDouble(p, "z_fire", out var zFire, out var zFireOk);
+        if (hasZFire && (!zFireOk || zFire <= 0.0))
+            errors.Add("Must be greater than 0, and greater than clear z.");
+
+        bool hasZClear = TryGetOptionalDouble(p, "z_clear", out var zClear, out var zClearOk);
+        if (hasZClear && (!zClearOk || zClear < 0.0))
+            errors.Add("Must be 0 or greater, and less than fire z.");
+
+        // Cross-field checks, same shape as the high/low threshold pair above: only evaluated
+        // when both values individually parsed and passed their own range check. Inverted
+        // thresholds are the one misconfiguration that looks valid and never alarms.
+        if (hasQFire && hasQClear && qFireOk && qClearOk &&
+            qFire > 0.0 && qFire < 1.0 && qClear >= 0.0 && qClear < 1.0 && qFire <= qClear)
+        {
+            errors.Add("Must be between 0 and 1, and greater than clear quantile.");
+            errors.Add("Must be between 0 and 1, and less than fire quantile.");
+        }
+
+        if (hasZFire && hasZClear && zFireOk && zClearOk &&
+            zFire > 0.0 && zClear >= 0.0 && zFire <= zClear)
+        {
+            errors.Add("Must be greater than 0, and greater than clear z.");
+            errors.Add("Must be 0 or greater, and less than fire z.");
+        }
+
+        // alert_min_samples ≤ rank_window: a target above the window it is measured against
+        // can never be met, so the entity would stay "calibrating" forever.
+        if (TryGetInt(p, "alert_min_samples", out var ams) &&
+            TryGetInt(p, "rank_window", out var rw) && ams > rw)
+            errors.Add("Must be a whole number ≥ 50 and no greater than rank window.");
+    }
+
+    /// <summary>
+    /// Range-checks an integer param only when the key is present; a present-but-unparsable or
+    /// out-of-range value is an error, an absent key is not.
+    /// </summary>
+    private static void ValidateOptionalIntAtLeast(
+        Dictionary<string, string> p,
+        string key,
+        int minValue,
+        string errorMsg,
+        List<string> errors)
+    {
+        if (!p.ContainsKey(key))
+            return;
+        if (!TryGetInt(p, key, out var val) || val < minValue)
+            errors.Add(errorMsg);
+    }
+
+    /// <summary>
+    /// Reads an optional double. Returns whether the key was present; <paramref name="parsed"/>
+    /// reports whether the present value was numeric (InvariantCulture).
+    /// </summary>
+    private static bool TryGetOptionalDouble(
+        Dictionary<string, string> p, string key, out double val, out bool parsed)
+    {
+        val = 0;
+        parsed = false;
+        if (!p.ContainsKey(key))
+            return false;
+        parsed = TryGetDouble(p, key, out val);
+        return true;
     }
 
     private static void ValidateMad(Dictionary<string, string> p, List<string> errors)

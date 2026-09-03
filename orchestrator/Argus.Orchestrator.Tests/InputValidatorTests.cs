@@ -554,4 +554,109 @@ public class InputValidatorTests
         var errors = InputValidator.Validate([], OneStlDetector());
         Assert.Empty(errors);
     }
+
+    // -------------------------------------------------------------------------
+    // WS2 alert-layer keys (share the HST params map)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Validate_HstParamsWithNoAlertKeys_ReturnsNoErrors()
+    {
+        // The alert keys must be validated ONLY when present. The SPA never sends them
+        // (sensors.ts posts the HST keys and nothing else), so treating a missing key the way
+        // the HST keys are treated — missing is a hard error — would make every Save from every
+        // screen, including the pattern textareas in Settings, fail validation.
+        var errors = InputValidator.Validate([], OneHstDetector());
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validate_AlertKeysPresentButInverted_ReturnsErrors()
+    {
+        // Inverted thresholds are the one misconfiguration that looks entirely plausible and
+        // silently never alarms: with q_fire below q_clear a score can be "high enough to fire"
+        // and "low enough to clear" at the same time, and the gate settles into never firing.
+        // Same for z_fire below z_clear. Both are caught before the file is written.
+        var errors = InputValidator.Validate([], OneHstDetector(new Dictionary<string, string>
+        {
+            ["q_fire"]  = "0.50",
+            ["q_clear"] = "0.90",
+            ["z_fire"]  = "2.0",
+            ["z_clear"] = "6.0",
+        }));
+
+        Assert.NotEmpty(errors);
+        Assert.Contains(errors, e => e.Contains("greater than clear quantile"));
+        Assert.Contains(errors, e => e.Contains("less than fire quantile"));
+        Assert.Contains(errors, e => e.Contains("greater than clear z"));
+        Assert.Contains(errors, e => e.Contains("less than fire z"));
+    }
+
+    [Fact]
+    public void Validate_AlertMinSamplesAboveRankWindow_ReturnsError()
+    {
+        // A calibration target larger than the window it is measured against can never be met,
+        // so the entity reports "calibrating" for the life of the process and never alarms —
+        // failure by silence, which is exactly what this workstream exists to remove.
+        var errors = InputValidator.Validate([], OneHstDetector(new Dictionary<string, string>
+        {
+            ["rank_window"]       = "200",
+            ["alert_min_samples"] = "500",
+        }));
+
+        Assert.Contains(errors, e => e.Contains("no greater than rank window"));
+    }
+
+    [Fact]
+    public void Validate_RankWindowBelowFifty_ReturnsError()
+    {
+        // Arithmetic floor, not taste: with mid-ranks the largest attainable rank is
+        // 1 - 0.5/Count, so q_fire = 0.99 is unreachable below 50 samples. A smaller window
+        // would look like a tighter gate while actually disabling the score channel outright.
+        var errors = InputValidator.Validate([], OneHstDetector(new Dictionary<string, string>
+        {
+            ["rank_window"] = "20",
+        }));
+
+        Assert.Contains(errors, e => e.Contains("≥ 50"));
+    }
+
+    [Fact]
+    public void Validate_UnknownAlertModeOrEvidenceMode_ReturnsErrors()
+    {
+        var errors = InputValidator.Validate([], OneHstDetector(new Dictionary<string, string>
+        {
+            ["alert_mode"]    = "aggressive",
+            ["evidence_mode"] = "either",
+        }));
+
+        Assert.Contains(errors, e => e.Contains("adaptive"));
+        Assert.Contains(errors, e => e.Contains("score_only"));
+    }
+
+    [Fact]
+    public void Validate_ValidAlertKeys_ReturnsNoErrors()
+    {
+        // Regression guard mirroring the HST case: a fully specified, in-range alert block must
+        // pass, or a hand-edited entities.yaml could never be saved back from the UI.
+        var errors = InputValidator.Validate([], OneHstDetector(new Dictionary<string, string>
+        {
+            ["alert_mode"]             = "adaptive",
+            ["evidence_mode"]          = "any",
+            ["rank_window"]            = "720",
+            ["q_fire"]                 = "0.99",
+            ["q_clear"]                = "0.80",
+            ["raw_window"]             = "720",
+            ["z_fire"]                 = "5.0",
+            ["z_clear"]                = "3.0",
+            ["alert_min_samples"]      = "240",
+            ["min_duration_sec"]       = "120",
+            ["refractory_sec"]         = "600",
+            ["max_events_per_hour"]    = "4",
+            ["max_event_duration_sec"] = "21600",
+            ["storm_hold_sec"]         = "3600",
+        }));
+
+        Assert.Empty(errors);
+    }
 }
