@@ -11,6 +11,8 @@ Fit: trains model via registry.fit_one, saves to disk via model_store.
 ScoreBatch: reads model from registry; cold-start fit if no model exists.
 SaveModel: serializes model from registry; returns bytes.
 LoadModel: loads model from disk; registers into registry.
+Simulate: replays a stored history through a throwaway detector (WS6/F14) —
+  never registers a model, never aborts the call.
 
 Threat mitigations:
   T-02-02: context.is_active() checked on every iteration to exit dead streams.
@@ -27,9 +29,11 @@ import joblib
 import pickle
 from google.protobuf import timestamp_pb2, wrappers_pb2
 
+from argus_detector import __version__
 from argus_detector.model_store import ModelStore
 from argus_detector.proto import argus_pb2, argus_pb2_grpc
 from argus_detector.registry import STREAMING_DETECTORS, DetectorRegistry
+from argus_detector.simulate import run_simulation
 
 logger = logging.getLogger(__name__)
 
@@ -546,6 +550,55 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
         except Exception as e:
             logger.exception("unexpected error in Warmup for %s", request.entity_id)
             return argus_pb2.WarmupResponse(ok=False, error=str(e))
+
+    def Simulate(self, request, context):  # noqa: N802
+        """Replay a stored history through a THROWAWAY detector (WS6, F14).
+
+        Never touches the registry's models: run_simulation builds its instance
+        in a local variable, so nothing is registered, no per-entity lock is
+        taken and no checkpoint appears under /data/models.
+
+        Never calls context.abort — not even on an unknown detector name. Every
+        failure is reported as ok=false with a message. ScoreStream multiplexes
+        every tracked entity onto one bidi call and the blanket handler there
+        aborts it wholesale (servicer.py:104-107); an operator poking at
+        parameters in the UI must not be able to stop scoring for the house.
+        """
+        try:
+            if len(request.history) < 1:
+                return argus_pb2.SimulateResponse(ok=False, error="empty history")
+
+            detector = request.detector or "hst"
+            values = [p.value.value for p in request.history]
+
+            scores, robust_z, window, warmed_from = run_simulation(
+                detector, dict(request.params), values, registry=self._registry
+            )
+
+            # T-02-03: counts and names only — never raw sensor values.
+            logger.info(
+                "simulate",
+                extra={
+                    "entity_id": request.entity_id,
+                    "detector": detector,
+                    "history_points": len(values),
+                    "window": window,
+                    "request_id": request.request_id,
+                },
+            )
+
+            return argus_pb2.SimulateResponse(
+                ok=True,
+                scores=scores,
+                robust_z=robust_z,
+                window=window,
+                warmed_up_from_index=warmed_from,
+                detector_version=__version__,
+            )
+
+        except Exception as e:
+            logger.exception("unexpected error in Simulate for %s", request.entity_id)
+            return argus_pb2.SimulateResponse(ok=False, error=str(e))
 
     def LoadModel(self, request, context):  # noqa: N802
         """Load a model from disk and register it into the registry."""
