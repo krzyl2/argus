@@ -193,7 +193,7 @@ public class AlertPolicyTests
     // ─── F1: a raised flag cannot own the day ────────────────────────────────
 
     [Fact]
-    public void SustainedExcursion_SelfClears_OnTimeUnderTwentyFivePercent()
+    public void SustainedExcursion_SelfClears_OnTimeUnder25Percent()
     {
         // F1: the measured on-times were 100 / 100 / 99 / 91 / 25 %. Under a rank gate a level
         // that persists stops being rare — the window fills with it and its own rank collapses

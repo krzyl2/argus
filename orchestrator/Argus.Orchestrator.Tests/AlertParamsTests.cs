@@ -10,7 +10,7 @@ namespace Argus.Orchestrator.Tests;
 public class AlertParamsTests
 {
     [Fact]
-    public void From_EmptyDictionary_YieldsValidatedDefaults()
+    public void From_EmptyDictionary_YieldsF13ValidatedDefaults()
     {
         // These fifteen numbers ARE the shipped gate. They were not picked for roundness: this
         // combination is the one measured to give 0 episodes on memory_use_percent and
