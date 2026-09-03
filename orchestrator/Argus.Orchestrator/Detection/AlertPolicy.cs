@@ -128,7 +128,10 @@ public sealed class AlertPolicy
     /// <summary>Robust z of the most recently observed raw value.</summary>
     public double LastRawZ { get { lock (_gate) return _lastRawZ; } }
 
-    /// <summary>storm | calibrating | firing | clear — surfaced by GET /api/sensors (A14).</summary>
+    /// <summary>
+    /// storm | firing | calibrating | clear — surfaced by GET /api/sensors (A14), in that
+    /// precedence order.
+    /// </summary>
     public string State
     {
         get
@@ -138,8 +141,17 @@ public sealed class AlertPolicy
                 // Storm outranks everything: it is the one state that means "Argus is
                 // deliberately not telling you about alarms right now".
                 if (DateTimeOffset.UtcNow < _stormUntil) return "storm";
+
+                // "firing" outranks "calibrating", and it has to: the two channels warm up
+                // independently, so a backfill-primed entity CAN be firing from the raw channel
+                // while the rank channel is still counting verdicts. Reporting "calibrating"
+                // there tells the operator "kalibracja 25/240" about an entity whose
+                // binary_sensor is ON right now — the status screen contradicting the flag it
+                // is meant to explain. The rank channel's own progress is not lost: SampleCount
+                // and Calibrated ride on the same EntityStatusEntry.
+                if (_firing) return "firing";
                 if (!IsCalibrated()) return "calibrating";
-                return _firing ? "firing" : "clear";
+                return "clear";
             }
         }
     }

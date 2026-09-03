@@ -527,6 +527,40 @@ public class AlertPolicyTests
         }
     }
 
+    [Fact]
+    public void State_FiringFromTheRawChannelBeforeCalibration_IsNotReportedAsCalibrating()
+    {
+        // GET /api/sensors renders this string next to the entity's flag. Since the two channels
+        // warm up independently, an entity primed from backfill can be FIRING on raw evidence
+        // while the rank channel is still 25 verdicts into its 240 — and a State that only asks
+        // "is the rank channel calibrated?" then shows "kalibracja 25/240" beside a
+        // binary_sensor that is ON. The operator is being told the entity is not judging yet
+        // while it is raising an alarm; that is worse than either state alone, because it sends
+        // them looking for a bug in the flag.
+        var policy = new AlertPolicy(FastParams(evidenceMode: "any", alertMinSamples: 240));
+        policy.SeedHistory(ZamrazarkaLevels());            // backfill: raw channel ready, no verdicts
+
+        int tick = 0;
+        for (int i = 0; i < 20; i++)
+        {
+            policy.ObserveValue(107.0);
+            policy.OnVerdict(0.5, true, false, false, At(tick++));
+        }
+        Assert.Equal("calibrating", policy.State);         // nothing firing yet — still true
+
+        AlertDecision? onset = null;
+        for (int i = 0; i < 5 && onset is null; i++)
+        {
+            policy.ObserveValue(200.0);                    // ~31σ on this sensor
+            var d = policy.OnVerdict(0.5, true, false, false, At(tick++));
+            if (d.FlagOn) onset = d;
+        }
+
+        Assert.NotNull(onset);
+        Assert.False(policy.Calibrated, "Fixture must keep the rank channel uncalibrated");
+        Assert.Equal("firing", policy.State);
+    }
+
     // ─── Calibration floor ───────────────────────────────────────────────────
 
     [Fact]
