@@ -143,6 +143,19 @@ public sealed class AlertPolicy
     /// <summary>Raw values observed or seeded since this policy was created.</summary>
     public int RawSampleCount { get { lock (_gate) return _raw.Count; } }
 
+    /// <summary>
+    /// True once the raw evidence channel has enough values to produce a z-score at all — the
+    /// SAME readiness <see cref="OnVerdict"/> applies, exposed so the write loop can ask it.
+    ///
+    /// WHY the write loop needs it: <c>PublishFrozenAsync</c> forces the flag ON from the write
+    /// loop while <see cref="OnVerdict"/> decides it from the read loop. With
+    /// <c>frozen_window</c> below <see cref="RollingRobustZ.MinSamples"/> the frozen detector
+    /// latches before this channel can speak, so one loop publishes ON and the other publishes
+    /// the gate's OFF for the very same readings — a flapping retained flag. Both loops asking
+    /// the same question is what stops that.
+    /// </summary>
+    public bool RawChannelReady { get { lock (_gate) return _raw.Count >= RollingRobustZ.MinSamples; } }
+
     /// <summary>True once the rank channel has enough history to be trusted.</summary>
     public bool Calibrated { get { lock (_gate) return IsCalibrated(); } }
 

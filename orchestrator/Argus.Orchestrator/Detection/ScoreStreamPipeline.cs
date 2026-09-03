@@ -409,11 +409,20 @@ public sealed class ScoreStreamPipeline
         // Keep the flag/score pair coherent — publish the score before the forced-ON flag
         await _publisher.PublishScoreAsync(entityId, FrozenScore, ct);
 
-        // Frozen forces binary_sensor ON regardless of warm-up/suppression, but change-only
-        // (F8): repeating ON on every frozen reading was ~4 publishes per 15 s per entity.
-        // The invariant this path exists for — a frozen entity whose detector emits no verdict
-        // still gets a flag — is preserved; only the repetition is gone.
-        await PublishFlagIfChangedAsync(entityId, entityState, on: true, ct);
+        // Frozen raises binary_sensor ON, change-only (F8): repeating ON on every frozen reading
+        // was ~4 publishes per 15 s per entity. The invariant this path exists for — a frozen
+        // entity whose detector emits no verdict still gets a flag — is preserved; only the
+        // repetition is gone.
+        //
+        // ...and only once the raw evidence channel is ready, which is the same premise
+        // OnVerdict applies to frozen after D-H. The two loops must not answer the same question
+        // differently: with frozen_window under RollingRobustZ.MinSamples the frozen detector
+        // latches before the gate can speak, and the write loop's ON then alternates on the wire
+        // with the read loop's OFF for the same readings. The wait is bounded and self-clearing
+        // — the write loop feeds ObserveValue on every reading, and backfill priming fills the
+        // window before the stream even opens — so a frozen entity still gets its flag.
+        if (entityState.Alert.RawChannelReady)
+            await PublishFlagIfChangedAsync(entityId, entityState, on: true, ct);
 
         // Sensor is present and reporting (just frozen), so availability stays online
         await _publisher.PublishAvailabilityAsync(entityId, online: true, ct);

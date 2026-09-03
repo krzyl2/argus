@@ -105,6 +105,17 @@ public class ScoreStreamPipelineTests
                 CancellationToken.None);
     }
 
+    /// <summary>
+    /// Fills the entity's raw evidence channel the way the write loop does on every reading, so
+    /// a test that calls PublishFrozenAsync directly starts from the state production is in by
+    /// the time it gets there.
+    /// </summary>
+    private static void PrimeRawChannel(EntityRuntimeState state, double value = 21.0, int count = 16)
+    {
+        for (int i = 0; i < count; i++)
+            state.Alert.ObserveValue(value);
+    }
+
     private static EntitiesConfig MakeEntitiesConfig(string entityId = "sensor.test")
     {
         var cfg = new EntitiesConfig();
@@ -271,6 +282,11 @@ public class ScoreStreamPipelineTests
 
         var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
 
+        // The write loop feeds the raw evidence channel before it ever calls PublishFrozenAsync;
+        // reproduce that here, because the forced ON is a premise the gate shares (D-H) and both
+        // loops have to answer it the same way.
+        PrimeRawChannel(entityState);
+
         // Act
         await pipeline.PublishFrozenAsync("sensor.test", entityState, CancellationToken.None);
 
@@ -320,8 +336,9 @@ public class ScoreStreamPipelineTests
 
         var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
 
-        // Frozen path — forces flag ON for a distinct entity
+        // Frozen path — raises the flag for a distinct entity
         var frozenState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
+        PrimeRawChannel(frozenState);
         await pipeline.PublishFrozenAsync("sensor.frozen", frozenState, CancellationToken.None);
 
         // Verdict path — warmed up (window=1), not suppressed, high score → flag ON
@@ -1245,6 +1262,10 @@ public class ScoreStreamPipelineTests
         var state = MakeState(FastAlertParams());
         var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
 
+        // The write loop has fed the raw channel by the time it reaches PublishFrozenAsync, so
+        // its forced ON is live here (see FrozenBranch_BeforeTheRawChannelIsReady_...).
+        PrimeRawChannel(state);
+
         // Read loop: not warmed up → decision OFF, nothing published yet → publishes OFF and
         // parks inside the broker call, exactly where the two loops can interleave.
         var readLoop = pipeline.ProcessVerdictAsync(
@@ -1284,6 +1305,7 @@ public class ScoreStreamPipelineTests
         var cfg = MakeEntitiesConfig();
         var state = MakeState(FastAlertParams());
         var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+        PrimeRawChannel(state);
 
         // Read loop claims OFF first and parks inside the broker call.
         var readLoop = pipeline.ProcessVerdictAsync(
@@ -1299,6 +1321,39 @@ public class ScoreStreamPipelineTests
 
         Assert.NotEmpty(publisher.CompletedFlags);
         Assert.Equal(state.Alert.LastPublishedFlag, publisher.CompletedFlags[publisher.CompletedFlags.Count - 1]);
+    }
+
+    [Fact]
+    public async Task FrozenBranch_BeforeTheRawChannelIsReady_DoesNotContradictTheGate()
+    {
+        // frozen_window is operator-editable and independent of the raw channel's own
+        // 10-sample floor. Set below it, the frozen detector latches while the gate still has
+        // nothing to say — and the two loops then publish opposite values for the SAME readings:
+        // the write loop forces ON, the verdict read loop publishes the gate's OFF, and the
+        // retained flag flaps. The rule is not "who wins" but "the two loops never contradict
+        // each other on one reading".
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(FastAlertParams());
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        // Read loop first: nothing is ready, so the gate says OFF and that OFF goes out.
+        await pipeline.ProcessVerdictAsync(
+            MakeReading(suppress: false), MakeVerdict(score: 0.9), state, CancellationToken.None);
+        Assert.False(state.Alert.LastPublishedFlag);
+
+        // Write loop, same reading, frozen detector already latched (frozen_window < 10).
+        Assert.False(state.Alert.RawChannelReady, "Fixture must reproduce the short-window case");
+        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+
+        Assert.False(state.Alert.LastPublishedFlag,
+            "The write loop must not publish an ON the gate is simultaneously publishing OFF");
+
+        // Once the channel IS ready the guaranteed publish path is back — the wait is bounded,
+        // not a silent loss of the frozen entity's only flag (D-H).
+        PrimeRawChannel(state);
+        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+        Assert.True(state.Alert.LastPublishedFlag);
     }
 
     [Fact]
