@@ -1,4 +1,3 @@
-<!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
 **Argus — Home Assistant Anomaly Detection**
@@ -15,9 +14,7 @@ A self-hosted, extensible anomaly-detection system for Home Assistant sensor dat
 - **Licenses:** BSD/Apache/MIT only. No GPL, no ADTK unless isolated (MPL-2.0).
 - **Hosting:** Self-hosted, no cloud (D9).
 - **GPU:** Phase 3 only; Phase 1–2 are CPU-only and must work without GPU.
-<!-- GSD:project-end -->
 
-<!-- GSD:stack-start source:research/STACK.md -->
 ## Technology Stack
 
 ## Orchestrator (.NET 8)
@@ -68,44 +65,26 @@ A self-hosted, extensible anomaly-detection system for Home Assistant sensor dat
 - [NetDaemon Client API docs](https://netdaemon.xyz/docs/user/advanced/advanced_client/) — standalone use without addon confirmed
 - [MQTTnet v5 migration notes](https://github.com/dotnet/MQTTnet/wiki/Upgrading-guide) — ManagedClient removal confirmed
 - [Official .NET Docker images](https://learn.microsoft.com/en-us/dotnet/architecture/microservices/net-core-net-framework-containers/official-net-docker-images)
-<!-- GSD:stack-end -->
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
 Conventions not yet established. Will populate as patterns emerge during development.
-<!-- GSD:conventions-end -->
 
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
 Architecture not yet mapped. Follow existing patterns found in the codebase.
-<!-- GSD:architecture-end -->
 
-<!-- GSD:skills-start source:skills/ -->
 ## Project Skills
 
 No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.github/skills/`, or `.codex/skills/` with a `SKILL.md` index file.
-<!-- GSD:skills-end -->
 
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
+## Searching this repo
 
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+Never run a recursive search from the repo root (`grep -rn ... .`, `rg ... .`, `find . ...`).
+Root-level sweeps pull dotfiles into scope and stall on permission rules. Name the source
+directories instead:
 
-Use these entry points:
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing
-- `/gsd-execute-phase` for planned phase work
+    orchestrator/ detector/ proto/ argus/ deploy/ tests/ .github/
 
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
-
-
-
-<!-- GSD:profile-start -->
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->
+`node_modules/`, `bin/`, `obj/`, `.planning/` and `.git/` are never search targets — exclude them
+explicitly when a broad sweep is unavoidable.

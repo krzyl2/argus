@@ -1,10 +1,6 @@
 <!--
-  GSD PROJECT.md — persistent project definition.
-  Drop this at .planning/PROJECT.md, then run /gsd-plan-phase 1 (Claude Code uses the
-  hyphen form /gsd-...; the colon form /gsd:... is Gemini CLI only).
-  Alternatively, feed it as your answers to /gsd-new-project's questioning phase.
-  This file maps onto GSD's PROJECT.md sections: Vision/Goals, Users, Success Criteria,
-  Constraints & Locked Decisions, Technical Context, Requirements — plus a Roadmap of phases.
+  Argus — persistent project definition: Vision/Goals, Users, Success Criteria,
+  Constraints & Locked Decisions, Technical Context, Requirements, Roadmap.
   All identifiers/spec in English by design; Home Assistant entity labels stay Polish.
 -->
 
@@ -32,7 +28,7 @@ Build a universal, **extensible** anomaly-detection system that watches Home Ass
 
 ## 2. Users / Audience
 
-Single operator: the homeowner (a .NET developer who drives implementation through Claude Code + GSD). Not a multi-tenant or commercial product. Optimize for one expert user who values dense, fact-oriented specs and iterative, correction-driven work.
+Single operator: the homeowner (a .NET developer who drives implementation through Claude Code). Not a multi-tenant or commercial product. Optimize for one expert user who values dense, fact-oriented specs and iterative, correction-driven work.
 
 ---
 
@@ -57,7 +53,7 @@ These were decided in the discuss phase and are **locked** unless explicitly rev
 
 | # | Decision | Value | Rationale / Notes |
 |---|----------|-------|-------------------|
-| D1 | Methodology | **GSD (Get Shit Done)** spec-driven, phased | This file is the PROJECT.md; phases below drive `/gsd-plan-phase`. |
+| D1 | Methodology | Spec-driven, phased | This file is the project definition; the phases below are the unit of work. |
 | D2 | Architecture | **Hybrid**: .NET orchestration + Python detection service | .NET owns all I/O, scheduling, config, model lifecycle commands, HA/Influx/MQTT. **All ML detection lives in Python.** |
 | D3 | Topology | **Two separate machines** | Orchestrator runs on/near the HA host ("edge"); the Python detector runs on the **GPU host**. They communicate over the network. |
 | D4 | Edge↔Detector transport | **gRPC** (recommended) over the LAN, with mTLS | Strongly typed, supports unary (batch) + bidirectional streaming (live points), excellent .NET↔Python interop. MQTT is the documented fallback if gRPC proves awkward. |
@@ -144,7 +140,7 @@ argus/
 │   ├── docker-compose.edge.yml  # orchestrator (+ optional CPU-only detector replica)
 │   ├── docker-compose.gpu.yml   # detector on the GPU host
 │   └── config/entities.yaml
-├── .planning/                   # GSD artifacts (PROJECT.md, ROADMAP.md, phases…)
+├── .planning/                   # historical planning record (ROADMAP.md, phases…)
 └── README.md
 ```
 
@@ -200,7 +196,7 @@ groups:
 
 ---
 
-## 7. Roadmap (GSD phases)
+## 7. Roadmap (phases)
 
 Each phase is an independently shippable increment with explicit must-haves the verifier checks.
 
@@ -267,11 +263,8 @@ Only the anomaly classes the CPU methods miss.
 
 ---
 
-## 10. How to drive this with GSD
+## 10. How to drive this
 
-1. Save this file as `.planning/PROJECT.md` in the `argus/` repo.
-2. (Optional) run `/gsd-new-project` and use sections 1–6 as your answers, or proceed directly.
-3. Run `/gsd-plan-phase 1` (start at Phase 0 if you want the skeleton planned explicitly) → review the generated plan → `/gsd-execute-phase` → `/gsd-verify-work`.
-4. Advance phase by phase. Each phase's **Must-have** is the verifier's contract.
-
-*(Claude Code uses the hyphen command form `/gsd-...`; the colon form `/gsd:...` is Gemini CLI only.)*
+1. Each phase below is an independently shippable increment.
+2. A phase's **Must-have** list is its acceptance contract — verify against it before moving on.
+3. Historical planning artifacts for shipped phases live under `.planning/` (read-only record).
