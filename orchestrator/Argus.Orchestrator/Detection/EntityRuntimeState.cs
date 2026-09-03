@@ -107,6 +107,25 @@ public sealed class EntityRuntimeState
     public ReadingCadence Cadence { get; } = new();
 
     /// <summary>
+    /// Serialises the WHOLE flag publish — the claim in
+    /// <see cref="AlertPolicy.TryClaimFlagPublish(bool, out bool?)"/> AND the broker call it
+    /// authorises — between this entity's two loops.
+    ///
+    /// WHY the claim alone is not enough: the two loops (verdict read loop, and the write loop's
+    /// PublishFrozenAsync) claim under the policy's own lock but then await the publish OUTSIDE
+    /// it, so the broker can see the two messages in the opposite order to the claims. The write
+    /// loop claims ON and the read loop claims OFF; if OFF reaches the broker first, HA is left
+    /// holding a retained ON while the policy believes OFF — and the next genuine OFF is dropped
+    /// as a duplicate, so the flag stays lit for good. Reversed, the failure is the mirror image:
+    /// HA OFF, policy ON, and a real alarm is silently lost. Wire order must equal claim order,
+    /// which means one mutex spanning both.
+    ///
+    /// Per entity, never global: entities publish independently and a shared gate would put every
+    /// entity behind the slowest broker call.
+    /// </summary>
+    public SemaphoreSlim FlagPublishGate { get; } = new(1, 1);
+
+    /// <summary>
     /// Creates per-entity state from resolved HST params.
     /// <paramref name="alertParams"/> and <paramref name="alert"/> are optional so the 37 existing
     /// construction sites keep compiling; production passes the store-owned policy so calibration

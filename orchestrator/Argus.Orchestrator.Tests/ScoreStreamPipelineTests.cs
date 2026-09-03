@@ -1251,17 +1251,81 @@ public class ScoreStreamPipelineTests
             MakeReading(suppress: false), MakeVerdict(score: 0.9), state, CancellationToken.None);
         await publisher.FirstFlagInFlight;
 
-        // Write loop, concurrently: a frozen reading forces the flag ON.
-        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+        // Write loop, concurrently: a frozen reading forces the flag ON. It must WAIT until the
+        // read loop's publish has left, because a publish that overtakes it puts the two
+        // messages on the wire in the opposite order to the claims (next test).
+        var writeLoop = pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
 
         publisher.ReleaseFirstFlag();
         await readLoop;
+        await writeLoop;
 
         // The next verdict still says OFF. HA is holding a retained ON, so this OFF MUST go out.
         await pipeline.ProcessVerdictAsync(
             MakeReading(suppress: false), MakeVerdict(score: 0.9), state, CancellationToken.None);
 
         Assert.Equal(new[] { false, true, false }, publisher.FlagHistory);
+    }
+
+    [Fact]
+    public async Task FlagPublish_TwoLoopsRacing_LeavesTheBrokerAndThePolicyAgreeing()
+    {
+        // An atomic claim is not enough. Both loops claim under the policy's lock and then await
+        // the broker OUTSIDE it, so the broker can receive the two messages in the opposite
+        // order to the claims. The flag topic is retained, so the disagreement is permanent, in
+        // both directions:
+        //   claims OFF-then-ON, wire ON-then-OFF → HA OFF while the policy believes ON, and the
+        //     next real ON is dropped as a duplicate: an alarm silently lost;
+        //   claims ON-then-OFF, wire OFF-then-ON → HA lit for good against a policy that
+        //     believes OFF, i.e. F1 back by another route.
+        // The rule under test is therefore not "which value" but "the last value the BROKER saw
+        // is the value the policy believes it published".
+        var publisher = new CompletionOrderFlagPublisher();
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(FastAlertParams());
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        // Read loop claims OFF first and parks inside the broker call.
+        var readLoop = pipeline.ProcessVerdictAsync(
+            MakeReading(suppress: false), MakeVerdict(score: 0.9), state, CancellationToken.None);
+        await publisher.FirstFlagInFlight;
+
+        // Write loop tries to overtake it with ON while that OFF is still on the wire.
+        var writeLoop = pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+
+        publisher.ReleaseFirstFlag();
+        await readLoop;
+        await writeLoop;
+
+        Assert.NotEmpty(publisher.CompletedFlags);
+        Assert.Equal(state.Alert.LastPublishedFlag, publisher.CompletedFlags[publisher.CompletedFlags.Count - 1]);
+    }
+
+    [Fact]
+    public async Task FlagPublish_BrokerThrows_TransitionIsRetriedOnTheNextVerdict()
+    {
+        // The claim is taken BEFORE the publish, which is what makes the two loops safe against
+        // each other -- but it also means a claim can be wrong. When the broker call throws
+        // (EnsureConnected, a dropped MQTT session) the policy would otherwise be left believing
+        // the transition was delivered and would never send it again. On a retained topic a
+        // dropped OFF means HA stays lit indefinitely.
+        var publisher = new FailingThenRecordingFlagPublisher(failFirst: true);
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(FastAlertParams());
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => pipeline.ProcessVerdictAsync(
+            MakeReading(suppress: false), MakeVerdict(score: 0.9), state, CancellationToken.None));
+
+        Assert.Null(state.Alert.LastPublishedFlag);
+
+        // Same decision, next verdict: the transition must be attempted again, not skipped as
+        // "already published".
+        await pipeline.ProcessVerdictAsync(
+            MakeReading(suppress: false), MakeVerdict(score: 0.9), state, CancellationToken.None);
+
+        Assert.Equal(2, publisher.Attempts);
+        Assert.Equal(new[] { false }, publisher.Published);
     }
 }
 
@@ -1523,6 +1587,75 @@ internal static class AsyncEnumerableHelper
             yield return reading;
         await Task.CompletedTask;
     }
+}
+
+/// <summary>
+/// Publisher that records flag values in the order their publish COMPLETED -- i.e. the order the
+/// broker, and therefore HA's retained topic, actually sees them. For a retained flag that is the
+/// only order that matters. The first publish parks until the test releases it.
+/// </summary>
+internal sealed class CompletionOrderFlagPublisher : IStatePublisher
+{
+    private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _flagCalls;
+
+    /// <summary>Flag values in COMPLETION order.</summary>
+    public List<bool> CompletedFlags { get; } = new();
+
+    /// <summary>Completes once the first flag publish is in flight and parked.</summary>
+    public Task FirstFlagInFlight => _entered.Task;
+
+    public void ReleaseFirstFlag() => _release.TrySetResult();
+
+    public async Task PublishFlagAsync(string entityId, bool on, CancellationToken ct)
+    {
+        if (Interlocked.Increment(ref _flagCalls) == 1)
+        {
+            _entered.TrySetResult();
+            await _release.Task;
+        }
+
+        lock (CompletedFlags)
+            CompletedFlags.Add(on);
+    }
+
+    public Task PublishScoreAsync(string entityId, double score, CancellationToken ct) => Task.CompletedTask;
+    public Task PublishAvailabilityAsync(string entityId, bool online, CancellationToken ct) => Task.CompletedTask;
+    public Task PublishGroupFlagAsync(string groupId, string? memberId, bool on, CancellationToken ct) => Task.CompletedTask;
+    public Task PublishGroupScoreAsync(string groupId, string? memberId, double score, CancellationToken ct) => Task.CompletedTask;
+}
+
+/// <summary>Publisher whose first flag publish throws, so a failed claim can be observed.</summary>
+internal sealed class FailingThenRecordingFlagPublisher : IStatePublisher
+{
+    private bool _failNext;
+
+    public FailingThenRecordingFlagPublisher(bool failFirst) => _failNext = failFirst;
+
+    /// <summary>Every flag publish attempt, successful or not.</summary>
+    public int Attempts { get; private set; }
+
+    /// <summary>Flag values that actually reached the broker.</summary>
+    public List<bool> Published { get; } = new();
+
+    public Task PublishFlagAsync(string entityId, bool on, CancellationToken ct)
+    {
+        Attempts++;
+        if (_failNext)
+        {
+            _failNext = false;
+            throw new InvalidOperationException("MQTT client is not connected");
+        }
+
+        Published.Add(on);
+        return Task.CompletedTask;
+    }
+
+    public Task PublishScoreAsync(string entityId, double score, CancellationToken ct) => Task.CompletedTask;
+    public Task PublishAvailabilityAsync(string entityId, bool online, CancellationToken ct) => Task.CompletedTask;
+    public Task PublishGroupFlagAsync(string groupId, string? memberId, bool on, CancellationToken ct) => Task.CompletedTask;
+    public Task PublishGroupScoreAsync(string groupId, string? memberId, double score, CancellationToken ct) => Task.CompletedTask;
 }
 
 /// <summary>

@@ -270,14 +270,8 @@ public sealed class ScoreStreamPipeline
 
         // F8: publish ONLY on a transition. The cooldown (D-07) still blocks the publish itself.
         bool published = false;
-        // TryClaimFlagPublish, not a read + a write: PublishFrozenAsync runs the same
-        // compare-then-set on the WRITE loop, and interleaved the two could agree that neither
-        // has to publish the OFF (see AlertPolicy.TryClaimFlagPublish).
-        if (!reading.SuppressBinarySensor && entityState.Alert.TryClaimFlagPublish(decision.FlagOn))
-        {
-            await _publisher.PublishFlagAsync(reading.EntityId, decision.FlagOn, ct);
-            published = true;
-        }
+        if (!reading.SuppressBinarySensor)
+            published = await PublishFlagIfChangedAsync(reading.EntityId, entityState, decision.FlagOn, ct);
 
         if (decision.EventStarted)
         {
@@ -350,6 +344,50 @@ public sealed class ScoreStreamPipeline
     }
 
     /// <summary>
+    /// The ONE way this pipeline puts a flag on the wire: claim and publish under the entity's
+    /// own <see cref="EntityRuntimeState.FlagPublishGate"/>, so the order the broker sees is the
+    /// order the claims were taken in.
+    ///
+    /// Both callers run concurrently for the same entity — <see cref="ProcessVerdictAsync"/> on
+    /// the verdict read loop, <see cref="PublishFrozenAsync"/> on the write loop. Claiming under
+    /// the policy's lock but awaiting the broker outside it makes the two publishes atomic
+    /// individually and unordered together: HA can end up retaining ON while the policy records
+    /// OFF (and then drops the next real OFF as a duplicate — the flag never goes out again), or
+    /// the mirror image, HA OFF against a policy that believes ON, which loses a real alarm
+    /// silently. The flag topic is retained, so neither self-heals.
+    ///
+    /// The claim is also rolled back when the broker call throws. Without that, a failed publish
+    /// leaves the policy believing the transition was delivered, and it is never retried.
+    /// </summary>
+    /// <returns>True when a publish was actually issued (i.e. the value changed).</returns>
+    private async Task<bool> PublishFlagIfChangedAsync(
+        string entityId, EntityRuntimeState entityState, bool on, CancellationToken ct)
+    {
+        await entityState.FlagPublishGate.WaitAsync(ct);
+        try
+        {
+            if (!entityState.Alert.TryClaimFlagPublish(on, out var rollbackTo))
+                return false;
+
+            try
+            {
+                await _publisher.PublishFlagAsync(entityId, on, ct);
+            }
+            catch
+            {
+                entityState.Alert.RollbackFlagClaim(rollbackTo);
+                throw;
+            }
+
+            return true;
+        }
+        finally
+        {
+            entityState.FlagPublishGate.Release();
+        }
+    }
+
+    /// <summary>
     /// Score published on the frozen branch. Frozen forces the flag ON, so the paired score
     /// entity must report a coherent max-anomaly value (a 0.0 would read as a false positive).
     /// A fixed sentinel is used because no last-known score is retained per entity and an
@@ -375,8 +413,7 @@ public sealed class ScoreStreamPipeline
         // (F8): repeating ON on every frozen reading was ~4 publishes per 15 s per entity.
         // The invariant this path exists for — a frozen entity whose detector emits no verdict
         // still gets a flag — is preserved; only the repetition is gone.
-        if (entityState.Alert.TryClaimFlagPublish(true))
-            await _publisher.PublishFlagAsync(entityId, on: true, ct);
+        await PublishFlagIfChangedAsync(entityId, entityState, on: true, ct);
 
         // Sensor is present and reporting (just frozen), so availability stays online
         await _publisher.PublishAvailabilityAsync(entityId, online: true, ct);

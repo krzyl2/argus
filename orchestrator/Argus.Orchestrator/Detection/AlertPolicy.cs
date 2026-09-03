@@ -103,11 +103,24 @@ public sealed class AlertPolicy
     /// gate that says OFF. Making the compare and the set one critical section removes that
     /// window; the claim is taken BEFORE the publish, so a lost claim is a skipped duplicate,
     /// never a skipped transition.
+    ///
+    /// Taking the claim before the publish also means the claim can be WRONG: the broker call
+    /// may throw, and then the policy would believe a transition went out that never did — with
+    /// a retained topic, a dropped OFF leaves HA lit for good. <paramref name="rollbackTo"/>
+    /// carries the previous value out so the caller can undo the claim on failure; see
+    /// <see cref="RollbackFlagClaim"/>. Callers must hold the entity's
+    /// <c>FlagPublishGate</c> across claim + publish, so the wire order matches the claim order.
     /// </summary>
-    public bool TryClaimFlagPublish(bool value)
+    /// <param name="value">The flag value about to be published.</param>
+    /// <param name="rollbackTo">
+    /// What the last-published state was before this claim — pass it to
+    /// <see cref="RollbackFlagClaim"/> if the publish fails.
+    /// </param>
+    public bool TryClaimFlagPublish(bool value, out bool? rollbackTo)
     {
         lock (_gate)
         {
+            rollbackTo = _flagPublished ? _lastPublishedFlag : null;
             if (_flagPublished && _lastPublishedFlag == value)
                 return false;
             _flagPublished = true;
@@ -115,6 +128,14 @@ public sealed class AlertPolicy
             return true;
         }
     }
+
+    /// <summary>
+    /// Undoes a claim whose publish threw, restoring what the policy knew before it. The next
+    /// verdict then re-attempts the same transition instead of treating it as already delivered.
+    /// Safe because the caller holds the entity's flag-publish gate: no other claim can have
+    /// landed in between.
+    /// </summary>
+    public void RollbackFlagClaim(bool? rollbackTo) => LastPublishedFlag = rollbackTo;
 
     /// <summary>Verdicts observed since this policy was created.</summary>
     public int SampleCount { get { lock (_gate) return _samples; } }
