@@ -40,7 +40,7 @@ def _run(options: dict) -> tuple[str, int]:
 
 
 def test_gen_entities_minimal():
-    """Two entities produce valid EntitiesConfigLoader YAML with hst detector and params == {}."""
+    """Two entities produce valid EntitiesConfigLoader YAML with rmad detector and params == {}."""
     options = {
         "entities": ["sensor.foo", "sensor.bar"],
         "influx_measurement": "homeassistant",
@@ -69,9 +69,9 @@ def test_gen_entities_minimal():
             f"entity {entity['entity_id']} must have exactly 1 detector"
         )
         det = entity["detectors"][0]
-        assert det["name"] == "hst", f"expected detector name 'hst', got {det['name']!r}"
+        assert det["name"] == "rmad", f"expected detector name 'rmad', got {det['name']!r}"
         assert det["params"] == {}, (
-            f"params must be empty dict for default HST, got {det['params']!r}"
+            f"params must be empty dict for default rmad, got {det['params']!r}"
         )
 
 
@@ -96,3 +96,39 @@ def test_gen_entities_empty():
     # both represent an empty entity list; EntitiesConfigLoader.Validate() rejects both
     entities = cfg.get("entities") or []
     assert entities == [], f"expected empty list, got {entities!r}"
+
+
+def test_emits_rmad_and_schema_version_2():
+    """Both branches must emit rmad and stamp schema_version 2 — including the empty one.
+
+    WHY the empty branch matters as much as the populated one: an entities.yaml
+    without the stamp is migrated by EntitiesSchemaMigrator on EVERY boot, and
+    every migration is a file rewrite, i.e. a rename that ConfigFileWatcherService
+    turns into a config Swap, which resets every entity's alert gate. An unstamped
+    empty file would therefore mean a gate reset on every single start.
+
+    WHY rmad and not hst: hst scores RARITY, not deviation (F4), so on a quantized
+    series a rare-but-normal level outscores the modal one. A freshly generated
+    config must not start life on the known-broken detector.
+    """
+    base = {
+        "influx_measurement": "homeassistant",
+        "influx_value_field": "value",
+        "batch_interval_minutes": 10,
+        "nightly_fit_hour": 2,
+        "include_patterns": [],
+        "exclude_patterns": [],
+        "log_level": "info",
+    }
+
+    stdout, code = _run({**base, "entities": ["sensor.foo"]})
+    assert code == 0
+    cfg = yaml.safe_load(stdout)
+    assert cfg["schema_version"] == 2, f"populated branch missing stamp: {cfg!r}"
+    assert cfg["entities"][0]["detectors"][0]["name"] == "rmad"
+
+    stdout, code = _run({**base, "entities": []})
+    assert code == 0
+    cfg = yaml.safe_load(stdout)
+    assert cfg["schema_version"] == 2, f"empty branch missing stamp: {cfg!r}"
+    assert (cfg.get("entities") or []) == []
