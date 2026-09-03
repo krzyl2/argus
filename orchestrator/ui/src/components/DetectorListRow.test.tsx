@@ -248,3 +248,37 @@ describe('DetectorListRow', () => {
     expect(screen.getByText('2 members')).not.toBeNull();
   });
 });
+
+describe('DetectorListRow unknown-to-HA sensor (WS4/F9)', () => {
+  function renderSensor(entry: SensorEntry) {
+    const row: DetectorRow = { key: `sensor:${entry.entityId}`, kind: 'sensor', entry };
+    return render(
+      <ul>
+        <DetectorListRow row={row} />
+      </ul>
+    );
+  }
+
+  it('renders the Polish chip and keeps the Edit link working', () => {
+    // WHY (F9): the entity was scored (0.996) while absent from HA's snapshot and missing from
+    // this screen entirely. It must be listed, labelled as not-in-HA, and still reachable for
+    // editing — visibility without an edit route would leave it just as unmanageable. D8: Polish.
+    renderSensor(makeSensor({ entityId: 'sensor.zamrazarkapiwnica_power', knownToHa: false }));
+
+    expect(screen.getByText('Nieznana w HA')).not.toBeNull();
+    expect(screen.getByText('Edit').getAttribute('href')).toBe(
+      '#/detectors/sensor/sensor.zamrazarkapiwnica_power'
+    );
+  });
+
+  it('renders no chip when knownToHa is absent or true', () => {
+    // WHY: an absent field must mean "known" — otherwise every pre-WS4 fixture and every ordinary
+    // sensor would be badged as missing from HA.
+    const { unmount } = renderSensor(makeSensor());
+    expect(screen.queryByText('Nieznana w HA')).toBeNull();
+    unmount();
+
+    renderSensor(makeSensor({ knownToHa: true }));
+    expect(screen.queryByText('Nieznana w HA')).toBeNull();
+  });
+});

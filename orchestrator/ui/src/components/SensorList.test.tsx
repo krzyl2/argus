@@ -133,3 +133,59 @@ describe('SensorList trackedEntityIdx shared-counter uniqueness (D-08)', () => {
     expect(container.querySelector('.argus-card ul.argus-list')).not.toBeNull();
   });
 });
+
+describe('SensorList unknown-to-HA tracked entity (WS4/F9)', () => {
+  const GHOST = makeEntry({
+    entityId: 'sensor.zamrazarkapiwnica_power',
+    currentValue: null,
+    unitOfMeasurement: 'W',
+    knownToHa: false,
+  });
+
+  function renderGhost() {
+    const entries = [GHOST];
+    return render(
+      <SensorList
+        entries={entries}
+        query=""
+        edits={editsFor(entries)}
+        selectedEntityId={null}
+        onSelectRow={noop}
+        onToggleTracked={noop}
+        onDetectorTypeChange={noop}
+        onDetectorParamChange={noop}
+        onDetectorRemove={noop}
+        onDetectorAdd={noop}
+      />
+    );
+  }
+
+  it('renders unknown-to-HA tracked entity with the Polish chip', () => {
+    // WHY (F9): this entity was being scored at 0.996 while invisible in the UI. Showing it
+    // without saying HA no longer lists it would be worse than hiding it — the operator would
+    // read a stale score as a live one. D8: operator-facing strings are Polish.
+    const { container, getByText } = renderGhost();
+
+    expect(container.querySelector('.argus-row-entity-id')?.textContent).toBe(
+      'sensor.zamrazarkapiwnica_power'
+    );
+    expect(getByText('Nieznana w HA')).toBeTruthy();
+    // No fabricated reading: a missing value renders as a dash, never as "0 W".
+    expect(container.querySelector('.argus-row-value')?.textContent).toBe('—');
+  });
+
+  it('keeps the row interactive so the entity can still be unticked', () => {
+    // WHY: visibility alone does not fix F9 — the point is that the operator can act on it.
+    const { getByLabelText } = renderGhost();
+    const checkbox = getByLabelText('sensor.zamrazarkapiwnica_power') as HTMLInputElement;
+    expect(checkbox.disabled).toBe(false);
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it('shows no chip for an ordinary entity (knownToHa absent means known)', () => {
+    // WHY: ~14 fixtures predate the field. An absent value must read as "known", or every
+    // existing row would grow a scary badge.
+    const { queryByText } = renderList();
+    expect(queryByText('Nieznana w HA')).toBeNull();
+  });
+});

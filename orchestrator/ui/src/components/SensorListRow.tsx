@@ -37,9 +37,16 @@ export function SensorListRow({
   const showFriendlyName =
     !!entry.friendlyName && entry.friendlyName !== entry.entityId;
 
-  const valueDisplay = entry.unitOfMeasurement
-    ? `${entry.currentValue} ${entry.unitOfMeasurement}`
-    : entry.currentValue;
+  // WS4/F9: an entity Argus tracks that HA does not list. The row stays fully interactive —
+  // it must be possible to untick and to edit its detector — but it must not pretend to have a
+  // reading. D8: operator-facing text is Polish.
+  const knownToHa = entry.knownToHa !== false;
+  const valueDisplay =
+    entry.currentValue == null
+      ? '—'
+      : entry.unitOfMeasurement
+        ? `${entry.currentValue} ${entry.unitOfMeasurement}`
+        : entry.currentValue;
 
   return (
     <li
@@ -59,6 +66,7 @@ export function SensorListRow({
       </div>
       <div class="argus-row-meta">
         <span class="argus-row-value">{valueDisplay}</span>
+        {!knownToHa && <Badge tone="warn">Nieznana w HA</Badge>}
         {isTracked && <Badge tone="tracked">tracked</Badge>}
       </div>
       {isSelected && isTracked && (

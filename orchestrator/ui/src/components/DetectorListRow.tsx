@@ -65,6 +65,10 @@ function SensorRow({ entry }: { entry: NonNullable<DetectorRow['entry']> }) {
   // carried an expected/lower/upper the editor has no band to show and no threshold the
   // operator can sanity-check. Say "Kalibracja" for that state instead of a green "Działa".
   const hasBand = entry.calibratedUpper != null;
+  // WS4/F9: sensor.zamrazarkapiwnica_power was scored at 0.996 while absent from HA's snapshot.
+  // The row must appear and stay editable — but say plainly that HA no longer lists it, or the
+  // operator reads a stale score as live. D8: Polish.
+  const knownToHa = entry.knownToHa !== false;
 
   return (
     <li class="argus-list-row">
@@ -85,6 +89,7 @@ function SensorRow({ entry }: { entry: NonNullable<DetectorRow['entry']> }) {
               Rozgrzewka {entry.readingCount}/{entry.warmUpWindow}
             </Badge>
           ))}
+        {!knownToHa && <Badge tone="warn">Nieznana w HA</Badge>}
         <Badge tone="tracked">tracked</Badge>
         <a class="argus-label" href={`#/detectors/sensor/${encodeURIComponent(entry.entityId)}`}>
           Edit

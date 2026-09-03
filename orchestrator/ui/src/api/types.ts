@@ -13,9 +13,15 @@ export type DetectorName = 'rmad' | 'hst' | 'mad' | 'stl';
 export interface SensorEntry {
   entityId: string;
   friendlyName: string | null;
-  currentValue: string;
+  // Null only for a synthesized row (see knownToHa): HA has never reported a value, and a
+  // fabricated one would read as a live measurement.
+  currentValue: string | null;
   unitOfMeasurement: string | null;
   isTracked: boolean;
+  // WS4/F9: false means "Argus tracks this, HA does not list it" (e.g. an entity removed from HA
+  // while still in entities.yaml). Optional because most fixtures predate it and an absent value
+  // must read as "known", which is the overwhelmingly common case.
+  knownToHa?: boolean;
   // SRCH-02/03 (08-02): HA area name (null if unresolved) + entity_id domain, e.g. "sensor".
   areaName: string | null;
   domain: string;
