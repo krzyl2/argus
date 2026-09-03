@@ -158,18 +158,15 @@ public static class InputValidator
         // window: 30..10000. The lower bound is not cosmetic — a median/MAD baseline under
         // ~30 samples has a scale estimate too noisy to divide by, so the score stops meaning
         // "deviation" and starts meaning "the last few readings disagreed".
-        var hasWindow = TryGetInt(p, "window", out var window);
-        if (!hasWindow || window < 30 || window > 10000)
-            errors.Add(MSG_WINDOW_RANGE);
+        var windowOk = ValidateIntInRange(p, "window", 30, 10000, MSG_WINDOW_RANGE, errors, out var window);
 
-        var hasMinSamples = TryGetInt(p, "min_samples", out var minSamples);
-        if (!hasMinSamples || minSamples < 10)
-            errors.Add(MSG_MIN_SAMPLES);
+        var minSamplesOk = ValidateIntAtLeast(p, "min_samples", 10, MSG_MIN_SAMPLES, errors, out var minSamples);
 
         // Cross-field: a min_samples above the window it is counted against can never be
         // reached, so the entity would report "calibrating" forever and never alarm.
-        if (hasWindow && hasMinSamples && window >= 30 && window <= 10000 &&
-            minSamples >= 10 && minSamples > window)
+        // Reported only when BOTH fields are individually valid, so one bad key produces one
+        // message instead of two.
+        if (windowOk && minSamplesOk && minSamples > window)
             errors.Add(MSG_MIN_SAMPLES_LE_WINDOW);
 
         if (!TryGetDouble(p, "z_scale", out var zScale) || zScale <= 0.0)
@@ -365,8 +362,40 @@ public static class InputValidator
         int minValue,
         string errorMsg,
         List<string> errors)
+        => ValidateIntAtLeast(p, key, minValue, errorMsg, errors, out _);
+
+    /// <summary>
+    /// <see cref="ValidateIntAtLeast(Dictionary{string,string},string,int,string,List{string})"/>
+    /// that also hands back the parsed value and whether it passed, so a caller can gate a
+    /// cross-field rule on it without re-parsing and without re-stating the bound.
+    /// </summary>
+    private static bool ValidateIntAtLeast(
+        Dictionary<string, string> p,
+        string key,
+        int minValue,
+        string errorMsg,
+        List<string> errors,
+        out int val)
+        => ValidateIntInRange(p, key, minValue, int.MaxValue, errorMsg, errors, out val);
+
+    /// <summary>
+    /// Validates that an integer param is present, numeric, and within [minValue, maxValue];
+    /// appends errorMsg on failure and returns whether it passed. Both bounds live in ONE
+    /// place per field: a range spelled out inline at the call site is how the client and the
+    /// server drift apart (detectorParams.ts MSG_WINDOW_RANGE is the mirror of this).
+    /// </summary>
+    private static bool ValidateIntInRange(
+        Dictionary<string, string> p,
+        string key,
+        int minValue,
+        int maxValue,
+        string errorMsg,
+        List<string> errors,
+        out int val)
     {
-        if (!TryGetInt(p, key, out var val) || val < minValue)
+        var ok = TryGetInt(p, key, out val) && val >= minValue && val <= maxValue;
+        if (!ok)
             errors.Add(errorMsg);
+        return ok;
     }
 }
