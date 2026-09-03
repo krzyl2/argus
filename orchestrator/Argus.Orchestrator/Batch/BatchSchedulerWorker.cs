@@ -448,11 +448,15 @@ public sealed class BatchSchedulerWorker : BackgroundService
             var last = response.Verdicts[^1];
             // Score is double? (google.protobuf.DoubleValue -> C# double?)
             await _statePublisher.PublishScoreAsync(entityId, last.Score ?? 0.0, ct);
-            await _statePublisher.PublishFlagAsync(entityId, last.IsAnomaly, ct);
 
+            // WS2: the batch path must NOT publish the flag. It writes the same
+            // argus/{slug}/flag/state topic as the streaming path but without hysteresis,
+            // min-duration, refractory, rate cap or watchdog — a second, ungated writer that
+            // was only ever harmless because influx_url is unset on this deployment.
+            // The score stays: it is idempotent and carries no event semantics.
             _logger.LogInformation(LogEvents.BatchScoredEntity,
-                "Scored {EntityId}/{Detector}: score={Score} anomaly={Anomaly}",
-                entityId, detectorCfg.Name, last.Score, last.IsAnomaly);
+                "Scored {EntityId}/{Detector}: score={Score}",
+                entityId, detectorCfg.Name, last.Score);
         }
     }
 

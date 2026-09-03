@@ -220,7 +220,33 @@ public class BatchSchedulerWorkerTests
 
         Assert.Equal(1, detector.ScoreBatchCallCount);
         Assert.Equal(1, publisher.PublishScoreCallCount);
-        Assert.Equal(1, publisher.PublishFlagCallCount);
+    }
+
+    [Fact]
+    public async Task RunEntityBatch_PublishesScore_ButNeverFlag()
+    {
+        // WS2: the batch path used to publish argus/{slug}/flag/state as well — the SAME topic
+        // the streaming path owns, but with no hysteresis, no min-duration, no refractory, no
+        // rate cap and no watchdog. Two writers with different rules on one topic; the only
+        // reason it never showed in the field is that influx_url is unset on this deployment, so
+        // the batch worker is never even registered. Score stays (idempotent, no event
+        // semantics); the flag belongs to the gated path alone.
+        var detector = new FakeBatchDetectorClient();
+        var influx = new FakeInfluxDbReader(OnePoint());
+        var publisher = new FakeStatePublisher();
+        var worker = new BatchSchedulerWorker(
+            DefaultSettings(),
+            influx,
+            detector,
+            publisher,
+            MakeLive(OneEntityOneDetector()),
+            new FakeGroupInfluxDataSource(),
+            NullLogger<BatchSchedulerWorker>.Instance);
+
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        Assert.Equal(1, publisher.PublishScoreCallCount);
+        Assert.Equal(0, publisher.PublishFlagCallCount);
     }
 
     [Fact]
