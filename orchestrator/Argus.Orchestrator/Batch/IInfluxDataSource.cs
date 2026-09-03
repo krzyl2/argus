@@ -6,6 +6,16 @@ namespace Argus.Orchestrator.Batch;
 /// </summary>
 public interface IInfluxDataSource
 {
+    /// <summary>
+    /// Operator-facing name of the store behind this seam, used in the priming log line.
+    /// F11's acceptance criterion is that the startup log says an entity was primed
+    /// <em>from HA Recorder</em>: on a deployment with influx_url empty, "primed 720 points" alone
+    /// cannot distinguish a working Recorder backfill from an InfluxDB that was never configured,
+    /// which is precisely the failure WS5 exists to make visible. Defaulted so the two production
+    /// implementors are the only places that must name themselves, and test fakes stay untouched.
+    /// </summary>
+    string SourceName => GetType().Name;
+
     Task<IReadOnlyList<(DateTime Timestamp, double Value)>> QueryAsync(
         string entityId, CancellationToken ct);
 

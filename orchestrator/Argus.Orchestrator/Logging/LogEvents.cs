@@ -97,6 +97,12 @@ public static class LogEvents
     // grepped out of a Debug log instead of being asserted only in a unit test.
     public static readonly EventId HistoryConnectionOpened  = new(5023, nameof(HistoryConnectionOpened));
 
+    // HistoryEmpty is the F11 negative case: the query succeeded and returned NOTHING for an
+    // entity the operator asked to be watched. That is never normal — it is an HA-side visibility
+    // or permission problem — and it must not be indistinguishable from "backfill is off", which
+    // silence would make it (§5.3, case (e)).
+    public static readonly EventId HistoryEmpty             = new(5024, nameof(HistoryEmpty));
+
     // Phase 8 UI — Group config UI + algorithm chooser (7009)
     public static readonly EventId GroupUiValidationBlocked = new(7009, nameof(GroupUiValidationBlocked));
 

@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Logging;
 using InfluxDB.Client;
@@ -28,6 +28,9 @@ public sealed class InfluxDbReader : IInfluxDataSource
     private readonly IInfluxQueryApi _queryApi;
     private readonly ConnectionSettings _settings;
     private readonly ILogger<InfluxDbReader> _logger;
+
+    /// <inheritdoc/>
+    public string SourceName => "InfluxDB";
 
     /// <summary>
     /// Production constructor: wraps the InfluxDBClient singleton.

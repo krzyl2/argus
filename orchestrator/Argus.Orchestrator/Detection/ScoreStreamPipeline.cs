@@ -1,4 +1,4 @@
-using Argus.Detector.V1;
+﻿using Argus.Detector.V1;
 using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Ha;
@@ -500,7 +500,18 @@ public sealed class ScoreStreamPipeline
                 entityId, _connectionSettings.BackfillLookback, requestedRows, primeCt);
 
             if (history.Count == 0)
-                return; // the history source already logged the WARN for an empty result
+            {
+                // F11 says the startup log must carry one priming line per watched entity with
+                // n > 0. Zero rows is the one outcome that produces no such line, so it has to
+                // announce itself: a query that succeeded and returned nothing is an HA-side
+                // visibility/permission problem (§5.3 case (e)), not "no backfill configured",
+                // and the two must not look the same in the log (Rule 12).
+                _logger.LogWarning(LogEvents.HistoryEmpty,
+                    "No history returned for {EntityId} from {HistorySource} (lookback={Lookback}) — "
+                    + "nothing to prime; the entity warms up on live readings only",
+                    entityId, _historySource.SourceName, _connectionSettings.BackfillLookback);
+                return;
+            }
 
             if (history.Count < requestedRows)
             {
@@ -549,9 +560,15 @@ public sealed class ScoreStreamPipeline
             }
             else
             {
+                // F11 acceptance: this line is the receipt an operator greps for, and it has to
+                // name the SOURCE. With influx_url empty, "Primed X with 720 points" reads the
+                // same whether the HA Recorder answered or whether no history source was ever
+                // registered — the exact ambiguity WS5 exists to remove.
                 _logger.LogInformation(LogEvents.WarmupPrimed,
-                    "Primed {EntityId} with {PointCount} history points -> n_seen={NSeen} warmedUp={WarmedUp}",
-                    entityId, request.History.Count, response.NSeen, response.WarmedUp);
+                    "Primed {EntityId} with {PointCount} history points from {HistorySource} "
+                    + "-> n_seen={NSeen} warmedUp={WarmedUp}",
+                    entityId, request.History.Count, _historySource.SourceName,
+                    response.NSeen, response.WarmedUp);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

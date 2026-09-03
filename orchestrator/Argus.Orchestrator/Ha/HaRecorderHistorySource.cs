@@ -78,6 +78,15 @@ internal sealed class HaRecorderHistorySource : IInfluxDataSource
     /// <summary>Connections opened so far — Debug counter behind the 60 s cache criterion (E2).</summary>
     internal int ConnectionsOpened { get; private set; }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// F11's acceptance criterion is phrased "primed &lt;entity&gt; &lt;n&gt; points from HA
+    /// Recorder": the operator must be able to read the SOURCE off the startup log, because on
+    /// this install (influx_url empty) a priming line that names no source looks identical
+    /// whether the Recorder answered or no history source was registered at all.
+    /// </remarks>
+    public string SourceName => "HA Recorder";
+
     /// <summary>
     /// The seam's rolling 24 h batch query. Same window as InfluxDbReader.QueryAsync; the row
     /// ceiling is the configured backfill cap because a WebSocket response, unlike a Flux result,
