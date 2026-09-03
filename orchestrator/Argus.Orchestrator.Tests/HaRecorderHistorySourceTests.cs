@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -356,8 +357,7 @@ public class HaRecorderHistorySourceTests
     public void HistorySourceRegistered_WhenInfluxUrlNull()
     {
         // F11: influx_url is empty on the operator's install, so before WS5 the container resolved
-        // IInfluxDataSource to null and backfill priming was unreachable dead code. This asserts
-        // the composition-root branch Program.cs actually calls, not a copy of it.
+        // IInfluxDataSource to null and backfill priming was unreachable dead code.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(new ConnectionSettings { InfluxUrl = null, HaUrl = "ws://supervisor/core/websocket" });
@@ -369,5 +369,45 @@ public class HaRecorderHistorySourceTests
 
         Assert.NotNull(source);
         Assert.IsType<HaRecorderHistorySource>(source);
+    }
+
+    [Fact]
+    public void CompositionRoot_CallsTheRegistration_InTheNoInfluxBranch()
+    {
+        // The test above proves the registration WORKS; it cannot prove Program.cs still calls it.
+        // Delete that one line from the else arm and every other test here stays green while the
+        // shipped add-on reverts to "influx_url empty == no history source == dead backfill" -
+        // exactly the F11 failure WS5 exists to undo. Program.cs is top-level statements and
+        // cannot be invoked from a test, so the composition root is pinned as source.
+        var program = File.ReadAllText(FindRepoFile("orchestrator/Argus.Orchestrator/Program.cs"));
+
+        var branch = program.IndexOf(
+            "if (!string.IsNullOrWhiteSpace(connectionSettings.InfluxUrl))", StringComparison.Ordinal);
+        Assert.True(branch >= 0, "Program.cs no longer branches on connectionSettings.InfluxUrl - "
+            + "re-point this test at whatever replaced that branch.");
+
+        var elseAt = program.IndexOf("\nelse", branch, StringComparison.Ordinal);
+        var buildAt = program.IndexOf("var app = builder.Build();", branch, StringComparison.Ordinal);
+        Assert.True(elseAt > branch && buildAt > elseAt, "the influx_url branch lost its else arm");
+
+        var callAt = program.IndexOf("AddHaRecorderHistorySource()", StringComparison.Ordinal);
+        Assert.True(callAt > elseAt && callAt < buildAt,
+            "Program.cs must register the HA Recorder history source in the else (no-InfluxDB) arm "
+            + "of the influx_url branch - F11 depends on it.");
+    }
+
+    /// <summary>Resolves a repo-relative path by walking up from the test binary.</summary>
+    private static string FindRepoFile(string relativePath)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(candidate))
+                return candidate;
+            dir = dir.Parent;
+        }
+
+        throw new FileNotFoundException($"could not find {relativePath} above {AppContext.BaseDirectory}");
     }
 }
