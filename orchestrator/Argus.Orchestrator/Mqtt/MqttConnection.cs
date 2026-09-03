@@ -19,7 +19,7 @@ namespace Argus.Orchestrator.Mqtt;
 /// (re)connect attempt — never cached — so re-provisioning the Mosquitto
 /// add-on survives a reconnect without restarting Argus (SUPV-03).
 /// </summary>
-public sealed class MqttConnection : IAsyncDisposable
+public sealed class MqttConnection : IAsyncDisposable, IMqttPublishSink
 {
     public const string BridgeAvailabilityTopic = "argus/bridge/availability";
 

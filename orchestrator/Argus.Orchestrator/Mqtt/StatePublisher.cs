@@ -12,7 +12,7 @@ public sealed class StatePublisher : IStatePublisher
 {
     public const string BridgeAvailabilityTopic = MqttConnection.BridgeAvailabilityTopic;
 
-    private MqttConnection? _mqtt;
+    private IMqttPublishSink? _mqtt;
     private readonly ILogger<StatePublisher> _logger;
 
     public StatePublisher(ILogger<StatePublisher> logger)
@@ -25,6 +25,13 @@ public sealed class StatePublisher : IStatePublisher
 
     /// <summary>Wires the shared MqttConnection. Called by MqttPublisherWorker after connect.</summary>
     public void SetConnection(MqttConnection mqtt) => _mqtt = mqtt;
+
+    /// <summary>
+    /// Test/composition seam: wires any publish sink. Exists because retain flags are otherwise
+    /// unobservable — MqttConnection is sealed with a non-virtual PublishAsync, so without this
+    /// interface no test can assert that the flag topic is retained and the score topic is not.
+    /// </summary>
+    internal void SetConnection(IMqttPublishSink sink) => _mqtt = sink;
 
     /// <summary>argus/{slug}/flag/state</summary>
     public string FlagTopic(string entityId) => $"argus/{UniqueId.Slug(entityId)}/flag/state";
@@ -58,8 +65,14 @@ public sealed class StatePublisher : IStatePublisher
     {
         EnsureConnected();
         var payload = on ? "ON" : "OFF";
-        _logger.LogInformation(LogEvents.MqttDiscoveryPublished, "Flag {EntityId} → {Payload}", entityId, payload);
-        await _mqtt!.PublishAsync(FlagTopic(entityId), payload, retain: false, ct);
+        // Debug, not Information: at ~4 publishes per 15 s per entity this line was F8 itself.
+        // The adaptive path publishes change-only, so this now fires once per real transition.
+        _logger.LogDebug(LogEvents.MqttDiscoveryPublished, "Flag {EntityId} → {Payload}", entityId, payload);
+        // retain:true is required, not cosmetic: with change-only publishing a non-retained flag
+        // leaves HA showing `unknown` after every HA restart until the next real transition, which
+        // on a healthy sensor may never come. A stale retained ON is covered by the bridge LWT
+        // (MqttConnection.BridgeAvailabilityTopic) plus the discovery availability list.
+        await _mqtt!.PublishAsync(FlagTopic(entityId), payload, retain: true, ct);
     }
 
     /// <summary>Publishes anomaly score as invariant-culture float string.</summary>
