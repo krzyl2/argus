@@ -15,6 +15,7 @@ import {
 import { DetectorDisclosure } from './DetectorDisclosure';
 import { SensorPresetPicker } from './SensorPresetPicker';
 import { CalibratedBandReadout } from './CalibratedBandReadout';
+import { ReplayPanel } from './ReplayPanel';
 import { SaveBar } from './SaveBar';
 import { SaveResultBanner } from './SaveResultBanner';
 import { Button } from './Button';
@@ -96,6 +97,15 @@ export function SingleDetectorEditorForm({ entityId }: SingleDetectorEditorFormP
           onAdd={() => addDetector(entityId)}
           ctx={ctx}
           />
+          {/* WS6: replay the entity's own history through these EXACT params before saving
+              them. Bound to the first detector block, which is the streaming one. */}
+          {detectors.length > 0 && (
+            <ReplayPanel
+              entityId={entityId}
+              detector={detectors[0].name}
+              params={detectors[0].params}
+            />
+          )}
         </>
       ) : (
         <p class="argus-label">This sensor will be untracked on next save.</p>

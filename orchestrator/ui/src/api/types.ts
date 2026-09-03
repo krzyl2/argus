@@ -207,6 +207,45 @@ export interface HealthResponse {
   components: HealthComponent[];
 }
 
+// ---------------------------------------------------------------------------
+// WS6 — POST /api/sensors/{entityId}/simulate (replay panel).
+// Matches SimulateEndpoint.cs's projection records exactly. Every field is new, so nothing
+// here touches an existing fixture and nothing needs to be optional for `tsc -b` to pass.
+// ---------------------------------------------------------------------------
+
+export interface SimulateRequest {
+  detector: DetectorName;
+  params: Record<string, string>;
+  /** Duration literal, ^\d+[smhdw]$. 24h is the window every acceptance number is stated in. */
+  lookback: string;
+  maxPoints: number;
+}
+
+export interface SimulateSummary {
+  episodes: number;
+  /** Percentage of WALL-CLOCK time in alarm, not percentage of samples. */
+  onTimePercent: number;
+  spanHours: number;
+  alertsPerDay: number;
+  scorablePoints: number;
+  /** All flag flips, both directions; ON->OFF count is transitions - episodes. */
+  transitions: number;
+}
+
+export interface SimulateResponse {
+  ok: boolean;
+  error: string | null;
+  /** Null whenever ok is false — "did not run" must not render as "found nothing". */
+  summary: SimulateSummary | null;
+  scores: number[];
+  values: number[];
+  timestamps: string[];
+  /** First scorable index. Points before it are a structural 0.0, never an observation. */
+  warmedUpFromIndex: number;
+  /** Effective warm-up gate (hst: window, rmad: min_samples). */
+  window: number;
+}
+
 // GET /api/anomalies/recent response (QUICK-dashboard-real-data) — matches the ring-buffer
 // projection in Program.cs exactly (newest-first).
 export interface RecentAnomaly {

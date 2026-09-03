@@ -1,3 +1,5 @@
+import type { SimulateRequest, SimulateResponse } from './types';
+
 // Relative-fetch wrapper — enforces Ingress base-path safety (UI-02).
 // Every /api/* call MUST go through apiGet/apiPost. Never call fetch() directly
 // from components with a leading-slash path: that resolves against the origin
@@ -31,4 +33,22 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     throw new Error(`POST ${path} failed: ${res.status}`);
   }
   return JSON.parse(text) as T;
+}
+
+/**
+ * POST /api/sensors/{entityId}/simulate — one replay of the entity's own history.
+ *
+ * The path is built RELATIVE (no leading slash) and goes through apiPost, so it resolves
+ * against the Supervisor Ingress prefix. A leading slash would resolve against the origin
+ * root and 404 under Ingress while working perfectly in dev-compose — which is why apiPost
+ * throws on one rather than trusting the caller.
+ */
+export function postSimulate(
+  entityId: string,
+  body: SimulateRequest,
+): Promise<SimulateResponse> {
+  return apiPost<SimulateResponse>(
+    `api/sensors/${encodeURIComponent(entityId)}/simulate`,
+    body,
+  );
 }

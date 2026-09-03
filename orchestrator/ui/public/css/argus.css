@@ -705,6 +705,64 @@ details[open] > .argus-disclosure-toggle::before {
   color: var(--color-text-secondary);
 }
 
+/* WS6 replay panel — "Testuj na historii". Inline SVG, no chart library. */
+.argus-replay-panel {
+  margin: var(--space-md) 0;
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.argus-replay-panel__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.argus-replay-panel__title {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+  margin-right: auto;
+}
+
+.argus-replay-panel__error {
+  color: var(--color-status-error);
+}
+
+.argus-replay-panel__numbers {
+  display: flex;
+  gap: var(--space-lg);
+  margin: var(--space-sm) 0;
+}
+
+.argus-replay-panel__numbers dd {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.argus-replay-panel__chart {
+  width: 100%;
+  height: 120px;
+  display: block;
+}
+
+.argus-replay-panel__band {
+  fill: var(--color-status-error);
+  opacity: 0.15;
+}
+
+.argus-replay-panel__value {
+  stroke: var(--color-text-secondary);
+  stroke-width: 1;
+}
+
+.argus-replay-panel__score {
+  stroke: var(--color-accent);
+  stroke-width: 1.5;
+}
+
 /* Remove detector button — ghost style with destructive color */
 .argus-btn--destructive-ghost {
   background: transparent;
