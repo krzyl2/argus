@@ -454,12 +454,77 @@ class TestWarmUp:
         for i in range(60):
             assert det.score_one(20.0 + i * 0.01) == 0.0
             assert det.n_seen == i + 1
-            # warmed_up flips exactly when n_seen reaches min_samples.
-            assert det.is_warmed_up is (det.n_seen >= 60)
+            # Every one of these 60 readings was scored against fewer than
+            # min_samples values, so none of them may claim to be warmed up.
+            # This used to assert `is_warmed_up is (n_seen >= 60)`, which made
+            # the last iteration assert BOTH "score == 0.0" and "warmed_up" —
+            # the contradiction itself, written down as the contract.
+            assert det.is_warmed_up is False
 
+        # The 61st reading is the first one measured against a full window.
+        det.score_one(20.6)
         assert det.is_warmed_up is True
-        assert det.n_seen == 60
+        assert det.n_seen == 61
         assert det.window == 60
+
+    def test_warmed_up_never_travels_with_the_structural_zero(self):
+        """warmed_up describes the score returned WITH it, not the next one.
+
+        Verdict.warmed_up and Verdict.score leave the detector together, and
+        the .NET gate reads them together: warmed_up=true is what makes
+        AlertPolicy trust the score channel and push the score into the rank
+        window. A tick that pairs warmed_up=true with the structural 0.0
+        therefore seeds the entity's own rank distribution with a value the
+        sensor never produced — on the very first point the gate ever looks at.
+
+        The ramp is strictly increasing, so every reading is the window maximum
+        and a genuinely computed score can never come out as 0.0. Any zero in
+        the warmed-up region is the structural one.
+        """
+        det = RmadDetector(window=720, min_samples=10)
+
+        warmed_scores = [
+            score
+            for score in (det.score_one(20.0 + i) for i in range(30))
+            if det.is_warmed_up
+        ]
+
+        assert warmed_scores, "must warm up within 30 readings"
+        assert all(s > 0.0 for s in warmed_scores)
+
+    def test_restored_checkpoint_is_warmed_from_its_own_window(self):
+        """A pre-upgrade checkpoint has no _warmed_up field; it must not re-warm.
+
+        The field is derived from the restored window instead of defaulting to
+        False, because the next score_one really is measured against those
+        values. Defaulting to False would suppress the flag on every entity in
+        the house for one reading after every image upgrade.
+        """
+        det = RmadDetector(min_samples=10)
+        for i in range(50):
+            det.score_one(20.0 + i)
+
+        legacy_state = dict(det.__dict__)
+        legacy_state.pop("_warmed_up")
+
+        restored = RmadDetector(min_samples=10)
+        restored.__setstate__(legacy_state)
+
+        assert restored.is_warmed_up is True
+
+    def test_window_smaller_than_min_samples_never_claims_warm_up(self):
+        """A window that cannot hold min_samples values produces no real score.
+
+        The counter-based version reported warmed_up=true here while
+        _score_from returned 0.0 forever, because len(window) is capped by
+        `window` and never reaches min_samples. Fail loud: an entity whose
+        params can never produce a verdict must look uncalibrated, not calm.
+        """
+        det = RmadDetector(window=5, min_samples=20)
+
+        for i in range(100):
+            assert det.score_one(20.0 + i) == 0.0
+            assert det.is_warmed_up is False
 
 
 # ---------------------------------------------------------------------------

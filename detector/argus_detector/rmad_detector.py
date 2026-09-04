@@ -213,6 +213,7 @@ class RmadDetector:
         self._sorted: list[float] = []
         self._n_seen: int = 0
         self._warned_degenerate: bool = False
+        self._warmed_up: bool = False
 
     # -------------------------------------------------------------------------
     # Construction / reconfiguration
@@ -304,7 +305,18 @@ class RmadDetector:
         Returns exactly 0.0 while the window holds fewer than min_samples
         readings — the orchestrator suppresses the flag on !warmed_up anyway,
         and 0.0 survives the wire because Verdict.score is a DoubleValue.
+
+        `_warmed_up` is latched from the window as it stood BEFORE the insert,
+        because that is the window the returned score was computed against. It
+        used to be derived from `_n_seen` AFTER the insert, which made the two
+        disagree on exactly one tick: the reading that takes n_seen to
+        min_samples was scored against min_samples - 1 values, so `_score_from`
+        returned the structural 0.0 while the Verdict said warmed_up=true. That
+        tick is the FIRST point the .NET gate looks at at all — it pushes a
+        manufactured 0.0 into the rank window and reports a calibrated entity
+        one reading early.
         """
+        self._warmed_up = len(self._sorted) >= self._min_samples
         score = self._score_from(self._sorted, value)
         _insert_into(self._values, self._sorted, value, self._window)
         self._n_seen += 1
@@ -336,8 +348,19 @@ class RmadDetector:
 
     @property
     def is_warmed_up(self) -> bool:
-        """True once min_samples readings have been processed (D-M)."""
-        return self._n_seen >= self._min_samples
+        """True once the LAST score was computed from a full-enough window (D-M).
+
+        Not `_n_seen >= _min_samples`: score_one scores before it learns, so a
+        count taken after the insert is one reading ahead of the window the
+        score came from. This property is what Verdict.warmed_up carries, and
+        Verdict.warmed_up describes the score travelling with it.
+
+        It is also the honest answer when window < min_samples (a params combo
+        the UI permits): the window can never hold min_samples values, so no
+        score is ever real, and the counter-based version claimed otherwise
+        while returning 0.0 forever.
+        """
+        return self._warmed_up
 
     @property
     def n_seen(self) -> int:
@@ -389,6 +412,12 @@ class RmadDetector:
                 f"the supported {_SCHEMA_VERSION}"
             )
 
+        # Whether the CHECKPOINT carried the field, not whether the freshly
+        # constructed instance has it: __setstate__ runs on an already-__init__'d
+        # object, so every field is present with its default and setdefault can
+        # never fire.
+        had_warmed_up = "_warmed_up" in state
+
         self.__dict__.update(state)
         self.__dict__.setdefault("_schema", _SCHEMA_VERSION)
         self.__dict__.setdefault("_window", _DEFAULT_WINDOW)
@@ -405,3 +434,11 @@ class RmadDetector:
         rebuilt = sorted(values)
         if self.__dict__.get("_sorted") != rebuilt:
             self.__dict__["_sorted"] = rebuilt
+
+        # (d) A checkpoint written before _warmed_up existed restores to the
+        #     truth its window already carries: the next score_one will be
+        #     computed against these values, so a restored full window is
+        #     warmed and a restored short one is not. Defaulting to False would
+        #     re-run warm-up suppression on every entity after an upgrade.
+        if not had_warmed_up:
+            self.__dict__["_warmed_up"] = len(values) >= self.__dict__["_min_samples"]
