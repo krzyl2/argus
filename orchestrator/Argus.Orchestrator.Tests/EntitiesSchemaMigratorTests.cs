@@ -586,6 +586,38 @@ public class EntitiesSchemaMigratorTests : IDisposable
     }
 
     /// <summary>
+    /// The two halves of D-G composed against a REAL migrated file, which is the composition
+    /// Program.cs makes at startup: the migrator leaves the .pre-v2.bak behind, and the
+    /// retraction is resolved from that file — never from "did MigrateIfNeeded return true".
+    ///
+    /// Boot 2 is the whole point. MigrateIfNeeded answers false there (schema_version is already
+    /// 2), so a retraction gated on the migration would be gone for good on exactly the boot
+    /// that has to make up for a broker that was down on boot 1. Asserting it against the
+    /// migrator's own output, rather than a hand-written backup, is what ties the obligation to
+    /// the file the migration actually produces.
+    /// </summary>
+    [Fact]
+    public void RetractionIsOwedOnEveryBootAfterTheMigration_NotOnlyTheMigratingOne()
+    {
+        var path = WritePath(F0Yaml());
+
+        Assert.True(EntitiesSchemaMigrator.MigrateIfNeeded(path, Silent));
+
+        IReadOnlyList<EntityConfig> ReadBackup(string p) => Load(p).Entities;
+
+        // Boot 1 — migrated just now.
+        var boot1 = LegacyDiscoveryRetraction.Resolve(path, ReadBackup);
+        Assert.True(boot1.IsPending);
+        Assert.Equal(5, boot1.Entities.Count);
+        // The pre-migration DETECTOR names, which the live file no longer has.
+        Assert.All(boot1.Entities, e => Assert.Equal("hst", e.Detectors.Single().Name));
+
+        // Boot 2 — nothing left to migrate, and the deletions are still owed.
+        Assert.False(EntitiesSchemaMigrator.MigrateIfNeeded(path, Silent));
+        Assert.True(LegacyDiscoveryRetraction.Resolve(path, ReadBackup).IsPending);
+    }
+
+    /// <summary>
     /// A retraction is only as good as the delivery it can prove. The production sink drops a
     /// publish it cannot deliver — it does not throw — so if this loop reported "done" on a
     /// dropped message, LegacyDiscoveryRetraction would write its durable marker and the stale
