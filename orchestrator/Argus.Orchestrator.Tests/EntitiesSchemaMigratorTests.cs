@@ -198,6 +198,65 @@ public class EntitiesSchemaMigratorTests : IDisposable
         Assert.DoesNotContain("frozen_window: \"0\"", text);
     }
 
+    /// <summary>
+    /// D-H again, on the branch the "BOTH branches" wording did not name: an entity with MORE
+    /// than one detector. The detector rewrite is deliberately skipped there (an operator who
+    /// picked [hst, mad] chose that), but the skip must not carry frozen along with it.
+    ///
+    /// The rule pinned here is a property of the RUNTIME, not of the migrator's shape:
+    /// ScoreStreamPipeline resolves the streaming detector as the first hst-or-rmad entry and
+    /// reads FrozenSensorDetector's params off that same block. So whichever block the pipeline
+    /// would pick must come out of the migration with frozen arithmetically dead — otherwise a
+    /// fridge configured as [hst, mad] latches ON for every compressor rest, past warm-up: the
+    /// exact F1 state D-H exists to end.
+    /// </summary>
+    [Fact]
+    public void MultiDetectorEntity_StillGetsFrozenDisabled()
+    {
+        var yaml = """
+            entities:
+              - entity_id: sensor.lodowkababcia_power
+                friendly_name: ""
+                detectors:
+                  - name: hst
+                    params:
+                      window: "250"
+                      n_trees: "25"
+                      high_threshold: "0.7"
+                      low_threshold: "0.3"
+                      min_consecutive: "3"
+                      frozen_window: "10"
+                      frozen_variance_threshold: "0.001"
+                  - name: mad
+                    params:
+                      window: "100"
+                      threshold: "3.0"
+            groups: []
+            """;
+        var path = WritePath(yaml);
+        var log = new RecordingLogger();
+
+        Assert.True(EntitiesSchemaMigrator.MigrateIfNeeded(path, log));
+
+        var entity = Load(path).Entities.Single();
+        Assert.Equal(2, entity.Detectors.Count);
+
+        // Resolved the SAME way ScoreStreamPipeline.BuildEntityStates resolves it, so the
+        // assertion follows the runtime rather than the config's index order.
+        var streaming = entity.Detectors.First(d => d.Name is "rmad" or "hst");
+
+        Assert.Equal("0.0", streaming.Params["frozen_variance_threshold"]);
+        Assert.Equal("10", streaming.Params["frozen_window"]);   // verbatim, never "0"
+
+        // Not a rewrite: the operator's own detector choice survives untouched, and they are
+        // not told they "tuned hst".
+        Assert.Equal("hst", entity.Detectors[0].Name);
+        Assert.Equal("mad", entity.Detectors[1].Name);
+        Assert.Equal("3.0", entity.Detectors[1].Params["threshold"]);
+        Assert.False(entity.Detectors[1].Params.ContainsKey("frozen_variance_threshold"));
+        Assert.Equal(0, log.Count(LogLevel.Warning, "tuned hst params"));
+    }
+
     // -----------------------------------------------------------------------
     // What must NOT be touched
     // -----------------------------------------------------------------------

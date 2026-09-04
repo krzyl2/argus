@@ -205,8 +205,21 @@ public static class EntitiesSchemaMigrator
         // (5) Any other detector — INCLUDING rmad, and including a multi-detector entity — is a
         // silent skip. It must never produce the "tuned hst" warning: an operator who already
         // chose rmad, mad or stl did nothing wrong and has nothing to act on.
+        //
+        // A skip of the DETECTOR REWRITE is not a skip of D-H, though. ScoreStreamPipeline picks
+        // the streaming detector as the FIRST hst-or-rmad entry in the list and reads the frozen
+        // params off that same block, so an entity configured as [hst, mad] keeps running frozen
+        // on 10/0.001 — and frozen forces the flag ON past warm-up. On a fridge or a freezer that
+        // means ON for the whole compressor rest. D-H says "BOTH branches"; this is the third one,
+        // so frozen goes off on every hst/rmad block of every entity, however many it has.
         if (entity.Detectors.Count != 1)
         {
+            foreach (var d in entity.Detectors)
+            {
+                if (IsFrozenCapable(d.Name))
+                    DisableFrozen(entity.EntityId, d.Params, logger);
+            }
+
             logger.LogDebug("Skipping {EntityId}: {Count} detectors configured",
                 entity.EntityId, entity.Detectors.Count);
             return;
@@ -273,6 +286,15 @@ public static class EntitiesSchemaMigrator
             "Migrated {EntityId}: hst -> rmad (schema_version {Version})",
             entity.EntityId, TargetSchemaVersion);
     }
+
+    /// <summary>
+    /// True for the detector names ScoreStreamPipeline accepts as the streaming detector — the
+    /// ones whose params block ends up feeding FrozenSensorDetector. Kept in lockstep with
+    /// ScoreStreamPipeline.BuildEntityStates.
+    /// </summary>
+    private static bool IsFrozenCapable(string? name)
+        => string.Equals(name, "hst", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, "rmad", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// D-H: disables frozen detection through the VARIANCE threshold only.
