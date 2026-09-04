@@ -702,31 +702,60 @@ public sealed class ScoreStreamPipeline
         var states = new Dictionary<string, EntityRuntimeState>(StringComparer.OrdinalIgnoreCase);
         foreach (var entity in _liveConfig.Get().Entities)
         {
-            // WS3/D-A: resolve the streaming detector by NAME, first match wins. The literal
-            // "hst" lookup this replaced meant a config migrated to rmad fell through to
-            // `new HstParams()` (250/0.7/0.3) — F0 restored in silence.
-            var streaming = entity.Detectors.FirstOrDefault(d =>
-                string.Equals(d.Name, "rmad", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(d.Name, "hst", StringComparison.OrdinalIgnoreCase));
-
             // WS2: alert params come from the SAME params map as the detector params (no new
             // YAML block).
-            var alertParams = AlertParams.From(streaming?.Params ?? new Dictionary<string, string>());
+            var alertParams = AlertParams.From(
+                ResolveStreamingDetector(entity)?.Params ?? new Dictionary<string, string>());
             var alertPolicy = _alertStore?.GetOrCreate(entity.EntityId, alertParams);
 
-            states[entity.EntityId] =
-                streaming is not null &&
-                string.Equals(streaming.Name, "rmad", StringComparison.OrdinalIgnoreCase)
-                    ? new EntityRuntimeState(RmadParams.From(streaming.Params), alertParams, alertPolicy)
-                    : new EntityRuntimeState(
-                        streaming is not null ? HstParams.From(streaming.Params) : new HstParams(),
-                        alertParams, alertPolicy);
+            states[entity.EntityId] = BuildEntityState(entity, alertParams, alertPolicy);
         }
 
         // Config reloads rebuild this map on every Save; the store keeps each entity's rank/raw
         // calibration across those rebuilds, so untracked entities must be dropped explicitly.
         _alertStore?.PruneTo(states.Keys);
         return states;
+    }
+
+    /// <summary>
+    /// WS3/D-A: the streaming detector is resolved by NAME, first match wins. The literal "hst"
+    /// lookup this replaced meant a config migrated to rmad fell through to `new HstParams()`
+    /// (250/0.7/0.3) — F0 restored in silence.
+    ///
+    /// Null when the entity names neither: a `[mad]`, `[stl]` or `[mad, stl]` entity has no
+    /// streaming block at all, which is the case <see cref="BuildEntityState"/> has to answer for.
+    /// </summary>
+    internal static DetectorConfig? ResolveStreamingDetector(EntityConfig entity)
+        => entity.Detectors.FirstOrDefault(d =>
+            string.Equals(d.Name, "rmad", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(d.Name, "hst", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Builds one entity's runtime state from its config.
+    ///
+    /// D-H, third branch. Frozen detection is disabled through the params block
+    /// (frozen_variance_threshold: 0.0) by EntitiesSchemaMigrator, which can only reach an
+    /// hst or rmad block — the only kind the UI lets an operator edit. An entity with NO such
+    /// block ([mad], [stl], [mad, stl]) used to land on `new HstParams()`, whose D-12 defaults
+    /// are frozen_window 10 / frozen_variance_threshold 0.001: frozen live, on an entity where
+    /// no key exists through which anyone could switch it off, and frozen forces the flag ON.
+    /// On a fridge that is ON for the whole compressor rest. So the fallback carries frozen
+    /// DEAD: it is enabled only by a params block an operator can actually see and edit.
+    /// </summary>
+    internal static EntityRuntimeState BuildEntityState(
+        EntityConfig entity, AlertParams alertParams, AlertPolicy? alertPolicy)
+    {
+        var streaming = ResolveStreamingDetector(entity);
+
+        if (streaming is null)
+        {
+            return new EntityRuntimeState(
+                new HstParams { FrozenVarianceThreshold = 0.0 }, alertParams, alertPolicy);
+        }
+
+        return string.Equals(streaming.Name, "rmad", StringComparison.OrdinalIgnoreCase)
+            ? new EntityRuntimeState(RmadParams.From(streaming.Params), alertParams, alertPolicy)
+            : new EntityRuntimeState(HstParams.From(streaming.Params), alertParams, alertPolicy);
     }
 
     private static Point ToPoint(Ha.HaReading reading, EntityRuntimeState entityState)

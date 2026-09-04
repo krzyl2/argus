@@ -289,8 +289,14 @@ public static class EntitiesSchemaMigrator
 
     /// <summary>
     /// True for the detector names ScoreStreamPipeline accepts as the streaming detector — the
-    /// ones whose params block ends up feeding FrozenSensorDetector. Kept in lockstep with
-    /// ScoreStreamPipeline.BuildEntityStates.
+    /// ones whose params block ends up feeding FrozenSensorDetector.
+    ///
+    /// This covers every entity the migrator can reach, which is NOT every entity: an entity that
+    /// names neither hst nor rmad ([mad], [stl], [mad, stl]) has no block to write
+    /// frozen_variance_threshold into, so there is nothing here to disable. That case is answered
+    /// where it arises — ScoreStreamPipeline.BuildEntityState builds its fallback params with
+    /// frozen already dead — because a key written into a [mad] block would be a key no operator
+    /// could find and no validator would accept.
     /// </summary>
     private static bool IsFrozenCapable(string? name)
         => string.Equals(name, "hst", StringComparison.OrdinalIgnoreCase)

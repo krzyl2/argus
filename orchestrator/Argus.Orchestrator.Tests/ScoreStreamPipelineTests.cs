@@ -1244,6 +1244,99 @@ public class ScoreStreamPipelineTests
         Assert.True(ScoreStreamPipeline.SupportsRmad);
     }
 
+    // --- D-H, third branch: an entity with no hst/rmad block -----------------
+
+    /// <summary>
+    /// D-H. Frozen is disabled through the params block, and EntitiesSchemaMigrator can only
+    /// write that key into a block the pipeline recognises as streaming (hst/rmad) — which is
+    /// also the only kind the UI renders and InputValidator accepts keys for.
+    ///
+    /// An entity that names neither ([mad], [stl], [mad, stl]) therefore has NO reachable switch:
+    /// whatever the fallback params say is what runs forever. The rule pinned here is that the
+    /// fallback says "frozen off". With frozen on (the D-12 defaults, 10 / 0.001) a fridge —
+    /// 88% zeros, ten consecutive 0 W readings per compressor rest — latches IsFrozen, and frozen
+    /// forces the flag ON for the whole rest, on an entity nobody can turn it off for.
+    /// </summary>
+    [Theory]
+    [InlineData("mad")]
+    [InlineData("stl")]
+    public void EntityWithoutStreamingDetector_RunsWithFrozenDead(string detector)
+    {
+        var entity = new EntityConfig
+        {
+            EntityId = "sensor.lodowkababcia_power",
+            Detectors = [new DetectorConfig { Name = detector }],
+        };
+
+        var state = ScoreStreamPipeline.BuildEntityState(entity, new AlertParams(), alertPolicy: null);
+
+        // A compressor rest: far more than frozen_window identical readings.
+        for (var i = 0; i < 50; i++)
+            state.FrozenDetector.AddReading(0.0);
+
+        Assert.False(state.FrozenDetector.IsFrozen);
+    }
+
+    /// <summary>
+    /// The same hole with two detectors: [mad, stl] is skipped by the migrator's multi-detector
+    /// branch as well, because neither block is frozen-capable — there is no first-hst-or-rmad
+    /// block to write the key into.
+    /// </summary>
+    [Fact]
+    public void MultiDetectorEntityWithoutStreamingDetector_RunsWithFrozenDead()
+    {
+        var entity = new EntityConfig
+        {
+            EntityId = "sensor.zamrazarka_power",
+            Detectors =
+            [
+                new DetectorConfig { Name = "mad" },
+                new DetectorConfig { Name = "stl" },
+            ],
+        };
+
+        var state = ScoreStreamPipeline.BuildEntityState(entity, new AlertParams(), alertPolicy: null);
+
+        for (var i = 0; i < 50; i++)
+            state.FrozenDetector.AddReading(0.0);
+
+        Assert.False(state.FrozenDetector.IsFrozen);
+    }
+
+    /// <summary>
+    /// The other half of the same rule, so the fix above cannot decay into "frozen is dead
+    /// everywhere": an entity whose OWN params block still asks for frozen keeps it. That block
+    /// is editable — the operator sees the key, the migrator can rewrite it, and D-H's arithmetic
+    /// disable (0.0) is what turns it off there.
+    /// </summary>
+    [Fact]
+    public void EntityWhoseStreamingBlockAsksForFrozen_KeepsIt()
+    {
+        var entity = new EntityConfig
+        {
+            EntityId = "sensor.lodowkababcia_power",
+            Detectors =
+            [
+                new DetectorConfig
+                {
+                    Name = "rmad",
+                    Params = new Dictionary<string, string>
+                    {
+                        ["frozen_window"] = "10",
+                        ["frozen_variance_threshold"] = "0.001",
+                    },
+                },
+            ],
+        };
+
+        var state = ScoreStreamPipeline.BuildEntityState(entity, new AlertParams(), alertPolicy: null);
+
+        for (var i = 0; i < 50; i++)
+            state.FrozenDetector.AddReading(0.0);
+
+        Assert.True(state.FrozenDetector.IsFrozen);
+    }
+
     // ─── F1 again, by a new route: the two loops racing on the published flag ─
 
     [Fact]
