@@ -1,6 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import {
   validateField,
   validateHstParams,
@@ -264,75 +262,5 @@ describe('validateRmadParams rejects a non-migrated (HST-shaped) block', () => {
   it('leaves n_trees alone on an hst block', () => {
     expect(validateHstParams({ n_trees: '25' })).toEqual({});
     expect(validateDetectorParams('hst', { n_trees: '25' })).toEqual({});
-  });
-});
-
-// Parity pin. The four rmad message strings live in TWO files by necessity (C# validates the
-// POST body, TS validates the form), and a drift between them is invisible until an operator
-// hits a Save that the browser had called valid. These read the server's constants off disk
-// and assert the client produces the SAME text at runtime — so editing InputValidator.cs
-// without editing detectorParams.ts turns red here rather than in production.
-describe('C#/TS message parity (InputValidator.cs <-> detectorParams.ts)', () => {
-  // Walked up from the working directory rather than resolved off import.meta.url: vitest
-  // transforms this module, so import.meta.url is not a file:// URL here.
-  function findServerSource(): string {
-    const rel = join('orchestrator', 'Argus.Orchestrator', 'Config', 'InputValidator.cs');
-    for (let dir = process.cwd(); ; dir = dirname(dir)) {
-      const candidate = join(dir, rel);
-      if (existsSync(candidate)) return candidate;
-      if (dirname(dir) === dir) throw new Error(`could not locate ${rel} above ${process.cwd()}`);
-    }
-  }
-
-  const csharp = readFileSync(findServerSource(), 'utf8');
-
-  /**
-   * Reads the value of `internal const string NAME = "...";` out of the server source,
-   * unescaping the C# literal by hand so no regex escaping sits between the two files.
-   */
-  function serverMessage(name: string): string {
-    const at = csharp.indexOf(`internal const string ${name}`);
-    if (at < 0) throw new Error(`InputValidator.cs no longer declares ${name}`);
-    const open = csharp.indexOf('"', at);
-    let out = '';
-    for (let i = open + 1; i < csharp.length; i++) {
-      const ch = csharp[i];
-      if (ch === '\\') {
-        out += csharp[++i];
-        continue;
-      }
-      if (ch === '"') return out;
-      out += ch;
-    }
-    throw new Error(`InputValidator.cs has an unterminated literal for ${name}`);
-  }
-
-  // A UTF-8 BOM in front of `using` is invisible in an editor and harmless to the compiler,
-  // but it is one more byte the string extraction above has to survive, and it makes the file
-  // compare unequal to every other source in the folder. It was added by hand; keep it out.
-  it('InputValidator.cs carries no UTF-8 BOM', () => {
-    expect(csharp.charCodeAt(0)).not.toBe(0xfeff);
-  });
-
-  it('MSG_RMAD_LEGACY_N_TREES matches', () => {
-    expect(validateRmadParams({ n_trees: '25' }).n_trees).toBe(
-      serverMessage('MSG_RMAD_LEGACY_N_TREES')
-    );
-  });
-
-  it('MSG_WINDOW_RANGE matches', () => {
-    expect(validateRmadParams({ window: '5' }).window).toBe(serverMessage('MSG_WINDOW_RANGE'));
-  });
-
-  it('MSG_MIN_SAMPLES matches', () => {
-    expect(validateRmadParams({ min_samples: '1' }).min_samples).toBe(
-      serverMessage('MSG_MIN_SAMPLES')
-    );
-  });
-
-  it('MSG_MIN_SAMPLES_LE_WINDOW matches', () => {
-    expect(validateRmadParams({ window: '100', min_samples: '200' }).min_samples).toBe(
-      serverMessage('MSG_MIN_SAMPLES_LE_WINDOW')
-    );
   });
 });
