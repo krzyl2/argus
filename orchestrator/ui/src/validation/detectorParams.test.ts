@@ -307,6 +307,13 @@ describe('C#/TS message parity (InputValidator.cs <-> detectorParams.ts)', () =>
     throw new Error(`InputValidator.cs has an unterminated literal for ${name}`);
   }
 
+  // A UTF-8 BOM in front of `using` is invisible in an editor and harmless to the compiler,
+  // but it is one more byte the string extraction above has to survive, and it makes the file
+  // compare unequal to every other source in the folder. It was added by hand; keep it out.
+  it('InputValidator.cs carries no UTF-8 BOM', () => {
+    expect(csharp.charCodeAt(0)).not.toBe(0xfeff);
+  });
+
   it('MSG_RMAD_LEGACY_N_TREES matches', () => {
     expect(validateRmadParams({ n_trees: '25' }).n_trees).toBe(
       serverMessage('MSG_RMAD_LEGACY_N_TREES')
