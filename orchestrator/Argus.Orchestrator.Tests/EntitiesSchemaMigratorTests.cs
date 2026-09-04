@@ -618,6 +618,48 @@ public class EntitiesSchemaMigratorTests : IDisposable
     }
 
     /// <summary>
+    /// The documented rollback (§7 #10) is "copy .pre-v2.bak back over entities.yaml". That
+    /// restores schema_version 1, so the NEXT start migrates again and every entity's unique_id
+    /// changes a SECOND time — which means the retained discovery configs published under the
+    /// old detector-scoped ids are stale a second time, and owe a second retraction.
+    ///
+    /// The completion marker is what stops that. Nothing ever deleted it, so Resolve saw
+    /// "already retracted", returned None, and the retained argus_{slug}_{det}_* configs stayed
+    /// in the broker for good: a second, orphaned HA entity per sensor fed from the same
+    /// detector-agnostic topic. That is exactly the outcome D-G exists to prevent, reached
+    /// through the rollback door instead of the crash door.
+    ///
+    /// The marker is therefore an assertion about ONE migration, and it is retired wherever the
+    /// migrator commits to another one.
+    /// </summary>
+    [Fact]
+    public void RollbackThenReMigration_OwesTheRetractionAgain()
+    {
+        var path = WritePath(F0Yaml());
+        IReadOnlyList<EntityConfig> ReadBackup(string p) => Load(p).Entities;
+
+        Assert.True(EntitiesSchemaMigrator.MigrateIfNeeded(path, Silent));
+
+        // Boot 1 retracted successfully — the marker is now on disk beside the backup.
+        var markerPath = path + LegacyDiscoveryRetraction.MarkerSuffix;
+        File.WriteAllText(markerPath, "retracted");
+        Assert.False(LegacyDiscoveryRetraction.Resolve(path, ReadBackup).IsPending);
+
+        // Operator rolls back exactly as §7 #10 documents it.
+        File.Copy(path + EntitiesSchemaMigrator.BackupSuffix, path, overwrite: true);
+
+        // Next start: schema_version is 1 again, so the ids change again...
+        Assert.True(EntitiesSchemaMigrator.MigrateIfNeeded(path, Silent));
+
+        // ...and the stale retained configs are owed a retraction again.
+        Assert.False(File.Exists(markerPath),
+            "The completion marker describes ONE migration; a second one must not inherit it");
+        var afterRollback = LegacyDiscoveryRetraction.Resolve(path, ReadBackup);
+        Assert.True(afterRollback.IsPending);
+        Assert.Equal(5, afterRollback.Entities.Count);
+    }
+
+    /// <summary>
     /// A retraction is only as good as the delivery it can prove. The production sink drops a
     /// publish it cannot deliver — it does not throw — so if this loop reported "done" on a
     /// dropped message, LegacyDiscoveryRetraction would write its durable marker and the stale

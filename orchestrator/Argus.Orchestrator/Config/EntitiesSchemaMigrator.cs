@@ -138,6 +138,23 @@ public static class EntitiesSchemaMigrator
                     + "pre-migration config and must not be overwritten", backupPath);
             }
 
+            // (2a) The retraction marker asserts "the ids from ONE migration have been retracted".
+            // This is a NEW migration — every entity's unique_id is about to change again — so
+            // that assertion no longer holds and the marker must not be inherited.
+            //
+            // The path that gets here twice is the documented rollback (§7 #10): copying
+            // .pre-v2.bak back over entities.yaml restores schema_version 1, so the next start
+            // migrates again and republishes discovery under new ids. Without this delete,
+            // LegacyDiscoveryRetraction.Resolve reads the stale marker, answers None, and the
+            // retained argus_{slug}_{det}_* configs stay in the broker forever — a second,
+            // orphaned HA entity per sensor on the same detector-agnostic topic, which is
+            // precisely what D-G exists to prevent.
+            //
+            // Deleting it here, rather than after the write, is deliberate: re-running an
+            // already-complete retraction is a no-op at the broker (empty retained payloads on
+            // topics that are already gone), while a missed one is permanent.
+            DeleteRetractionMarker(path, logger);
+
             // (3) Typed load — also the validation gate: a config that cannot be loaded must not
             // be rewritten into a shape that hides why.
             var config = EntitiesConfigLoader.Load(path, logger);
@@ -285,6 +302,25 @@ public static class EntitiesSchemaMigrator
         logger.LogInformation(LogEvents.EntityConfigMigrated,
             "Migrated {EntityId}: hst -> rmad (schema_version {Version})",
             entity.EntityId, TargetSchemaVersion);
+    }
+
+    /// <summary>
+    /// Retires the "legacy discovery already retracted" marker, so a second migration owes the
+    /// broker a second set of deletions. Not guarded: like the File.Copy above, a failure here
+    /// travels to the fail-loud catch — a migration that could not retire the marker would run
+    /// on a config whose stale retained discovery is now unreachable forever.
+    /// </summary>
+    private static void DeleteRetractionMarker(string entitiesPath, ILogger logger)
+    {
+        var markerPath = entitiesPath + Mqtt.LegacyDiscoveryRetraction.MarkerSuffix;
+        if (!File.Exists(markerPath))
+            return;
+
+        File.Delete(markerPath);
+        logger.LogInformation(LogEvents.EntityConfigMigrated,
+            "Deleted the legacy-retraction marker {MarkerPath} — this migration changes the "
+            + "unique_ids again, so the retained detector-scoped discovery configs are owed "
+            + "another retraction (D-G)", markerPath);
     }
 
     /// <summary>
