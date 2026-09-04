@@ -571,19 +571,18 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         var entities = sortedIds
-            .Select((id, ei) =>
+            .Select(id =>
             {
                 snapshotById.TryGetValue(id, out var entry);
                 // WS4/F9: an entity HA is not listing has no snapshot friendly-name. Falling back
                 // to the stored one keeps a ghost's label instead of blanking it on every save.
                 preSaveById.TryGetValue(id, out var stored);
 
-                // Get detector list for this entity index; default to HST if empty (Pitfall 7 / CFG-03)
-                // D-A: rmad is the default detector for a newly tracked entity. Empty params
-                // means "use all defaults", which RmadParams.From and DetectorDefaults agree on.
-                var detectors = parsedDetectors.TryGetValue(ei, out var dets) && dets.Count > 0
-                    ? dets
-                    : [new DetectorConfig { Name = "rmad", Params = [] }];
+                // Detector list for this entity: the submitted row wins, otherwise whatever is
+                // already on disk, otherwise the rmad default (D-A). Keyed by entity id rather
+                // than by index, because the "not submitted at all" case is exactly the one the
+                // index-keyed map cannot express -- see SensorTracking.ResolveDetectors.
+                var detectors = SensorTracking.ResolveDetectors(id, detectorsByEntityId, preSaveById);
 
                 return new EntityConfig
                 {

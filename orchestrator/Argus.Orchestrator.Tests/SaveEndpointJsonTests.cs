@@ -381,6 +381,152 @@ public class SaveEndpointJsonTests
     }
 
     // -----------------------------------------------------------------------
+    // G-14-1 class, detectors: edition — a save must not rewrite entities the
+    // SPA never had in its editor
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// The SPA fills entityEdits from its LAST GET /api/sensors, so a save made while the
+    /// screen is filtered (?q=lodowka) sends rows for the matching entities only. Everything
+    /// else still resolves through the patterns and is rewritten anyway — and the old
+    /// "no row -> [rmad, {}]" fallback threw that configuration away without a word,
+    /// including the entities EntitiesSchemaMigrator deliberately left on hst as tuned.
+    ///
+    /// The rule under test is "an entity the body never mentioned keeps what is on disk",
+    /// not "the fallback happens to be hst": the assertion is against the seeded block.
+    /// </summary>
+    [Fact]
+    public async Task SavePipeline_EntityAbsentFromBody_KeepsItsStoredDetectors()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), $"argus-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+        var entitiesPath = Path.Combine(tmpDir, "entities.yaml");
+        try
+        {
+            var tunedParams = new Dictionary<string, string>
+            {
+                ["window"] = "250",
+                ["n_trees"] = "25",
+                ["high_threshold"] = "0.82",
+                ["low_threshold"] = "0.41",
+                ["min_consecutive"] = "4",
+                ["frozen_window"] = "10",
+                ["frozen_variance_threshold"] = "0.0",
+            };
+
+            var seedSerializer = new YamlDotNet.Serialization.SerializerBuilder()
+                .WithNamingConvention(YamlDotNet.Serialization.NamingConventions.UnderscoredNamingConvention.Instance)
+                .Build();
+            var seedRoot = new Dictionary<string, object>
+            {
+                ["_patterns"] = new Dictionary<string, object>
+                {
+                    ["include"] = new List<string> { "sensor.*" },
+                    ["exclude"] = new List<string>(),
+                },
+                ["entities"] = new List<EntityConfig>
+                {
+                    new()
+                    {
+                        EntityId = "sensor.zamrazarka_power",
+                        FriendlyName = "Zamrażarka",
+                        Detectors = [new DetectorConfig { Name = "hst", Params = tunedParams }],
+                    },
+                    new()
+                    {
+                        EntityId = "sensor.lodowka_power",
+                        FriendlyName = "Lodówka",
+                        Detectors = [new DetectorConfig { Name = "rmad", Params = new Dictionary<string, string>() }],
+                    },
+                },
+            };
+            await File.WriteAllTextAsync(entitiesPath, seedSerializer.Serialize(seedRoot));
+
+            var live = new LiveEntitiesConfig(EntitiesConfigLoader.Load(entitiesPath,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<EntitiesConfigLoader>.Instance));
+
+            // Both entities exist in HA and both resolve through the include pattern — but the
+            // operator was filtered down to the fridge, so only that row is in the body.
+            var registry = new FakeRegistry(
+                MakeEntry("sensor.lodowka_power", "Lodówka"),
+                MakeEntry("sensor.zamrazarka_power", "Zamrażarka"));
+
+            var body = new SaveRequest
+            {
+                Entities =
+                [
+                    new SaveEntity
+                    {
+                        EntityId = "sensor.lodowka_power",
+                        Detectors = [new SaveDetector
+                        {
+                            Name = "rmad",
+                            Params = new()
+                            {
+                                ["window"] = "720",
+                                ["min_samples"] = "60",
+                                ["z_scale"] = "5.0",
+                                ["scale_floor"] = "0.0",
+                                ["high_threshold"] = "0.5",
+                                ["low_threshold"] = "0.375",
+                                ["min_consecutive"] = "3",
+                                ["frozen_window"] = "10",
+                                ["frozen_variance_threshold"] = "0.0",
+                            }
+                        }]
+                    }
+                ],
+                Include = "sensor.*",
+                Exclude = "",
+            };
+
+            await RunSavePipelineAsync(registry, body, entitiesPath, live);
+
+            var reloaded = live.Get();
+            var untouched = Assert.Single(reloaded.Entities, e => e.EntityId == "sensor.zamrazarka_power");
+            Assert.Single(untouched.Detectors);
+            Assert.Equal("hst", untouched.Detectors[0].Name);
+            Assert.Equal(tunedParams, untouched.Detectors[0].Params);
+
+            // The entity the operator DID edit still takes the submitted block.
+            var edited = Assert.Single(reloaded.Entities, e => e.EntityId == "sensor.lodowka_power");
+            Assert.Equal("rmad", edited.Detectors[0].Name);
+            Assert.Equal("0.5", edited.Detectors[0].Params["high_threshold"]);
+        }
+        finally
+        {
+            Directory.Delete(tmpDir, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The other half of the rule: an entity the body DOES carry with an empty detector list is
+    /// the operator having removed every detector from a row they are looking at. That must land
+    /// on the rmad default (D-A) — never resurrect what happened to be on disk, or a removal
+    /// could not be saved at all.
+    /// </summary>
+    [Fact]
+    public void ResolveDetectors_SubmittedEmptyList_DefaultsToRmadInsteadOfRestoringDisk()
+    {
+        var submitted = new Dictionary<string, List<DetectorConfig>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["sensor.a"] = [],
+        };
+        var preSave = new Dictionary<string, EntityConfig>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["sensor.a"] = new()
+            {
+                EntityId = "sensor.a",
+                Detectors = [new DetectorConfig { Name = "hst", Params = new Dictionary<string, string>() }],
+            },
+        };
+
+        var resolved = SensorTracking.ResolveDetectors("sensor.a", submitted, preSave);
+
+        Assert.Equal("rmad", Assert.Single(resolved).Name);
+    }
+
+    // -----------------------------------------------------------------------
     // Pipeline harness — mirrors Program.cs's POST /api/sensors/save handler
     // -----------------------------------------------------------------------
 
@@ -416,14 +562,23 @@ public class SaveEndpointJsonTests
         }
 
         var snapshotById = registry.GetAll().ToDictionary(e => e.EntityId, StringComparer.OrdinalIgnoreCase);
+        var preSaveById = (liveCfg?.Get() ?? new EntitiesConfig()).Entities
+            .GroupBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         var entities = sortedIds
-            .Select((id, ei) =>
+            .Select(id =>
             {
                 snapshotById.TryGetValue(id, out var entry);
-                var detectors = parsedDetectors.TryGetValue(ei, out var dets) && dets.Count > 0
-                    ? dets
-                    : [new DetectorConfig { Name = "rmad", Params = [] }];
-                return new EntityConfig { EntityId = id, FriendlyName = entry?.FriendlyName ?? "", Detectors = detectors };
+                preSaveById.TryGetValue(id, out var stored);
+                // Calls the PRODUCTION decision, not a copy of it -- the whole point of the
+                // finding is that this one branch is where configuration goes missing.
+                var detectors = SensorTracking.ResolveDetectors(id, detectorsByEntityId, preSaveById);
+                return new EntityConfig
+                {
+                    EntityId = id,
+                    FriendlyName = entry?.FriendlyName ?? stored?.FriendlyName ?? "",
+                    Detectors = detectors,
+                };
             })
             .ToList();
 
