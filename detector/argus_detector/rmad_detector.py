@@ -277,8 +277,18 @@ class RmadDetector:
             sigma = self._scale_floor
         return sigma
 
-    def _score_from(self, sorted_vals: list[float], value: float) -> float:
-        """Score `value` against a sorted window without touching it."""
+    def _score_from(
+        self,
+        sorted_vals: list[float],
+        value: float,
+        warn_latch: list[bool] | None = None,
+    ) -> float:
+        """Score `value` against a sorted window without touching it.
+
+        `warn_latch` selects which one-shot budget the degenerate-window
+        warning is charged to; None means the instance's own (the streaming
+        path). See _warn_degenerate.
+        """
         if len(sorted_vals) < self._min_samples:
             return 0.0
 
@@ -287,17 +297,43 @@ class RmadDetector:
         if sigma <= 0.0:  # rung 4: the window is a single constant
             if value == med:
                 return 0.0
-            if not self._warned_degenerate:
-                self._warned_degenerate = True
-                logger.warning(
-                    "degenerate scale: window is a single constant %r and the "
-                    "reading %r differs; scoring 1.0 (scale_floor=%r would damp this)",
-                    med, value, self._scale_floor,
-                )
+            self._warn_degenerate(med, value, warn_latch)
             return 1.0
 
         z = abs(value - med) / sigma
         return z / (z + _Z_SCALE)
+
+    def _warn_degenerate(
+        self, med: float, value: float, warn_latch: list[bool] | None
+    ) -> None:
+        """Log the degenerate-scale warning at most once per latch.
+
+        The default latch is the instance's own `_warned_degenerate`, which is
+        what the streaming path wants: one warning per live entity per process,
+        not one per reading.
+
+        score_batch passes a LOCAL latch instead. registry.score_batch hands out
+        the LIVE model reference, so charging a replay's warning to the
+        instance leaves a mutation behind on a model score_batch promises not to
+        touch — and, worse, spends the running entity's single warning, so the
+        first degenerate window on the real stream would pass in silence
+        (Rule 12). The batch still warns once per call: the budget moves, it is
+        not removed.
+        """
+        if warn_latch is None:
+            if self._warned_degenerate:
+                return
+            self._warned_degenerate = True
+        else:
+            if warn_latch[0]:
+                return
+            warn_latch[0] = True
+
+        logger.warning(
+            "degenerate scale: window is a single constant %r and the "
+            "reading %r differs; scoring 1.0 (scale_floor=%r would damp this)",
+            med, value, self._scale_floor,
+        )
 
     def score_one(self, value: float) -> float:
         """Score a single sensor reading, then learn it (score-then-learn).
@@ -331,9 +367,13 @@ class RmadDetector:
         """
         values_copy: deque[float] = deque(self._values)
         sorted_copy: list[float] = list(self._sorted)
+        # Local warning budget — see _warn_degenerate. Without it the ONE
+        # attribute this method could still mutate on the live model is the
+        # warning latch, and "does not touch the live model" would be false.
+        warn_latch = [False]
         scores: list[float] = []
         for value in values:
-            scores.append(self._score_from(sorted_copy, value))
+            scores.append(self._score_from(sorted_copy, value, warn_latch))
             _insert_into(values_copy, sorted_copy, value, self._window)
         return scores
 

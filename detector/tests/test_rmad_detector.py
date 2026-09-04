@@ -27,6 +27,7 @@ the .NET class is explicitly out of scope for this workstream.
 from __future__ import annotations
 
 import copy
+import logging
 import math
 import pickle
 import random
@@ -553,6 +554,42 @@ class TestScoreBatchIsPure:
         assert list(det._values) == before_values
         assert det._sorted == before_sorted
         assert det.n_seen == before_n_seen
+
+    def test_score_batch_does_not_spend_the_live_warning_budget(self, caplog):
+        """The degenerate-scale warning is one-shot PER LIVE ENTITY, not per process.
+
+        registry.score_batch hands out the LIVE model reference, so the warning
+        latch was the one piece of state an "offline" replay could still move.
+        Two consequences, both bad: "score_batch does not mutate the live model"
+        stops being true, and the first degenerate window on the REAL stream is
+        swallowed because a preview already spent the budget — a silent scoring
+        anomaly, which Rule 12 forbids outright.
+
+        The budget moves, it is not removed: the batch still warns once per call.
+        """
+        det = RmadDetector(min_samples=5)
+        for _ in range(20):
+            det.score_one(7.0)  # a window that is a single constant => rung 4
+
+        assert det._warned_degenerate is False
+
+        with caplog.at_level(logging.WARNING, logger="argus_detector.rmad_detector"):
+            batch = det.score_batch([100.0] * 3)
+
+        # Rung 4 on the first point; the copy stops being constant once the
+        # batch inserts 100.0 into it, so only the first score is off-scale.
+        assert batch[0] == 1.0
+        # Loud once for the batch itself...
+        assert sum("degenerate scale" in r.message for r in caplog.records) == 1
+        # ...and charged to the batch, not to the entity.
+        assert det._warned_degenerate is False
+
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="argus_detector.rmad_detector"):
+            det.score_one(100.0)
+
+        assert sum("degenerate scale" in r.message for r in caplog.records) == 1
+        assert det._warned_degenerate is True
 
 
 # ---------------------------------------------------------------------------
