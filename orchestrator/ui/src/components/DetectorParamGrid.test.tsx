@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/preact';
 import { DetectorParamGrid } from './DetectorParamGrid';
+import { detectorDefaults, resetDetectorDefaults } from '../state/detectorDefaults';
 import type { DetectorEntry } from '../api/types';
 
 function makeDetector(overrides: Partial<DetectorEntry> = {}): DetectorEntry {
@@ -157,6 +158,56 @@ describe('DetectorParamGrid (raw <input> -> shared Input, D-07)', () => {
     );
     expect(fast.container.textContent).toMatch(/3,1 h/);
     expect(fast.container.querySelector('.argus-param-field__warn')).toBeNull();
+  });
+
+  // A stored block that omits a key (`params: {}` is the fresh-install shape) must not read as
+  // an empty form. The key is not written back -- the input stays empty, so nothing is
+  // materialized onto disk on the next Save -- but the operator has to be able to SEE the value
+  // that is actually in force, and the help line has to describe that value and not a blank.
+  describe('omitted keys render as the server default, without adopting it', () => {
+    afterEach(() => {
+      resetDetectorDefaults();
+    });
+
+    it('shows the default as a placeholder and leaves the input empty', () => {
+      detectorDefaults.value = { rmad: RMAD_DEFAULTS };
+
+      const { container } = render(
+        <DetectorParamGrid
+          entityIdx={0}
+          detIdx={0}
+          detector={{ name: 'rmad', params: {} }}
+          onParamChange={noop}
+          ctx={{ medianIntervalSec: 15.3, zScale: 5, unitOfMeasurement: '%' }}
+        />
+      );
+
+      const windowInput = container.querySelector('#param-0-0-window') as HTMLInputElement;
+      expect(windowInput.value).toBe('');
+      expect(windowInput.getAttribute('placeholder')).toBe('720');
+
+      // The help line describes the effective window (720 samples at 15.3 s), not a blank.
+      const windowField = windowInput.closest('.argus-param-field')!;
+      expect(windowField.querySelector('.argus-param-field__help')!.textContent).toMatch(/3,1 h/);
+
+      // And an omitted key is not an error: nothing here may be marked invalid.
+      expect(container.querySelectorAll('.argus-param-field--error')).toHaveLength(0);
+    });
+
+    it('degrades to an empty field, never to an error, when the defaults table is missing', () => {
+      const { container } = render(
+        <DetectorParamGrid
+          entityIdx={0}
+          detIdx={0}
+          detector={{ name: 'rmad', params: {} }}
+          onParamChange={noop}
+        />
+      );
+
+      expect(container.querySelectorAll('.argus-param-field--error')).toHaveLength(0);
+      const windowInput = container.querySelector('#param-0-0-window') as HTMLInputElement;
+      expect(windowInput.value).toBe('');
+    });
   });
 
   // Without a measured cadence the UI must say samples and nothing more. Inventing a span from

@@ -1,5 +1,6 @@
 import type { DetectorEntry, DetectorName } from '../api/types';
 import { validateDetectorParams } from '../validation/detectorParams';
+import { defaultsFor } from '../state/detectorDefaults';
 import { FieldValidationError } from './FieldValidationError';
 import { Input } from './Input';
 
@@ -190,7 +191,14 @@ export function DetectorParamGrid({
   ctx = DEFAULT_CTX,
 }: DetectorParamGridProps) {
   const fields = fieldsFor(detector.name);
-  const errors = validateDetectorParams(detector.name, detector.params);
+  // A stored block may omit keys, and an omitted key means the server default is in force
+  // (`params: {}` is the fresh-install shape). The grid therefore renders against the EFFECTIVE
+  // params -- defaults under whatever the operator actually set -- while the input itself stays
+  // empty for an omitted key and shows the default as its placeholder. Nothing is written back:
+  // typing in the field is what makes a key exist. Same merge InputValidator does server-side.
+  const defaults = defaultsFor(detector.name);
+  const effective = { ...defaults, ...detector.params };
+  const errors = validateDetectorParams(detector.name, effective);
 
   return (
     <div class="argus-param-grid">
@@ -198,10 +206,13 @@ export function DetectorParamGrid({
         const inputId = `param-${entityIdx}-${detIdx}-${field.key}`;
         const error = errors[field.key];
         const raw = detector.params[field.key] ?? '';
-        // Help and warn are suppressed while the field is in error: restating what the value
-        // means when it is not a legal value would read as confirmation.
-        const help = error ? null : field.help?.(raw, ctx) ?? null;
-        const warn = error ? null : field.warn?.(raw, ctx) ?? null;
+        // Help and warn describe the value that is IN FORCE, which for an omitted key is the
+        // default -- saying nothing there would hide the meaning of the value the sensor runs on.
+        // Both are suppressed while the field is in error: restating what the value means when it
+        // is not a legal value would read as confirmation.
+        const shown = effective[field.key] ?? '';
+        const help = error ? null : field.help?.(shown, ctx) ?? null;
+        const warn = error ? null : field.warn?.(shown, ctx) ?? null;
         return (
           <div
             key={field.key}
@@ -219,6 +230,7 @@ export function DetectorParamGrid({
               onChange={(v) => onParamChange(field.key, v)}
               type="number"
               step={field.step}
+              placeholder={defaults[field.key]}
               invalid={!!error}
               ariaDescribedby={`${inputId}-err`}
               ariaLabel={field.label}

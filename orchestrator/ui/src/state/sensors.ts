@@ -60,18 +60,16 @@ function getOrInitEdit(entityId: string, entry?: SensorEntry): EntityEditState {
   if (saved && saved.length > 0) {
     return {
       isTracked,
-      // Saved params are layered ON TOP of the server default table, never used raw. A stored
-      // block may legitimately omit keys: `params: {}` is what gen-entities.py writes on a fresh
-      // install and what the server writes for an entity it defaulted, and an omitted key IS the
-      // default on the server side (RmadParams.From). Rendered raw, every omitted key became an
-      // empty field, validateDetectorParams reported MSG_REQUIRED on it, and because
-      // validationErrors aggregates across ALL tracked entities a single such entity disabled
-      // Save for the whole screen -- i.e. a fresh install could not save anything.
+      // Stored params are hydrated EXACTLY as they are on disk, omissions included. An omitted
+      // key is not a hole to be filled: it means "use the default, including a future one", and
+      // `params: {}` is what gen-entities.py writes for every entity on a fresh install. Filling
+      // the block in here would make the next Save materialize today's whole default table onto
+      // disk, permanently pinning those entities to today's numbers.
       //
-      // This does not weaken D-N: the spread order puts every key the operator actually tuned
-      // over the default, so the read-back still shows what is really on disk wherever disk
-      // says anything at all.
-      detectors: saved.map((d) => ({ name: d.name, params: { ...defaultsFor(d.name), ...d.params } })),
+      // What made an omitted key look broken was the validator, not the hydration: it is fixed
+      // where it belongs (detectorParams.ts skips omitted keys, and validation runs against the
+      // params layered over the default table, exactly like InputValidator does server-side).
+      detectors: saved.map((d) => ({ name: d.name, params: { ...d.params } })),
     };
   }
   return {
@@ -174,7 +172,11 @@ export const validationErrors = computed(() => {
   for (const [entityId, edit] of Object.entries(entityEdits.value)) {
     if (!edit.isTracked) continue;
     edit.detectors.forEach((det, idx) => {
-      const errors = validateDetectorParams(det.name, det.params);
+      // Validate the EFFECTIVE params -- the edited keys over the server default table -- which
+      // is exactly what InputValidator.WithDefaults does before the same rules run server-side.
+      // Merging here rather than in entityEdits keeps the stored block sparse: what is validated
+      // is the configuration in force, what is saved is only what the operator actually set.
+      const errors = validateDetectorParams(det.name, { ...defaultsFor(det.name), ...det.params });
       if (hasAnyError(errors)) {
         allErrors[entityId] = allErrors[entityId] ?? {};
         allErrors[entityId][idx] = errors;

@@ -199,9 +199,9 @@ describe('detector hydration (D-N)', () => {
   });
 
   // A fresh install writes `params: {}` for EVERY entity (gen-entities.py), and the server
-  // writes the same block for any entity it had to default. Read back raw, those nine empty
-  // fields are nine MSG_REQUIRED errors, and validationErrors aggregates across ALL tracked
-  // entities -- so one such entity disabled Save for the entire screen, on a brand-new
+  // writes the same block for any entity it had to default. Validated key-by-key, those nine
+  // absent keys were nine MSG_REQUIRED errors, and validationErrors aggregates across ALL
+  // tracked entities -- so one such entity disabled Save for the entire screen, on a brand-new
   // install, with nothing visibly wrong on any field.
   it('an entity saved with empty params does not block Save for the whole screen', async () => {
     vi.spyOn(client, 'apiGet').mockResolvedValue({
@@ -216,32 +216,51 @@ describe('detector hydration (D-N)', () => {
 
     await loadSensors('');
 
-    // An omitted key IS the default on the server (RmadParams.From) -- so showing the default
-    // is showing what is in force, not inventing a value.
-    expect(entityEdits.value['sensor.load_5m'].detectors[0].params).toEqual(RMAD_TABLE);
     expect(validationErrors.value).toEqual({});
     expect(hasValidationErrors.value).toBe(false);
   });
 
-  // The merge must not turn into a rewrite: a key the operator actually tuned still wins over
-  // the default, or this fix would reintroduce the silent revert D-N exists to prevent.
-  it('fills only the keys the saved block omits, never the ones it carries', async () => {
-    vi.spyOn(client, 'apiGet').mockResolvedValue({
-      entries: [
-        entry({
-          detectors: [{ name: 'rmad', params: { window: '240', high_threshold: '0.615' } }],
-        }),
-      ],
+  // The same failure, on the path where the fix cannot be papered over by hydration: when
+  // GET /api/detectors/defaults fails, loadDetectorDefaults swallows it into "not loaded" and
+  // defaultsFor returns {}, so nothing can fill an omitted key in. Save must still be reachable
+  // -- the rule is "an omitted key is a default", not "an omitted key gets filled in".
+  it('an entity saved with empty params does not block Save when the defaults table failed to load', async () => {
+    resetDetectorDefaults(); // no seedDefaults(): this is the degraded path
+    vi.spyOn(client, 'apiGet').mockImplementation((path: string) => {
+      if (path.startsWith('api/detectors/defaults')) return Promise.reject(new Error('502'));
+      return Promise.resolve({ entries: [entry({ detectors: [{ name: 'rmad', params: {} }] })] });
     });
 
     await loadSensors('');
 
-    const params = entityEdits.value['sensor.load_5m'].detectors[0].params;
-    expect(params.window).toBe('240');
-    expect(params.high_threshold).toBe('0.615');
-    expect(params.min_samples).toBe('60');
-    expect(params.z_scale).toBe('5.0');
+    expect(validationErrors.value).toEqual({});
     expect(hasValidationErrors.value).toBe(false);
+  });
+
+  // Hydration must not turn into a rewrite in EITHER direction: a stored block round-trips
+  // key-for-key. Filling the omissions in would make the next Save materialize today's whole
+  // default table onto disk, which pins the entity to today's numbers -- a later change to
+  // DetectorDefaults would never reach it. `params: {}` means "use the defaults, including
+  // future ones", and that meaning has to survive a Save.
+  it('round-trips a partial saved block without materializing the defaults into it', async () => {
+    const stored = { window: '240', high_threshold: '0.615' };
+    vi.spyOn(client, 'apiGet').mockResolvedValue({
+      entries: [entry({ detectors: [{ name: 'rmad', params: stored }] })],
+    });
+    const postSpy = vi
+      .spyOn(client, 'apiPost')
+      .mockResolvedValue({ ok: true, count: 1, hasStreaming: true });
+
+    await loadSensors('');
+
+    expect(entityEdits.value['sensor.load_5m'].detectors[0].params).toEqual(stored);
+    expect(hasValidationErrors.value).toBe(false);
+
+    await save();
+    const body = postSpy.mock.calls[0][1] as {
+      entities: { detectors: { params: Record<string, string> }[] }[];
+    };
+    expect(body.entities[0].detectors[0].params).toEqual(stored);
   });
 
   // A tracked entity the server sent no detectors for is a genuinely new selection, and rmad

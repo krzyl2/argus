@@ -35,6 +35,24 @@ function isBlankOrNonNumeric(raw: string): boolean {
 }
 
 /**
+ * An OMITTED key is not an empty field: it means "use the server default", the same thing it
+ * means to RmadParams.From and to InputValidator (which validates the submitted keys layered
+ * over DetectorDefaults). `params: {}` is what a fresh install stores for every entity
+ * (gen-entities.py) and what the save path writes for an entity it defaulted.
+ *
+ * Reporting MSG_REQUIRED on such a key made one stored entity disable Save for the WHOLE
+ * screen — validationErrors aggregates across every tracked entity — with no field visibly
+ * wrong, because none of them was wrong, they were merely absent. That is still reachable
+ * whenever GET /api/detectors/defaults fails, since defaultsFor() then returns {} and nothing
+ * can fill the gaps in; the rule has to live here, not in whoever hydrates the editor.
+ *
+ * A key that IS present and blank stays an error: that is a field the operator cleared.
+ */
+function isOmitted(params: Record<string, string>, key: string): boolean {
+  return !(key in params);
+}
+
+/**
  * Validates a single field in isolation (no cross-field check). Cross-field
  * high/low comparison is applied separately by validateHstParams, matching
  * InputValidator.cs's two-phase approach (individual range, then cross-field).
@@ -115,8 +133,8 @@ export function validateHstParams(params: Record<string, string>): Record<string
     'frozen_window',
     'frozen_variance_threshold',
   ]) {
-    const raw = params[key] ?? '';
-    const err = validateField(key, raw);
+    if (isOmitted(params, key)) continue;
+    const err = validateField(key, params[key]);
     if (err) errors[key] = err;
   }
 
@@ -157,7 +175,8 @@ export function validateRmadParams(params: Record<string, string>): Record<strin
     'frozen_window',
     'frozen_variance_threshold',
   ]) {
-    const err = validateField(key, params[key] ?? '', 'rmad');
+    if (isOmitted(params, key)) continue;
+    const err = validateField(key, params[key], 'rmad');
     if (err) errors[key] = err;
   }
 
@@ -187,7 +206,8 @@ export function validateRmadParams(params: Record<string, string>): Record<strin
 export function validateMadParams(params: Record<string, string>): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const key of ['threshold', 'window']) {
-    const err = validateField(key, params[key] ?? '');
+    if (isOmitted(params, key)) continue;
+    const err = validateField(key, params[key]);
     if (err) errors[key] = err;
   }
   return errors;
@@ -196,7 +216,8 @@ export function validateMadParams(params: Record<string, string>): Record<string
 export function validateStlParams(params: Record<string, string>): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const key of ['period', 'seasonal', 'threshold']) {
-    const err = validateField(key, params[key] ?? '');
+    if (isOmitted(params, key)) continue;
+    const err = validateField(key, params[key]);
     if (err) errors[key] = err;
   }
   return errors;

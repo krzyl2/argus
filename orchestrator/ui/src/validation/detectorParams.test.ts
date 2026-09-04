@@ -113,9 +113,8 @@ describe('validateStlParams', () => {
 
 
 describe('validateRmadParams', () => {
-  // Fixtures start from the server default table and override ONLY the key under test. Every
-  // rmad key is required, so a partial fixture would produce errors unrelated to the rule being
-  // exercised and each case would pass for the wrong reason.
+  // Fixtures start from the server default table and override ONLY the key under test, so a
+  // case cannot pass or fail for a reason unrelated to the rule it exercises.
   const RMAD_DEFAULTS: Record<string, string> = {
     window: '720',
     min_samples: '60',
@@ -198,5 +197,36 @@ describe('validateRmadParams', () => {
   it('routes through validateDetectorParams', () => {
     expect(validateDetectorParams('rmad', withRmad())).toEqual({});
     expect(validateDetectorParams('rmad', withRmad({ window: '1' })).window).toBeTruthy();
+  });
+
+  // An OMITTED key is not an empty field. It means "use the server default" -- the same thing
+  // it means to RmadParams.From and to InputValidator, which validates the submitted keys
+  // layered over DetectorDefaults. `params: {}` is what a fresh install stores for every
+  // entity, and reporting an error on it disabled Save for the WHOLE screen (validationErrors
+  // aggregates over every tracked entity) with no field visibly wrong.
+  it('reports nothing for a params block that omits every key', () => {
+    expect(validateRmadParams({})).toEqual({});
+    expect(validateHstParams({})).toEqual({});
+    expect(validateMadParams({})).toEqual({});
+    expect(validateStlParams({})).toEqual({});
+  });
+
+  it('reports nothing for a partial block, on the keys it omits', () => {
+    expect(validateRmadParams({ window: '240' })).toEqual({});
+  });
+
+  // The half of the rule that must NOT be relaxed: a key that exists and is blank is a field
+  // the operator cleared, and saving it would write an unparsable value.
+  it('still requires a value on a key that is present and blank', () => {
+    expect(validateRmadParams({ z_scale: '' }).z_scale).toBe('Must provide a value.');
+    expect(validateRmadParams({ z_scale: '   ' }).z_scale).toBe('Must provide a value.');
+    expect(validateRmadParams({ z_scale: 'abc' }).z_scale).toBe('Must provide a value.');
+  });
+
+  // A present key is still range-checked, omissions around it notwithstanding.
+  it('still range-checks a key that is present in an otherwise empty block', () => {
+    expect(validateRmadParams({ window: '5' }).window).toBe(
+      'Must be a whole number between 30 and 10000.'
+    );
   });
 });
