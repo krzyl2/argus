@@ -122,6 +122,22 @@ public sealed class EntityRuntimeState
     ///
     /// Per entity, never global: entities publish independently and a shared gate would put every
     /// entity behind the slowest broker call.
+    ///
+    /// INVARIANT — ONE GENERATION AT A TIME. "Wire order equals claim order" holds only because
+    /// this gate and the AlertPolicy it protects are never both live in two copies. They do NOT
+    /// share a lifetime: EntityRuntimeState (and with it this semaphore) is rebuilt on every
+    /// config Save, while AlertPolicy survives in AlertStateStore so calibration is not lost on
+    /// a reload. What keeps them lined up is HaListenerWorker's reload loop, which AWAITS the
+    /// previous generation's RunPipelineAsync before it builds the next one
+    /// (Workers/HaListenerWorker.cs:122, the `await RunPipelineAsync(...)` inside the
+    /// while-loop): the old pipeline's loops are finished before any new state object exists.
+    ///
+    /// Overlap two generations and the invariant is gone: two semaphores would each admit one
+    /// publisher for the SAME policy, the two claims interleave, and the broker sees the two
+    /// messages in the opposite order to the claims — the retained-flag failure described above,
+    /// i.e. F1 by a new route. Any change that starts a pipeline generation before the previous
+    /// one has been awaited must move this gate to where the policy lives (AlertStateStore),
+    /// not merely reorder the startup.
     /// </summary>
     public SemaphoreSlim FlagPublishGate { get; } = new(1, 1);
 
