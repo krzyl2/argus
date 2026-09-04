@@ -30,7 +30,7 @@ configuration:
     description: InfluxDB bucket containing Home Assistant sensor history.
   influx_measurement:
     name: Measurement Name
-    description: InfluxDB measurement name for HA states (default homeassistant).
+    description: Optional _measurement filter. Leave empty unless HA sets override_measurement — HA names the measurement after the entity unit (°C, %, W), so one value cannot serve a mixed-unit group.
   influx_value_field:
     name: Value Field
     description: InfluxDB field key for sensor values (default value).

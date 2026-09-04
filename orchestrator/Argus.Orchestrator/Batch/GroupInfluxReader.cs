@@ -93,13 +93,34 @@ public sealed class GroupInfluxReader : IGroupInfluxDataSource
         if (!_safeFluxString.IsMatch(aggFn))
             throw new ArgumentException($"Unsafe 'aggFn' value for Flux query: {aggFn}", nameof(aggFn));
 
+        // HA writes the entity's OBJECT ID into the entity_id tag, so the filter, the pivot
+        // column names and the freshness records all speak object ids while every caller
+        // (and the returned dictionaries) speak full entity ids. Keep both directions.
+        var tagOf = members.ToDictionary(m => m, InfluxFilter.EntityTag, StringComparer.Ordinal);
+
+        // Fail loud rather than silently double-count: two members of one group that share an
+        // object id (e.g. sensor.x + binary_sensor.x) collapse onto ONE pivot column, and
+        // whichever member won the reverse lookup would receive the other's readings. HA's own
+        // writer has the same ambiguity, so there is no honest answer here — skip the cycle.
+        var fullByTag = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (full, tag) in tagOf)
+        {
+            if (fullByTag.TryGetValue(tag, out var clash))
+            {
+                _logger.LogError(LogEvents.GroupSchedulerError,
+                    "Group members {A} and {B} share the InfluxDB entity_id tag '{Tag}' — cannot " +
+                    "distinguish their series; skipping group query", clash, full, tag);
+                return new GroupAlignedData(Array.Empty<GroupRow>(), new Dictionary<string, DateTime>());
+            }
+            fullByTag[tag] = full;
+        }
+
         // T-06-04: use contains(value:..., set:[...]) array filter rather than an or-chain —
         // shorter and avoids parser edge cases with very long boolean expressions (RESEARCH Pitfall 4).
-        var memberSet = string.Join(", ", members.Select(m => $"\"{m}\""));
+        var memberSet = string.Join(", ", members.Select(m => $"\"{tagOf[m]}\""));
 
         var filterClause = $"""
-            r["_measurement"] == "{_settings.InfluxMeasurement}"
-                    and contains(value: r["entity_id"], set: [{memberSet}])
+            {InfluxFilter.MeasurementClause(_settings.InfluxMeasurement)}contains(value: r["entity_id"], set: [{memberSet}])
                     and r["_field"] == "{_settings.InfluxValueField}"
             """;
 
@@ -121,7 +142,7 @@ public sealed class GroupInfluxReader : IGroupInfluxDataSource
                 r.GetTime()!.Value.ToDateTimeUtc(),
                 members.ToDictionary(
                     m => m,
-                    m => r.GetValueByKey(m) is null ? (double?)null : Convert.ToDouble(r.GetValueByKey(m)))))
+                    m => r.GetValueByKey(tagOf[m]) is null ? (double?)null : Convert.ToDouble(r.GetValueByKey(tagOf[m])))))
             .ToList();
 
         // Companion freshness query: last()-per-member most-recent raw timestamp, for the
@@ -137,11 +158,15 @@ public sealed class GroupInfluxReader : IGroupInfluxDataSource
 
         var freshnessTables = await _queryApi.QueryAsync(freshnessFlux, _settings.InfluxOrg, ct);
 
+        // The freshness records carry the object-id tag; the staleness decision upstream is
+        // keyed by full entity id. A tag outside fullByTag cannot happen (the query filters on
+        // exactly this set) but is dropped rather than guessed at.
         var lastSeenUtc = freshnessTables
             .SelectMany(t => t.Records)
-            .Where(r => r.GetValueByKey("entity_id") is not null && r.GetTime() is not null)
+            .Where(r => r.GetValueByKey("entity_id") is not null && r.GetTime() is not null
+                        && fullByTag.ContainsKey((string)r.GetValueByKey("entity_id")!))
             .ToDictionary(
-                r => (string)r.GetValueByKey("entity_id")!,
+                r => fullByTag[(string)r.GetValueByKey("entity_id")!],
                 r => r.GetTime()!.Value.ToDateTimeUtc());
 
         return new GroupAlignedData(rows, lastSeenUtc);

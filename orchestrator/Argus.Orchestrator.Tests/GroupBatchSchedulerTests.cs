@@ -388,18 +388,24 @@ public class GroupBatchSchedulerTests
         Assert.Empty(entry!.Contributions);
     }
 
+    // SUPERSEDES PeerGroup_DoesNotPopulateGroupStatusCache, which pinned the defect rather
+    // than the intent: leaving the cache empty for peer mode made GET /api/groups/{id}/status
+    // answer null forever, so the Detectors list showed a permanent yellow "Oczekuje" for a
+    // group that was scoring and publishing every cycle. The operator-visible fact the badge
+    // has to carry is "this group is being scored, and here is whether anything diverged".
     [Fact]
-    public async Task PeerGroup_DoesNotPopulateGroupStatusCache()
+    public async Task PeerGroup_PopulatesGroupStatusCacheFromMemberVerdicts()
     {
-        // GRP-09 attribution is joint-mode-only; the peer branch has no single "last verdict".
         var members = new[] { "sensor.a", "sensor.b", "sensor.c" };
         var group = MakePeerGroup(members);
         var utcNow = DateTime.UtcNow;
         var data = FreshData(members, 3, utcNow);
 
+        // b is the divergent one — it must drive both the flag and the top contribution.
         var response = new GroupScoreResponse { Ok = true };
-        foreach (var m in members)
-            response.PerMember.Add(new Verdict { EntityId = m, Score = 0.4, IsAnomaly = false });
+        response.PerMember.Add(new Verdict { EntityId = "sensor.a", Score = 0.2, IsAnomaly = false });
+        response.PerMember.Add(new Verdict { EntityId = "sensor.b", Score = 0.9, IsAnomaly = true });
+        response.PerMember.Add(new Verdict { EntityId = "sensor.c", Score = 0.4, IsAnomaly = false });
 
         var groupInflux = new FakeGroupInfluxDataSource { Data = data };
         var detector = new FakeGroupDetectorClient { ScoreGroupResponse = response };
@@ -410,7 +416,66 @@ public class GroupBatchSchedulerTests
         var worker = MakeWorker(cfg, groupInflux, detector, publisher, cache);
         await worker.RunBatchForTestAsync(CancellationToken.None);
 
-        Assert.Null(cache.Get(group.GroupId));
+        var entry = cache.Get(group.GroupId);
+        Assert.NotNull(entry);
+        // No aggregate is invented: the score is the most divergent member's own score.
+        Assert.Equal(0.9, entry!.Score);
+        Assert.True(entry.IsAnomaly);
+        // Contributions carry every member, ranked descending (same contract as joint mode),
+        // so "top contributor" names the sensor that actually diverged.
+        Assert.Equal(3, entry.Contributions.Count);
+        Assert.Equal("sensor.b", entry.Contributions[0].MemberId);
+        Assert.Equal(0.9, entry.Contributions[0].Contribution);
+        Assert.Equal("sensor.c", entry.Contributions[1].MemberId);
+        Assert.Equal("sensor.a", entry.Contributions[2].MemberId);
+    }
+
+    // A peer group where nothing diverged must still leave the cache populated — otherwise
+    // "clear" and "never scored" stay indistinguishable and the badge falls back to
+    // "Oczekuje" on exactly the groups that are working.
+    [Fact]
+    public async Task PeerGroup_NoMemberAnomaly_StillPopulatesCacheWithIsAnomalyFalse()
+    {
+        var members = new[] { "sensor.a", "sensor.b", "sensor.c" };
+        var group = MakePeerGroup(members);
+        var data = FreshData(members, 3, DateTime.UtcNow);
+
+        var response = new GroupScoreResponse { Ok = true };
+        foreach (var m in members)
+            response.PerMember.Add(new Verdict { EntityId = m, Score = 0.4, IsAnomaly = false });
+
+        var groupInflux = new FakeGroupInfluxDataSource { Data = data };
+        var detector = new FakeGroupDetectorClient { ScoreGroupResponse = response };
+        var cfg = new EntitiesConfig { Groups = [group] };
+        var cache = new GroupStatusCache();
+
+        var worker = MakeWorker(cfg, groupInflux, detector, new FakeStatePublisher(), cache);
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        var entry = cache.Get(group.GroupId);
+        Assert.NotNull(entry);
+        Assert.False(entry!.IsAnomaly);
+    }
+
+    // The cache is an optional ctor dependency on the peer path too (same D-06-01 precedent
+    // the joint branch already covers) — a null cache must not NRE now that peer writes.
+    [Fact]
+    public async Task PeerGroup_NullGroupStatusCache_DoesNotThrow()
+    {
+        var members = new[] { "sensor.a", "sensor.b", "sensor.c" };
+        var group = MakePeerGroup(members);
+        var data = FreshData(members, 3, DateTime.UtcNow);
+
+        var response = new GroupScoreResponse { Ok = true };
+        foreach (var m in members)
+            response.PerMember.Add(new Verdict { EntityId = m, Score = 0.4, IsAnomaly = false });
+
+        var groupInflux = new FakeGroupInfluxDataSource { Data = data };
+        var detector = new FakeGroupDetectorClient { ScoreGroupResponse = response };
+        var cfg = new EntitiesConfig { Groups = [group] };
+
+        var worker = MakeWorker(cfg, groupInflux, detector, new FakeStatePublisher(), groupStatusCache: null);
+        await worker.RunBatchForTestAsync(CancellationToken.None);
     }
 
     [Fact]

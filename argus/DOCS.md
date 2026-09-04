@@ -212,13 +212,22 @@ InfluxDB bucket containing Home Assistant sensor history. Required when `influx_
 
 ### `influx_measurement`
 
-**Type:** string | **Default:** `homeassistant`
+**Type:** string (optional) | **Default:** *(empty)*
 
-InfluxDB measurement name for HA states. This is the measurement that the HA InfluxDB
-integration writes to. Change this only if you configured a non-default measurement name in
-your HA InfluxDB integration settings.
+Optional `_measurement` filter for the Flux queries. **Leave it empty unless your HA
+InfluxDB integration sets `override_measurement`.**
 
-**Default:** `homeassistant`
+Home Assistant's `influxdb:` integration names the measurement after the entity's
+**unit of measurement** — `°C`, `%`, `V`, `W`, `kPa`, … — not after a single fixed name. A
+group whose members span units (temperature + humidity, or voltage + current + power) is
+therefore spread across several measurements, and any single value here would drop the other
+members' columns; for `joint` mode a dropped column skips the whole group every cycle.
+
+With this empty, a series is identified by `entity_id` + `influx_value_field`, which is
+already unique. Set it only if you configured `override_measurement: <name>` in HA, in which
+case name that value.
+
+**Default:** *(empty)*
 
 ---
 

@@ -20,7 +20,7 @@ namespace Argus.Orchestrator.Config;
 ///   ARGUS_INFLUX_TOKEN        -> InfluxToken
 ///   ARGUS_INFLUX_ORG          -> InfluxOrg
 ///   ARGUS_INFLUX_BUCKET       -> InfluxBucket
-///   ARGUS_INFLUX_MEASUREMENT  -> InfluxMeasurement (default: homeassistant)
+///   ARGUS_INFLUX_MEASUREMENT  -> InfluxMeasurement (default: none — no _measurement filter)
 ///   ARGUS_INFLUX_VALUE_FIELD  -> InfluxValueField (default: value)
 ///   ARGUS_BATCH_INTERVAL_MIN  -> BatchIntervalMinutes (default: 10)
 ///   ARGUS_NIGHTLY_FIT_HOUR    -> NightlyFitHour (default: 2)
@@ -60,7 +60,7 @@ public class ConnectionSettings
     public string? InfluxBucket { get; set; }
 
     // Configurable measurement/field names (A4 mitigation — HA InfluxDB defaults may vary)
-    public string InfluxMeasurement { get; set; } = "homeassistant";
+    public string? InfluxMeasurement { get; set; }
     public string InfluxValueField { get; set; } = "value";
 
     // Batch scheduler (BTCH-03)

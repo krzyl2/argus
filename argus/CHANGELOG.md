@@ -6,6 +6,56 @@ upgrade'owych nie niesie.
 
 ---
 
+## 2.1.13 — ścieżka InfluxDB (batch + grupy) w ogóle nie znajdowała danych
+
+> **Dotyczy tylko instalacji z ustawionym `influx_url`.** Detekcja strumieniowa
+> (pojedyncze sensory, WebSocket HA) była i jest nietknięta.
+
+### Co było zepsute
+
+Trzy wady na ścieżce wsadowej, wszystkie niewidoczne dopóki InfluxDB nie był skonfigurowany —
+bez `influx_url` orchestrator w ogóle nie rejestruje `BatchSchedulerWorker`, więc defekty
+ujawniały się dopiero w momencie włączenia batcha:
+
+1. **Filtr `entity_id` nie trafiał w nic.** Integracja `influxdb:` w HA taguje punkty
+   **object_id** encji (`domain=sensor, entity_id=salon_temperature`), a Argus filtrował po
+   pełnym `sensor.salon_temperature`. Zero serii, każdy cykl, zarówno dla grup, jak i dla
+   pojedynczych sensorów (także przy zasilaniu historią do rozgrzewki).
+
+2. **Jeden globalny `influx_measurement` nie mógł obsłużyć grupy o mieszanych jednostkach.**
+   HA nazywa measurement **jednostką** encji (`°C`, `%`, `V`, `W`, `kPa`), a nie
+   `homeassistant`. Grupa temperatura+wilgotność albo napięcie+prąd+moc rozkłada się na kilka
+   measurementów; równość na jednym z nich gubiła pozostałe kolumny, a w trybie `joint`
+   brakująca kolumna pomija całą grupę w każdym cyklu.
+
+3. **Tryb `peer_divergence` nigdy nie wychodził ze statusu „Oczekuje".** Cache ostatniego
+   verdictu zapisywał wyłącznie tryb `joint`, więc `GET /api/groups/{id}/status` zwracał
+   `null` na zawsze — lista Detektory pokazywała żółte „Oczekuje" dla grupy, która realnie
+   scorowała i publikowała encje w HA co cykl.
+
+### Co się zmieniło
+
+- Zapytania Flux filtrują po object_id; wyniki i świeżość wracają nadal pod pełnymi
+  `entity_id`, więc reszta systemu się nie zmienia.
+- Dwaj członkowie grupy o tym samym object_id (np. `sensor.x` + `binary_sensor.x`) są w
+  InfluxDB nierozróżnialni — cykl jest pomijany z błędem w logu, zamiast przypisać jednemu
+  odczyty drugiego.
+- **`influx_measurement` jest teraz opcjonalny i domyślnie PUSTY** = brak filtra
+  `_measurement`. Serię identyfikuje `entity_id` + `influx_value_field`, co już jest
+  unikalne. Wartość ustawiaj tylko, jeśli masz w HA `override_measurement`.
+- Tryb `peer_divergence` wypełnia cache statusu z verdictów członków: wynik = wynik
+  **najbardziej rozjeżdżonego członka** (nic nie jest agregowane sztucznie), flaga =
+  „co najmniej jeden członek się rozjechał", a wkłady to wyniki poszczególnych członków
+  posortowane malejąco — dla peer divergence to jest właśnie atrybucja per-cecha.
+
+### Po aktualizacji
+
+Jeśli masz w opcjach `influx_measurement` ustawione na cokolwiek (np. odziedziczone
+`homeassistant`), a nie używasz `override_measurement` — **wyczyść to pole**. Stara wartość
+nie jest nadpisywana przez aktualizację i nadal odfiltruje wszystko poza jedną jednostką.
+
+---
+
 ## 2.2.0 — nowy detektor `rmad` + jednokierunkowa migracja konfiguracji
 
 > **Przeczytaj przed aktualizacją.** To wydanie zmienia `entity_id` encji Argusa w HA,

@@ -79,7 +79,11 @@ var connectionSettings = new ConnectionSettings
     InfluxToken = builder.Configuration["ARGUS_INFLUX_TOKEN"],
     InfluxOrg = builder.Configuration["ARGUS_INFLUX_ORG"],
     InfluxBucket = builder.Configuration["ARGUS_INFLUX_BUCKET"],
-    InfluxMeasurement = builder.Configuration["ARGUS_INFLUX_MEASUREMENT"] ?? "homeassistant",
+    // No default on purpose: HA names the measurement after the entity's unit of measurement
+    // (°C, %, V, W, kPa …), so the old "homeassistant" fallback matched zero series on a stock
+    // influxdb: writer and could never serve a mixed-unit group. Empty = no _measurement filter
+    // (entity_id + _field already identify the series); only override_measurement setups set it.
+    InfluxMeasurement = builder.Configuration["ARGUS_INFLUX_MEASUREMENT"],
     InfluxValueField = builder.Configuration["ARGUS_INFLUX_VALUE_FIELD"] ?? "value",
     BatchIntervalMinutes = int.TryParse(builder.Configuration["ARGUS_BATCH_INTERVAL_MIN"], out var bim) ? bim : 10,
     NightlyFitHour = int.TryParse(builder.Configuration["ARGUS_NIGHTLY_FIT_HOUR"], out var nfh) ? nfh : 2,

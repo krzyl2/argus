@@ -254,9 +254,29 @@ public sealed class BatchSchedulerWorker : BackgroundService
                 await _statePublisher.PublishGroupFlagAsync(group.GroupId, v.EntityId, v.IsAnomaly, ct);
             }
 
+            // Peer mode produces no GroupVerdict, so the joint-only Set() below left the status
+            // cache empty forever: GET /api/groups/{id}/status answered null and the Detectors
+            // list rendered a permanent yellow "Oczekuje" for a group that was in fact scoring
+            // and publishing every single cycle — the screen contradicting the entities it is
+            // meant to explain. Nothing is fabricated to fix it: the score is the most divergent
+            // member's OWN score, the flag is "at least one member diverged", and the
+            // contributions are each member's own score, which for peer divergence IS the
+            // per-feature attribution (no aggregation invented, same descending order as joint).
+            var ranked = response.PerMember
+                .OrderByDescending(v => v.Score ?? 0.0)
+                .ToList();
+
+            _groupStatusCache?.Set(new GroupStatusEntry(
+                group.GroupId,
+                ranked[0].Score,
+                ranked.Any(v => v.IsAnomaly),
+                group.Detector,
+                DateTimeOffset.UtcNow,
+                ranked.Select(v => new FeatureContributionDto(v.EntityId, v.Score ?? 0.0)).ToList()));
+
             _logger.LogInformation(LogEvents.GroupScored,
-                "Scored group {GroupId} ({Mode}): {Count} member verdicts",
-                group.GroupId, group.Mode, response.PerMember.Count);
+                "Scored group {GroupId} ({Mode}): {Count} member verdicts, topDivergence={Member} score={Score}",
+                group.GroupId, group.Mode, response.PerMember.Count, ranked[0].EntityId, ranked[0].Score);
         }
         else if (response.GroupVerdict != null)
         {

@@ -243,4 +243,73 @@ public class InfluxDbReaderTests
 
         Assert.Empty(result);
     }
+
+    // ─── HA writer-shape tests (mirror GroupInfluxReaderTests) ───────────────
+
+    // BUG A on the single-sensor path: same defect as the group reader had — HA tags points
+    // with the object id, so "sensor.x" matched nothing and QueryAsync/QueryHistoryAsync
+    // returned an empty 24h window on every batch cycle and every backfill prime.
+    [Fact]
+    public async Task QueryAsync_FiltersOnObjectIdNotFullEntityId()
+    {
+        var api = new CapturingQueryApi();
+        var reader = new InfluxDbReader(api, ValidSettings(), NullLogger<InfluxDbReader>.Instance);
+
+        await reader.QueryAsync("sensor.salon_temperature", CancellationToken.None);
+
+        Assert.Contains("r[\"entity_id\"] == \"salon_temperature\"", api.LastFlux!);
+        Assert.DoesNotContain("sensor.salon_temperature", api.LastFlux!);
+    }
+
+    [Fact]
+    public async Task QueryHistoryAsync_FiltersOnObjectIdNotFullEntityId()
+    {
+        var api = new CapturingQueryApi();
+        var reader = new InfluxDbReader(api, ValidSettings(), NullLogger<InfluxDbReader>.Instance);
+
+        await reader.QueryHistoryAsync("sensor.salon_temperature", "30d", 250, CancellationToken.None);
+
+        Assert.Contains("r[\"entity_id\"] == \"salon_temperature\"", api.LastFlux!);
+        Assert.DoesNotContain("sensor.salon_temperature", api.LastFlux!);
+    }
+
+    // An id with no domain prefix (hand-written config, or already an object id) must pass
+    // through untouched — the helper strips a prefix, it does not require one.
+    [Fact]
+    public async Task QueryAsync_EntityIdWithoutDomain_PassesThroughUnchanged()
+    {
+        var api = new CapturingQueryApi();
+        var reader = new InfluxDbReader(api, ValidSettings(), NullLogger<InfluxDbReader>.Instance);
+
+        await reader.QueryAsync("bare_id", CancellationToken.None);
+
+        Assert.Contains("r[\"entity_id\"] == \"bare_id\"", api.LastFlux!);
+    }
+
+    // BUG B on the single-sensor path: empty measurement emits no _measurement clause.
+    [Fact]
+    public async Task QueryAsync_EmptyMeasurement_OmitsMeasurementFilter()
+    {
+        var settings = ValidSettings();
+        settings.InfluxMeasurement = "";
+
+        var api = new CapturingQueryApi();
+        var reader = new InfluxDbReader(api, settings, NullLogger<InfluxDbReader>.Instance);
+
+        await reader.QueryAsync("sensor.x", CancellationToken.None);
+
+        Assert.DoesNotContain("_measurement", api.LastFlux!);
+        Assert.Contains("r[\"entity_id\"] == \"x\"", api.LastFlux!);
+    }
+
+    [Fact]
+    public async Task QueryAsync_ConfiguredMeasurement_KeepsMeasurementFilter()
+    {
+        var api = new CapturingQueryApi();
+        var reader = new InfluxDbReader(api, ValidSettings(), NullLogger<InfluxDbReader>.Instance);
+
+        await reader.QueryAsync("sensor.x", CancellationToken.None);
+
+        Assert.Contains("r[\"_measurement\"] == \"homeassistant\"", api.LastFlux!);
+    }
 }

@@ -201,6 +201,115 @@ public class GroupInfluxReaderTests
             new[] { "sensor.a" }, "5m", "mean\"evil", TimeSpan.FromMinutes(30), CancellationToken.None));
     }
 
+    // ─── HA writer-shape tests (entity_id tag + optional measurement) ────────
+
+    // BUG A: HA's influxdb: integration tags each point with the OBJECT ID
+    // (domain=sensor, entity_id=salon_temperature), never the full entity id. Filtering on
+    // "sensor.salon_temperature" matched zero series, so every group cycle returned no rows
+    // and every group sat on a permanent "Oczekuje". This pins the tag shape, not just the
+    // query text: if the filter ever carries a domain prefix again, live scoring is dead.
+    [Fact]
+    public async Task QueryGroupAsync_FiltersOnObjectIdNotFullEntityId()
+    {
+        var api = new SequencedQueryApi();
+        var reader = new GroupInfluxReader(api, ValidSettings(), NullLogger<GroupInfluxReader>.Instance);
+
+        await reader.QueryGroupAsync(
+            new[] { "sensor.salon_temperature", "sensor.kuchnia_temperature" },
+            "5m", "mean", TimeSpan.FromMinutes(30), CancellationToken.None);
+
+        Assert.Equal(2, api.FluxQueries.Count); // matrix + freshness
+        foreach (var flux in api.FluxQueries)
+        {
+            Assert.Contains("\"salon_temperature\"", flux);
+            Assert.Contains("\"kuchnia_temperature\"", flux);
+            Assert.DoesNotContain("sensor.salon_temperature", flux);
+            Assert.DoesNotContain("sensor.kuchnia_temperature", flux);
+        }
+    }
+
+    // BUG A, other direction: callers speak full entity ids, so the returned matrix and
+    // freshness dictionaries must still be keyed by them even though Influx answered in
+    // object ids. Without the reverse mapping the group would score under keys no caller
+    // recognises, which reads as "no data" one layer up.
+    [Fact]
+    public async Task QueryGroupAsync_ResultsAreKeyedByFullEntityId()
+    {
+        var t = Instant.FromUtc(2026, 9, 4, 10, 0, 0);
+
+        var matrixTable = MakeTable(
+            MakeRecord(0, t, new Dictionary<string, object?> { ["salon_temperature"] = 23.2 }));
+        var freshnessTable = MakeTable(
+            MakeRecord(0, t, new Dictionary<string, object?> { ["entity_id"] = "salon_temperature" }));
+
+        var api = new SequencedQueryApi(
+            new List<FluxTable> { matrixTable }, new List<FluxTable> { freshnessTable });
+        var reader = new GroupInfluxReader(api, ValidSettings(), NullLogger<GroupInfluxReader>.Instance);
+
+        var result = await reader.QueryGroupAsync(
+            new[] { "sensor.salon_temperature" }, "5m", "mean", TimeSpan.FromMinutes(30), CancellationToken.None);
+
+        Assert.Equal(23.2, result.Rows[0].MemberValues["sensor.salon_temperature"]);
+        Assert.Equal(t.ToDateTimeUtc(), result.LastSeenUtc["sensor.salon_temperature"]);
+    }
+
+    // BUG B: HA names the measurement after the entity's unit, so a mixed-unit group
+    // (temperature + humidity) loses whole columns under a single _measurement equality —
+    // and for joint mode a dropped column skips the group forever. Empty measurement must
+    // therefore emit NO _measurement clause at all, not an equality against "".
+    [Fact]
+    public async Task QueryGroupAsync_EmptyMeasurement_OmitsMeasurementFilter()
+    {
+        var settings = ValidSettings();
+        settings.InfluxMeasurement = "";
+
+        var api = new SequencedQueryApi();
+        var reader = new GroupInfluxReader(api, settings, NullLogger<GroupInfluxReader>.Instance);
+
+        await reader.QueryGroupAsync(
+            new[] { "sensor.a" }, "5m", "mean", TimeSpan.FromMinutes(30), CancellationToken.None);
+
+        foreach (var flux in api.FluxQueries)
+        {
+            Assert.DoesNotContain("_measurement", flux);
+            Assert.Contains("contains(value: r[\"entity_id\"]", flux);
+        }
+    }
+
+    // The filter stays available for override_measurement setups — dropping it entirely
+    // would break the deployments the old default was written for.
+    [Fact]
+    public async Task QueryGroupAsync_ConfiguredMeasurement_KeepsMeasurementFilter()
+    {
+        var settings = ValidSettings();
+        settings.InfluxMeasurement = "homeassistant";
+
+        var api = new SequencedQueryApi();
+        var reader = new GroupInfluxReader(api, settings, NullLogger<GroupInfluxReader>.Instance);
+
+        await reader.QueryGroupAsync(
+            new[] { "sensor.a" }, "5m", "mean", TimeSpan.FromMinutes(30), CancellationToken.None);
+
+        foreach (var flux in api.FluxQueries)
+            Assert.Contains("r[\"_measurement\"] == \"homeassistant\"", flux);
+    }
+
+    // Two members that collapse onto one object id are genuinely indistinguishable in
+    // InfluxDB, so one member would silently receive the other's readings. Fail loud
+    // (skip the cycle) rather than score on data that belongs to a different sensor.
+    [Fact]
+    public async Task QueryGroupAsync_MembersSharingObjectId_SkipsCycleWithoutQuerying()
+    {
+        var reader = new GroupInfluxReader(new ThrowingQueryApi(), ValidSettings(),
+            NullLogger<GroupInfluxReader>.Instance);
+
+        var result = await reader.QueryGroupAsync(
+            new[] { "sensor.x", "binary_sensor.x" }, "5m", "mean", TimeSpan.FromMinutes(30), CancellationToken.None);
+
+        Assert.Empty(result.Rows);
+        Assert.Empty(result.LastSeenUtc);
+    }
+
     // ─── Pivot null-cell exclusion tests ─────────────────────────────────────
 
     [Fact]
@@ -211,12 +320,12 @@ public class GroupInfluxReaderTests
 
         // Row 1: both members present. Row 2: sensor.b column absent (genuine gap, no fill()).
         var matrixTable = MakeTable(
-            MakeRecord(0, t1, new Dictionary<string, object?> { ["sensor.a"] = 21.5, ["sensor.b"] = 22.0 }),
-            MakeRecord(0, t2, new Dictionary<string, object?> { ["sensor.a"] = 21.7 }));
+            MakeRecord(0, t1, new Dictionary<string, object?> { ["a"] = 21.5, ["b"] = 22.0 }),
+            MakeRecord(0, t2, new Dictionary<string, object?> { ["a"] = 21.7 }));
 
         var freshnessTable = MakeTable(
-            MakeRecord(0, t2, new Dictionary<string, object?> { ["entity_id"] = "sensor.a" }),
-            MakeRecord(0, t1, new Dictionary<string, object?> { ["entity_id"] = "sensor.b" }));
+            MakeRecord(0, t2, new Dictionary<string, object?> { ["entity_id"] = "a" }),
+            MakeRecord(0, t1, new Dictionary<string, object?> { ["entity_id"] = "b" }));
 
         var api = new SequencedQueryApi(new List<FluxTable> { matrixTable }, new List<FluxTable> { freshnessTable });
         var reader = new GroupInfluxReader(api, ValidSettings(), NullLogger<GroupInfluxReader>.Instance);
@@ -240,11 +349,11 @@ public class GroupInfluxReaderTests
         var tB = Instant.FromUtc(2026, 7, 2, 9, 30, 0);
 
         var matrixTable = MakeTable(
-            MakeRecord(0, tA, new Dictionary<string, object?> { ["sensor.a"] = 20.0, ["sensor.b"] = 20.0 }));
+            MakeRecord(0, tA, new Dictionary<string, object?> { ["a"] = 20.0, ["b"] = 20.0 }));
 
         var freshnessTable = MakeTable(
-            MakeRecord(0, tA, new Dictionary<string, object?> { ["entity_id"] = "sensor.a" }),
-            MakeRecord(0, tB, new Dictionary<string, object?> { ["entity_id"] = "sensor.b" }));
+            MakeRecord(0, tA, new Dictionary<string, object?> { ["entity_id"] = "a" }),
+            MakeRecord(0, tB, new Dictionary<string, object?> { ["entity_id"] = "b" }));
 
         var api = new SequencedQueryApi(new List<FluxTable> { matrixTable }, new List<FluxTable> { freshnessTable });
         var reader = new GroupInfluxReader(api, ValidSettings(), NullLogger<GroupInfluxReader>.Instance);

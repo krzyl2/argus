@@ -28,7 +28,7 @@ configuration:
     description: Bucket InfluxDB zawierający historię sensorów HA.
   influx_measurement:
     name: Nazwa pomiaru
-    description: Nazwa pomiaru InfluxDB dla stanów HA (domyślnie homeassistant).
+    description: Opcjonalny filtr _measurement. Zostaw puste, chyba że w HA ustawiłeś override_measurement — HA nazywa pomiar jednostką encji (°C, %, W), więc jedna wartość nie obsłuży grupy o mieszanych jednostkach.
   influx_value_field:
     name: Pole wartości
     description: Klucz pola InfluxDB dla wartości sensorów (domyślnie value).

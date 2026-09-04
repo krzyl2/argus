@@ -89,8 +89,7 @@ public sealed class InfluxDbReader : IInfluxDataSource
         var flux = $"""
             from(bucket: "{_settings.InfluxBucket}")
               |> range(start: -24h)
-              |> filter(fn: (r) => r["_measurement"] == "{_settings.InfluxMeasurement}"
-                    and r["entity_id"] == "{entityId}"
+              |> filter(fn: (r) => {InfluxFilter.MeasurementClause(_settings.InfluxMeasurement)}r["entity_id"] == "{InfluxFilter.EntityTag(entityId)}"
                     and r["_field"] == "{_settings.InfluxValueField}")
               |> sort(columns: ["_time"])
             """;
@@ -170,8 +169,7 @@ public sealed class InfluxDbReader : IInfluxDataSource
         var flux = $"""
             from(bucket: "{_settings.InfluxBucket}")
               |> range(start: -{lookback})
-              |> filter(fn: (r) => r["_measurement"] == "{_settings.InfluxMeasurement}"
-                    and r["entity_id"] == "{entityId}"
+              |> filter(fn: (r) => {InfluxFilter.MeasurementClause(_settings.InfluxMeasurement)}r["entity_id"] == "{InfluxFilter.EntityTag(entityId)}"
                     and r["_field"] == "{_settings.InfluxValueField}")
               |> sort(columns: ["_time"], desc: true)
               |> limit(n: {limit})

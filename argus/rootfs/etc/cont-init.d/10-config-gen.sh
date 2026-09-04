@@ -87,7 +87,10 @@ write_optional_env 'influx_url'    /var/run/s6/container_environment/ARGUS_INFLU
 write_optional_env 'influx_token'  /var/run/s6/container_environment/ARGUS_INFLUX_TOKEN
 write_optional_env 'influx_org'    /var/run/s6/container_environment/ARGUS_INFLUX_ORG
 write_optional_env 'influx_bucket' /var/run/s6/container_environment/ARGUS_INFLUX_BUCKET
-printf "%s" "$(bashio::config 'influx_measurement')"           > /var/run/s6/container_environment/ARGUS_INFLUX_MEASUREMENT
+# Empty (the default) means "do not filter on _measurement": HA names the measurement
+# after the entity's unit, so one global value cannot serve a mixed-unit group. Only
+# override_measurement setups need to name it.
+write_optional_env 'influx_measurement' /var/run/s6/container_environment/ARGUS_INFLUX_MEASUREMENT
 printf "%s" "$(bashio::config 'influx_value_field')"           > /var/run/s6/container_environment/ARGUS_INFLUX_VALUE_FIELD
 
 # ── Batch Schedule (UICFG-04) ────────────────────────────────────────────────
