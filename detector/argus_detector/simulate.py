@@ -106,4 +106,19 @@ def run_simulation(
     window = int(getattr(model, "window", 0) or 0)
     warmed_up_from_index = min(window, len(values))
 
+    # SimulateResponse declares "scores[i < idx] == 0.0" (proto/argus.proto),
+    # and both consumers read it that way: ReplaySimulator refuses to gate the
+    # prefix, and the panel greys it out on the chart.
+    #
+    # Today both detectors happen to honour it unaided — rmad returns the
+    # structural 0.0 below min_samples, and river's HalfSpaceTrees returns a
+    # literal 0 until it has learned window_size points (its `_first_window`
+    # flag). "Happens to" is not a contract: that flag is an internal detail of
+    # a pinned transitive dependency, and a detector added later need not have a
+    # warm-up phase at all. Enforcing the prefix here is what makes the declared
+    # shape true by construction rather than by coincidence — and it runs before
+    # _robust_z, so the inverted z series cannot disagree with the scores.
+    for i in range(warmed_up_from_index):
+        scores[i] = 0.0
+
     return scores, _robust_z(detector, scores), window, warmed_up_from_index

@@ -249,6 +249,40 @@ def test_run_simulation_honours_params():
     assert (window, warmed_from) == (30, 30)
 
 
+def test_run_simulation_zeroes_the_prefix_whatever_the_detector_returns():
+    """The zero prefix is a CONTRACT, not an observation about today's detectors.
+
+    proto/argus.proto declares "scores[i < idx] == 0.0" and both consumers act
+    on it: ReplaySimulator refuses to gate the prefix (feeding it manufactures a
+    release edge the sensor never produced) and the panel greys it on the chart.
+    Right now rmad and hst both honour it unaided — hst only because river's
+    HalfSpaceTrees returns a literal 0 until it has learned window_size points,
+    which is an internal detail of a pinned transitive dependency. A detector
+    that scores from its first reading must not be able to break the declared
+    shape, so the stub here does exactly that.
+    """
+    from argus_detector.simulate import run_simulation
+
+    class _AlwaysHot:
+        window = 10
+
+        def score_one(self, value: float) -> float:
+            return 1.0
+
+    class _StubRegistry:
+        def _create_detector(self, detector, params):
+            return _AlwaysHot()
+
+    scores, _, window, warmed_from = run_simulation(
+        "always_hot", {}, [1.0] * 30, _StubRegistry()
+    )
+
+    assert (window, warmed_from) == (10, 10)
+    assert scores[:10] == [0.0] * 10
+    # And only the prefix: the scorable region is left exactly as scored.
+    assert scores[10:] == [1.0] * 20
+
+
 def test_run_simulation_unknown_detector_raises():
     """The ValueError must still surface — the servicer, not this function, softens it."""
     from argus_detector.simulate import run_simulation
