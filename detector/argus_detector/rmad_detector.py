@@ -403,6 +403,26 @@ class RmadDetector:
         return self._warmed_up
 
     @property
+    def window_ready(self) -> bool:
+        """True when the window AS IT STANDS NOW could produce a real score.
+
+        The query-shaped counterpart of `is_warmed_up`. The two answer different
+        questions and both are needed:
+
+          - `is_warmed_up` describes a score already returned, so it is latched
+            from the window BEFORE the insert that produced that score. It is
+            what Verdict.warmed_up carries, because the flag decision reads the
+            score and the flag together.
+          - `window_ready` describes the model, with no score attached. Warmup
+            (the priming RPC) is exactly that: it feeds history and reports what
+            the entity now looks like. Answering it with the latch reports one
+            insert of lag — an entity primed with exactly min_samples rows says
+            warmed_up=false although its window is full, and the priming log
+            says so until the next live verdict corrects it.
+        """
+        return len(self._sorted) >= self._min_samples
+
+    @property
     def n_seen(self) -> int:
         """Number of readings processed so far (PERSIST-01/Verdict.n_seen)."""
         return self._n_seen

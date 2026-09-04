@@ -301,13 +301,18 @@ class DetectorRegistry:
         with lock:
             existing = self._detectors.get(key)
             if existing is not None and existing.n_seen > 0:
-                return (existing.is_warmed_up, existing.n_seen, existing.window, True)
+                return (existing.window_ready, existing.n_seen, existing.window, True)
 
             det = existing if existing is not None else self._create_detector(detector, params)
             for value in values:
                 det.score_one(value)
             self._detectors[key] = det
-            return (det.is_warmed_up, det.n_seen, det.window, False)
+            # window_ready, not is_warmed_up: this RPC returns the state of the
+            # MODEL, with no score attached, so it must describe the window as
+            # priming left it. is_warmed_up is latched from the window before the
+            # last insert (it travels with a score), which would report an entity
+            # primed with exactly min_samples rows as cold.
+            return (det.window_ready, det.n_seen, det.window, False)
 
     def fit_one(
         self,

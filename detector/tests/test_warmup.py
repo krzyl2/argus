@@ -113,6 +113,42 @@ class TestWarmupOnePrimesRmad:
         second = registry.warmup_one("sensor.r", "rmad", values, {"window": "720"})
         assert second == (True, 300, 60, True)
 
+    def test_warmup_reports_the_window_priming_left_behind(self, registry):
+        """Warmup answers about the MODEL, not about a score.
+
+        RmadDetector.is_warmed_up is latched from the window as it stood BEFORE
+        the last insert, because it travels with the score that window produced.
+        Warmup produces no score: it feeds history and reports what the entity
+        now looks like. Read through the latch, an entity primed with exactly
+        min_samples rows reports warmed_up=false over a full window — the
+        orchestrator's priming log then states the opposite of the truth until
+        the next live verdict happens to correct it.
+
+        Exactly min_samples rows is the boundary the two answers differ on, so
+        that is what this feeds.
+        """
+        values = [20.0 + (i % 7) * 0.1 for i in range(60)]
+
+        warmed_up, n_seen, window, skipped = registry.warmup_one(
+            "sensor.exact", "rmad", values, {"window": "720", "min_samples": "60"}
+        )
+
+        assert skipped is False
+        assert n_seen == 60
+        assert window == 60
+        assert warmed_up is True
+
+        det = registry._detectors[("sensor.exact", "rmad")]
+        assert len(det._values) == 60
+        # The score-side latch still says what it is supposed to say: the LAST
+        # score came from a 59-value window. The two answers differ on purpose,
+        # and the RPC picks the one matching its own question.
+        assert det.is_warmed_up is False
+
+        # A re-prime takes the skipped branch and must answer the same question
+        # the same way — one accessor, not two.
+        assert registry.warmup_one("sensor.exact", "rmad", values) == (True, 60, 60, True)
+
     def test_warmup_one_unknown_detector_degrades_to_hst(self, registry):
         """Warmup is called for every stream the orchestrator opens. A name it
         cannot build must degrade, not raise: this path never raised before."""

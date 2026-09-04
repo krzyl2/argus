@@ -118,6 +118,17 @@ class EntityDetector:
         return self._n_seen >= self._model.window_size
 
     @property
+    def window_ready(self) -> bool:
+        """True when the model as it stands now is past its warm-up window.
+
+        Same value as `is_warmed_up` here — this detector learns and counts in
+        one step, so there is no insert to lag behind. The property exists so
+        the query-shaped callers (registry.warmup_one) can ask every streaming
+        detector the same question; on RmadDetector the two DO differ.
+        """
+        return self.is_warmed_up
+
+    @property
     def n_seen(self) -> int:
         """Number of readings processed so far (PERSIST-01/Verdict.n_seen)."""
         return self._n_seen
