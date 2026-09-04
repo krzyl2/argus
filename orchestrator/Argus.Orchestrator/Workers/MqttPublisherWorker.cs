@@ -147,15 +147,15 @@ public sealed class MqttPublisherWorker : BackgroundService
             // Order matters: the new configs published below carry detector-agnostic ids, so
             // doing this afterwards would be racing the broker to delete a config HA may already
             // have turned into a duplicate entity on the same state topic.
-            if (_legacyRetraction.IsPending)
-            {
-                await DiscoveryPublisher.RetractLegacyDetectorScopedAsync(
-                    _mqtt, _legacyRetraction.Entities, stoppingToken);
-                _logger.LogInformation(LogEvents.MqttDiscoveryPublished,
-                    "Retracted legacy detector-scoped discovery for {Count} pre-migration entities "
-                    + "(entity_id changes once; see argus/CHANGELOG.md)",
-                    _legacyRetraction.Entities.Count);
-            }
+            //
+            // RunAsync owns the durable marker: it is written only after the broker accepted the
+            // deletions, so a broker that is down here means we try again next boot instead of
+            // leaving the old retained configs — and the orphaned HA entities they create — behind
+            // forever.
+            await _legacyRetraction.RunAsync(
+                (entities, ct) => DiscoveryPublisher.RetractLegacyDetectorScopedAsync(_mqtt, entities, ct),
+                _logger,
+                stoppingToken);
 
             // Publish retained discovery configs for all entities (MQTT-01/03/04)
             await DiscoveryPublisher.PublishAllAsync(_mqtt, _liveConfig.Get().Entities, stoppingToken);

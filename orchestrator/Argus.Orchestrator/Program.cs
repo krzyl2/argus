@@ -23,21 +23,20 @@ var entitiesLogger = entitiesLoggerFactory.CreateLogger<EntitiesConfigLoader>();
 // ahead of the HA snapshot — because every later reader must already see the migrated shape;
 // the cost is that no unit_of_measurement is available for D-I, which the migrator says out loud.
 //
-// The pre-migration entity list is captured first and, if (and only if) a migration actually
-// happened, handed to MqttPublisherWorker so it can retract the retained discovery configs
-// those entities published under the OLD detector-scoped unique_id (D-G). Without that, HA
-// keeps a second, orphaned entity per sensor fed by the same argus/{slug}/flag/state topic.
-var preMigrationEntities = TryReadEntitiesQuietly(entitiesPath);
-var didMigrate = EntitiesSchemaMigrator.MigrateIfNeeded(entitiesPath, entitiesLogger);
-builder.Services.AddSingleton(didMigrate
-    ? new LegacyDiscoveryRetraction(preMigrationEntities)
-    : LegacyDiscoveryRetraction.None);
+// Whether the retained discovery configs published under the OLD detector-scoped unique_id
+// still have to be deleted (D-G) is decided from DISK, not from "did we migrate in this
+// process": the deletion is a network call to a broker that may be down, and binding it to the
+// migration gave it exactly one chance ever. See LegacyDiscoveryRetraction.
+EntitiesSchemaMigrator.MigrateIfNeeded(entitiesPath, entitiesLogger);
+builder.Services.AddSingleton(
+    LegacyDiscoveryRetraction.Resolve(entitiesPath, TryReadEntitiesQuietly));
 
 var entitiesConfig = EntitiesConfigLoader.Load(entitiesPath, entitiesLogger);
 
-// Best-effort read used ONLY to reconstruct old discovery ids. A config too broken to load is
-// not a startup failure here — EntitiesConfigLoader.Load below is the real gate, and it fails
-// loud on its own terms rather than as a confusing error from a retraction helper.
+// Best-effort read of the pre-migration BACKUP, used ONLY to reconstruct old discovery ids. A
+// file too broken to load is not a startup failure here — EntitiesConfigLoader.Load below is the
+// real gate, and it fails loud on its own terms rather than as a confusing error from a
+// retraction helper.
 static IReadOnlyList<EntityConfig> TryReadEntitiesQuietly(string path)
 {
     try
