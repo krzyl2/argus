@@ -26,11 +26,13 @@ public static class InputValidator
     private static readonly string[] KnownDetectors = { "rmad", "hst", "mad", "stl" };
 
     // Parity constants — orchestrator/ui/src/validation/detectorParams.ts carries the SAME
-    // three strings verbatim. A client/server drift here shows up as a form that saves a value
+    // four strings verbatim. A client/server drift here shows up as a form that saves a value
     // the server then rejects with no field highlighted.
     internal const string MSG_WINDOW_RANGE = "Must be a whole number between 30 and 10000.";
     internal const string MSG_MIN_SAMPLES = "Must be a whole number ≥ 10.";
     internal const string MSG_MIN_SAMPLES_LE_WINDOW = "Must not be greater than window.";
+    internal const string MSG_RMAD_LEGACY_N_TREES =
+        "Parameter \"n_trees\" belongs to HST, not RMAD — this block was not migrated.";
 
     /// <summary>
     /// Validates entity IDs and detector parameters parsed from an untrusted POST body.
@@ -202,11 +204,14 @@ public static class InputValidator
         // is individually in range: accepted, it would mean "alarm above robust z 11.7", i.e.
         // an entity that silently never alarms. Until this fix the legacy fingerprint was
         // rejected only as a side effect of min_samples/z_scale/scale_floor being absent, and
-        // absence is no longer an error (see WithDefaults). No UI path can produce this — the
-        // editor replaces the whole params block when the detector name changes — so there is
-        // no client-side mirror of this rule to drift from.
+        // absence is no longer an error (see WithDefaults). The editor cannot MINT such a block
+        // — it replaces the whole params map when the detector name changes — but since D-N the
+        // read-back path hydrates the form straight off disk, so a hand-edited entities.yaml
+        // reaches the browser intact. validateRmadParams in detectorParams.ts therefore carries
+        // the same rule and the same message, or the operator gets "valid" in the form and a
+        // rejected Save with no field to point at.
         if (p.ContainsKey("n_trees"))
-            errors.Add("Parameter \"n_trees\" belongs to HST, not RMAD — this block was not migrated.");
+            errors.Add(MSG_RMAD_LEGACY_N_TREES);
 
         // window: 30..10000. The lower bound is not cosmetic — a median/MAD baseline under
         // ~30 samples has a scale estimate too noisy to divide by, so the score stops meaning

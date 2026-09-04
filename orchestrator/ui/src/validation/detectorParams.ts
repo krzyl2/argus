@@ -18,6 +18,8 @@ const MSG_REQUIRED = 'Must provide a value.';
 const MSG_WINDOW_RANGE = 'Must be a whole number between 30 and 10000.';
 const MSG_MIN_SAMPLES = 'Must be a whole number ≥ 10.';
 const MSG_MIN_SAMPLES_LE_WINDOW = 'Must not be greater than window.';
+const MSG_RMAD_LEGACY_N_TREES =
+  'Parameter "n_trees" belongs to HST, not RMAD — this block was not migrated.';
 
 // Integer fields, minimum value per key (matches EntityPickerPage.cs _validationScript PR table
 // and InputValidator.cs ValidateIntAtLeast calls).
@@ -188,6 +190,16 @@ export function validateRmadParams(params: Record<string, string>): Record<strin
       errors.high_threshold = MSG_HIGH;
       errors.low_threshold = MSG_LOW;
     }
+  }
+
+  // Mirror of InputValidator.MSG_RMAD_LEGACY_N_TREES: an rmad block carrying the HST-only
+  // n_trees key is a legacy block wearing the new name, and every key it shares with rmad is
+  // individually in range, so nothing else here catches it. The editor cannot mint one, but
+  // since D-N the form hydrates straight off disk, so a hand-edited entities.yaml arrives with
+  // the key intact — without this the browser said "valid" and the server rejected the Save
+  // with a message no field could be highlighted for.
+  if ('n_trees' in params) {
+    errors.n_trees = MSG_RMAD_LEGACY_N_TREES;
   }
 
   // A min_samples above the window it is counted against can never be reached, so the entity

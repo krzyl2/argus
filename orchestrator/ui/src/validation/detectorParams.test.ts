@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import {
   validateField,
   validateHstParams,
@@ -227,6 +229,103 @@ describe('validateRmadParams', () => {
   it('still range-checks a key that is present in an otherwise empty block', () => {
     expect(validateRmadParams({ window: '5' }).window).toBe(
       'Must be a whole number between 30 and 10000.'
+    );
+  });
+});
+
+// WR-02 / N2. The one server rule that had no client mirror: an rmad block carrying the
+// HST-only `n_trees` key. Since D-N the editor hydrates params straight off disk, so a
+// hand-edited entities.yaml reaches the form intact — and every key such a block shares with
+// rmad is individually in range, so without an explicit rule the browser reported "valid" and
+// the server rejected the Save with a message the UI could not attach to any field.
+describe('validateRmadParams rejects a non-migrated (HST-shaped) block', () => {
+  const LEGACY_MSG = 'Parameter "n_trees" belongs to HST, not RMAD — this block was not migrated.';
+
+  it('flags n_trees even when every other key is a legal rmad value', () => {
+    const legacy = {
+      window: '250',
+      n_trees: '25',
+      high_threshold: '0.7',
+      low_threshold: '0.3',
+      min_consecutive: '3',
+      frozen_window: '10',
+      frozen_variance_threshold: '0.001',
+    };
+
+    expect(validateRmadParams(legacy).n_trees).toBe(LEGACY_MSG);
+    expect(hasAnyError(validateRmadParams(legacy))).toBe(true);
+  });
+
+  it('flags n_trees through validateDetectorParams, the entry point the screens call', () => {
+    expect(validateDetectorParams('rmad', { n_trees: '25' }).n_trees).toBe(LEGACY_MSG);
+  });
+
+  // The rule is rmad-only: n_trees is a legitimate HST key and must stay legal there.
+  it('leaves n_trees alone on an hst block', () => {
+    expect(validateHstParams({ n_trees: '25' })).toEqual({});
+    expect(validateDetectorParams('hst', { n_trees: '25' })).toEqual({});
+  });
+});
+
+// Parity pin. The four rmad message strings live in TWO files by necessity (C# validates the
+// POST body, TS validates the form), and a drift between them is invisible until an operator
+// hits a Save that the browser had called valid. These read the server's constants off disk
+// and assert the client produces the SAME text at runtime — so editing InputValidator.cs
+// without editing detectorParams.ts turns red here rather than in production.
+describe('C#/TS message parity (InputValidator.cs <-> detectorParams.ts)', () => {
+  // Walked up from the working directory rather than resolved off import.meta.url: vitest
+  // transforms this module, so import.meta.url is not a file:// URL here.
+  function findServerSource(): string {
+    const rel = join('orchestrator', 'Argus.Orchestrator', 'Config', 'InputValidator.cs');
+    for (let dir = process.cwd(); ; dir = dirname(dir)) {
+      const candidate = join(dir, rel);
+      if (existsSync(candidate)) return candidate;
+      if (dirname(dir) === dir) throw new Error(`could not locate ${rel} above ${process.cwd()}`);
+    }
+  }
+
+  const csharp = readFileSync(findServerSource(), 'utf8');
+
+  /**
+   * Reads the value of `internal const string NAME = "...";` out of the server source,
+   * unescaping the C# literal by hand so no regex escaping sits between the two files.
+   */
+  function serverMessage(name: string): string {
+    const at = csharp.indexOf(`internal const string ${name}`);
+    if (at < 0) throw new Error(`InputValidator.cs no longer declares ${name}`);
+    const open = csharp.indexOf('"', at);
+    let out = '';
+    for (let i = open + 1; i < csharp.length; i++) {
+      const ch = csharp[i];
+      if (ch === '\\') {
+        out += csharp[++i];
+        continue;
+      }
+      if (ch === '"') return out;
+      out += ch;
+    }
+    throw new Error(`InputValidator.cs has an unterminated literal for ${name}`);
+  }
+
+  it('MSG_RMAD_LEGACY_N_TREES matches', () => {
+    expect(validateRmadParams({ n_trees: '25' }).n_trees).toBe(
+      serverMessage('MSG_RMAD_LEGACY_N_TREES')
+    );
+  });
+
+  it('MSG_WINDOW_RANGE matches', () => {
+    expect(validateRmadParams({ window: '5' }).window).toBe(serverMessage('MSG_WINDOW_RANGE'));
+  });
+
+  it('MSG_MIN_SAMPLES matches', () => {
+    expect(validateRmadParams({ min_samples: '1' }).min_samples).toBe(
+      serverMessage('MSG_MIN_SAMPLES')
+    );
+  });
+
+  it('MSG_MIN_SAMPLES_LE_WINDOW matches', () => {
+    expect(validateRmadParams({ window: '100', min_samples: '200' }).min_samples).toBe(
+      serverMessage('MSG_MIN_SAMPLES_LE_WINDOW')
     );
   });
 });
