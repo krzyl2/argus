@@ -97,19 +97,30 @@ public sealed class SimulateService : ISimulateService
     /// Gate parameters for the replay, resolved from the SUBMITTED params — not from the
     /// saved config. The panel exists to answer "what would these do?", and a value the
     /// operator has typed but not saved is exactly the case that matters.
+    ///
+    /// The alert params come out of the SAME map (AlertParams shares DetectorConfig.Params with
+    /// HstParams/RmadParams), so <c>alert_mode</c> typed in the editor selects the replayed
+    /// decision path just as it selects the live one — and an entity that sends no alert keys
+    /// at all replays through the adaptive default, which is what it actually runs.
     /// </summary>
-    private static GateParams ResolveGate(string detector, IReadOnlyDictionary<string, string> parameters)
+    private static (GateParams Gate, AlertParams Alert) ResolveGate(
+        string detector, IReadOnlyDictionary<string, string> parameters)
     {
         var dict = new Dictionary<string, string>(parameters, StringComparer.Ordinal);
+        var alert = AlertParams.From(dict);
 
         if (string.Equals(detector, "rmad", StringComparison.OrdinalIgnoreCase))
         {
             var p = RmadParams.From(dict);
-            return new GateParams(p.HighThreshold, p.LowThreshold, p.MinConsecutive);
+            return (new GateParams(
+                p.HighThreshold, p.LowThreshold, p.MinConsecutive,
+                p.FrozenWindow, p.FrozenVarianceThreshold), alert);
         }
 
         var hst = HstParams.From(dict);
-        return new GateParams(hst.HighThreshold, hst.LowThreshold, hst.MinConsecutive);
+        return (new GateParams(
+            hst.HighThreshold, hst.LowThreshold, hst.MinConsecutive,
+            hst.FrozenWindow, hst.FrozenVarianceThreshold), alert);
     }
 
     public async Task<SimulateRunResult> RunAsync(
@@ -139,7 +150,8 @@ public sealed class SimulateService : ISimulateService
             return Empty(sim.Error ?? "detector returned no result");
         }
 
-        var summary = ReplaySimulator.Run(history, sim, ResolveGate(detector, parameters));
+        var (gate, alert) = ResolveGate(detector, parameters);
+        var summary = ReplaySimulator.Run(history, sim, gate, alert);
 
         // B8 — the ONLY source for simulator response time. The verdict-latency field
         // (latency_ms, ScoreStreamPipeline) measures a different quantity and must not be

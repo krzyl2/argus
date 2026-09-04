@@ -1,14 +1,25 @@
 using Argus.Orchestrator.Batch;
+using Argus.Orchestrator.Config;
 
 namespace Argus.Orchestrator.Detection;
 
 /// <summary>
-/// Gate configuration for one replay — the same three numbers HysteresisGate takes in
-/// production (D-C). Passed as a value rather than read off EntityRuntimeState because the
-/// whole point of the panel is to answer "what would THESE parameters have done?", which
-/// includes parameters the operator has not saved yet.
+/// Detector-side gate configuration for one replay. Passed as a value rather than read off
+/// EntityRuntimeState because the whole point of the panel is to answer "what would THESE
+/// parameters have done?", which includes parameters the operator has not saved yet.
+///
+/// The three threshold numbers drive <see cref="HysteresisGate"/> on the legacy path; the
+/// frozen pair drives <see cref="FrozenSensorDetector"/>, which is a PREMISE of the adaptive
+/// gate (D-H) and therefore has to be replayed too. Nothing here has a default: every field
+/// comes from the entity's own params, and a silently defaulted frozen threshold would let the
+/// panel report episodes the live entity cannot have.
 /// </summary>
-public readonly record struct GateParams(double HighThreshold, double LowThreshold, int MinConsecutive);
+public readonly record struct GateParams(
+    double HighThreshold,
+    double LowThreshold,
+    int MinConsecutive,
+    int FrozenWindow,
+    double FrozenVarianceThreshold);
 
 /// <summary>
 /// Outcome of one replay, in the units an operator can act on.
@@ -39,22 +50,36 @@ public sealed record SimulateSummary(
     DateTimeOffset FirstScorableAt);
 
 /// <summary>
-/// Replays a detector's scores through the PRODUCTION hysteresis gate (D-C) and reduces the
-/// result to the three numbers the operator is deciding on.
+/// Replays a detector's scores through the SAME decision path the live pipeline runs for the
+/// entity's current <c>alert_mode</c>, and reduces the result to the three numbers the operator
+/// is deciding on.
 ///
-/// Pure function, no I/O, no state: the same history plus the same scores plus the same gate
-/// parameters always produce the same summary. That is what makes it legitimate to describe
-/// the panel's numbers as "what would have happened" rather than "what a second, similar
-/// implementation thinks would have happened" — the gate class here is the same class the
-/// live pipeline instantiates.
+/// WHY the mode matters here and not only in the pipeline: <c>alert_mode</c> defaults to
+/// "adaptive", so on a stock install <c>ScoreStreamPipeline.ProcessVerdictAsync</c> decides
+/// through <see cref="AlertPolicy"/> — rank inside the entity's own score window, robust z on
+/// the raw value, min_duration, refractory, the rate cap and the watchdog. Replaying every
+/// entity through <see cref="HysteresisGate"/> (which only "legacy" entities ever reach) made
+/// the panel compare each score against an absolute 0.5 and report an episode count and an
+/// on-time percent produced by a gate the entity does not run. Those two numbers are what the
+/// alertsPerDay/on-time acceptance of WS6 is read off, so measuring the wrong gate is not a
+/// cosmetic defect: it invalidates the measurement.
+///
+/// Pure function, no I/O, no shared state: the same history plus the same scores plus the same
+/// parameters always produce the same summary. Every stateful participant (the policy, the
+/// hysteresis gate, the frozen detector) is constructed inside the call and dropped on return,
+/// so a replay can never move a live entity's calibration.
 /// </summary>
 public static class ReplaySimulator
 {
     public static SimulateSummary Run(
-        IReadOnlyList<HistoryPoint> history, SimulateResult sim, GateParams gate)
+        IReadOnlyList<HistoryPoint> history,
+        SimulateResult sim,
+        GateParams gate,
+        AlertParams alertParams)
     {
         ArgumentNullException.ThrowIfNull(history);
         ArgumentNullException.ThrowIfNull(sim);
+        ArgumentNullException.ThrowIfNull(alertParams);
 
         // The detector answers 1:1 with the history it was sent, but a truncated or failed
         // response must degrade to "nothing scorable" rather than index past the end.
@@ -66,8 +91,10 @@ public static class ReplaySimulator
             return new SimulateSummary(0, 0.0, 0.0, 0.0, 0, 0, default);
         }
 
-        var hysteresis = new HysteresisGate(
-            gate.HighThreshold, gate.LowThreshold, gate.MinConsecutive);
+        // Exactly the switch ProcessVerdictAsync makes, on exactly the same key.
+        var flags = string.Equals(alertParams.Mode, "legacy", StringComparison.OrdinalIgnoreCase)
+            ? ReplayLegacy(sim, gate, start, count)
+            : ReplayAdaptive(history, sim, gate, alertParams, start, count);
 
         var firstAt = history[start].Timestamp;
         var lastAt = history[count - 1].Timestamp;
@@ -80,7 +107,7 @@ public static class ReplaySimulator
 
         for (var i = start; i < count; i++)
         {
-            var on = hysteresis.Apply(sim.Scores[i]);
+            var on = flags[i - start];
 
             if (on != previous)
             {
@@ -105,5 +132,79 @@ public static class ReplaySimulator
 
         return new SimulateSummary(
             episodes, onTimePercent, spanHours, alertsPerDay, count - start, transitions, firstAt);
+    }
+
+    /// <summary>
+    /// alert_mode: legacy — the absolute-threshold gate, byte-for-byte the class
+    /// <c>ProcessVerdictLegacyAsync</c> applies.
+    /// </summary>
+    private static bool[] ReplayLegacy(SimulateResult sim, GateParams gate, int start, int count)
+    {
+        var hysteresis = new HysteresisGate(
+            gate.HighThreshold, gate.LowThreshold, gate.MinConsecutive);
+
+        var flags = new bool[count - start];
+        for (var i = start; i < count; i++)
+            flags[i - start] = hysteresis.Apply(sim.Scores[i]);
+
+        return flags;
+    }
+
+    /// <summary>
+    /// alert_mode: adaptive (the default) — <see cref="AlertPolicy"/>, fed the same three
+    /// inputs the live loops feed it: the detector's score, the raw reading, and the frozen
+    /// detector's verdict for that reading.
+    /// </summary>
+    private static bool[] ReplayAdaptive(
+        IReadOnlyList<HistoryPoint> history,
+        SimulateResult sim,
+        GateParams gate,
+        AlertParams alertParams,
+        int start,
+        int count)
+    {
+        var policy = new AlertPolicy(alertParams);
+        var frozen = new FrozenSensorDetector(gate.FrozenWindow, gate.FrozenVarianceThreshold);
+
+        // The warm-up prefix is history, and history is what primes the raw channel live:
+        // ScoreStreamPipeline backfills it into AlertPolicy.SeedHistory before the first
+        // verdict arrives. Dropping it here instead would start the raw channel from an empty
+        // window and report "no evidence" for the first ten readings of every replay — a
+        // silence the live entity does not have. SeedValue, not ObserveValue, for the same
+        // reason production uses it: a historical value must build the baseline, never be
+        // scored against a half-filled one.
+        for (var i = 0; i < start; i++)
+        {
+            policy.SeedValue(history[i].Value);
+            frozen.AddReading(history[i].Value);
+        }
+
+        var flags = new bool[count - start];
+
+        for (var i = start; i < count; i++)
+        {
+            var value = history[i].Value;
+
+            // Write-loop order, preserved: the frozen detector and the raw channel both see
+            // the reading before the verdict it produced reaches the gate.
+            frozen.AddReading(value);
+            policy.ObserveValue(value);
+
+            // now = the reading's OWN timestamp, never UtcNow. min_duration_sec,
+            // refractory_sec, max_events_per_hour and the watchdog are all wall-clock, so
+            // stamping a replay with the request time would collapse a day of history into
+            // milliseconds — every episode inside one refractory window, and a storm on the
+            // fifth. Taking `now` as a parameter is exactly why AlertPolicy can be replayed.
+            var decision = policy.OnVerdict(
+                sim.Scores[i],
+                warmedUp: true,
+                suppressed: false,
+                frozen: frozen.IsFrozen,
+                now: history[i].Timestamp);
+
+            flags[i - start] = decision.FlagOn;
+        }
+
+        return flags;
     }
 }
