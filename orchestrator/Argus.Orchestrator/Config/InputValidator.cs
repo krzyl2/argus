@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
 
@@ -77,25 +77,65 @@ public static class InputValidator
                     continue; // skip param validation for unknown detector type
                 }
 
+                // Validate the EFFECTIVE params — the submitted keys layered over the default
+                // table — not the raw submitted map. See WithDefaults.
+                var effective = WithDefaults(name, det.Params);
+
                 switch (name)
                 {
                     case "rmad":
-                        ValidateRmad(det.Params, errors);
+                        ValidateRmad(effective, errors);
                         break;
                     case "hst":
-                        ValidateHst(det.Params, errors);
+                        ValidateHst(effective, errors);
                         break;
                     case "mad":
-                        ValidateMad(det.Params, errors);
+                        ValidateMad(effective, errors);
                         break;
                     case "stl":
-                        ValidateStl(det.Params, errors);
+                        ValidateStl(effective, errors);
                         break;
                 }
             }
         }
 
         return errors;
+    }
+
+    /// <summary>
+    /// Layers the submitted params over the detector's default table, so validation sees the
+    /// configuration that will ACTUALLY be in force rather than the literal keys of the body.
+    ///
+    /// WHY: an absent key already means "use the default" everywhere else in the system —
+    /// <c>RmadParams.From</c>/<c>HstParams.From</c> read every field with a fallback, and
+    /// <c>params: {}</c> is what gen-entities.py writes for every entity on a fresh install and
+    /// what the save path itself writes for an entity it defaulted. Treating an absent key as a
+    /// hard error made the validator disagree with the loader about the same file: a brand-new
+    /// install could not be saved at all, and the only way to make it savable was to materialize
+    /// the whole default table onto disk, which permanently pins those entities to today's
+    /// numbers — a later change to DetectorDefaults would never reach them.
+    ///
+    /// What this does NOT relax: a key that IS present must be numeric and in range. A blank or
+    /// non-numeric value is still a hard error (CR-01, client parity with detectorParams.ts's
+    /// MSG_REQUIRED), because that is a field the operator was looking at and cleared, not a
+    /// field they never touched. Cross-field rules (high &gt; low, min_samples ≤ window) are
+    /// evaluated on the merged map too, so a partial block cannot smuggle in an unreachable
+    /// combination by omitting one half of the pair.
+    ///
+    /// The default table is the same one GET /api/detectors/defaults serves, and
+    /// DetectorDefaultsTests pins it against the <c>*Params.From</c> fallbacks — so "valid by
+    /// default" cannot drift into "the default fails its own validator".
+    /// </summary>
+    private static Dictionary<string, string> WithDefaults(string name, Dictionary<string, string> submitted)
+    {
+        // Get() hands back a fresh dictionary per call, so this never mutates the shared table.
+        var effective = Web.DetectorDefaults.Get(name);
+        if (effective is null) return submitted;
+
+        foreach (var (key, value) in submitted)
+            effective[key] = value;
+
+        return effective;
     }
 
     // -------------------------------------------------------------------------
@@ -113,7 +153,8 @@ public static class InputValidator
         // high_threshold: number in (0, 1] — but cross-field check requires > low_threshold
         // The cross-field check (below) also covers the "greater than low_threshold" rule.
         // Independent range check: must be in (0, 1] — i.e. > 0 AND ≤ 1
-        // Missing/blank/non-numeric is a hard error (client parity — detectorParams.ts MSG_REQUIRED).
+        // Blank/non-numeric is a hard error (client parity — detectorParams.ts MSG_REQUIRED);
+        // an omitted key never reaches here, WithDefaults already replaced it with the default.
         var hasHigh = TryGetDouble(p, "high_threshold", out var high);
         if (!hasHigh || high <= 0.0 || high > 1.0)
             errors.Add("Must be between 0 and 1, and greater than low threshold.");
@@ -144,10 +185,10 @@ public static class InputValidator
     /// <summary>
     /// Validates the rmad params set (D-A/D-B).
     ///
-    /// Every key is REQUIRED — an absent key is an error, not a silent default. WHY: the
-    /// migration and the SPA both write the full table, so a params map arriving here with a
-    /// key missing means something upstream dropped it, and defaulting at the validation
-    /// boundary would let that loss reach disk looking deliberate.
+    /// Called with the params ALREADY layered over the default table (see WithDefaults), so
+    /// every key is present here by construction: an absent key was replaced by its default,
+    /// and a present one is checked exactly as submitted. Blank/non-numeric therefore still
+    /// fails — only "the operator never touched this field" passes.
     ///
     /// frozen_window keeps the >= 1 rule of the hst path unchanged: frozen is disabled through
     /// frozen_variance_threshold (D-H), never through the window, because
@@ -155,6 +196,18 @@ public static class InputValidator
     /// </summary>
     private static void ValidateRmad(Dictionary<string, string> p, List<string> errors)
     {
+        // An rmad block carrying an HST-ONLY key is a legacy block wearing the new name — a
+        // params set the migration never rewrote. It has to be rejected explicitly, because
+        // every key it does share with rmad (window 250, high 0.7, low 0.3, frozen 10/0.001)
+        // is individually in range: accepted, it would mean "alarm above robust z 11.7", i.e.
+        // an entity that silently never alarms. Until this fix the legacy fingerprint was
+        // rejected only as a side effect of min_samples/z_scale/scale_floor being absent, and
+        // absence is no longer an error (see WithDefaults). No UI path can produce this — the
+        // editor replaces the whole params block when the detector name changes — so there is
+        // no client-side mirror of this rule to drift from.
+        if (p.ContainsKey("n_trees"))
+            errors.Add("Parameter \"n_trees\" belongs to HST, not RMAD — this block was not migrated.");
+
         // window: 30..10000. The lower bound is not cosmetic — a median/MAD baseline under
         // ~30 samples has a scale estimate too noisy to divide by, so the score stops meaning
         // "deviation" and starts meaning "the last few readings disagreed".
@@ -353,8 +406,9 @@ public static class InputValidator
 
     /// <summary>
     /// Validates that an integer param is present, numeric, and ≥ minValue; appends errorMsg
-    /// on failure. Missing/blank/non-numeric values are a hard error (client parity —
-    /// detectorParams.ts MSG_REQUIRED), not a silent skip.
+    /// on failure. Blank/non-numeric values are a hard error (client parity —
+    /// detectorParams.ts MSG_REQUIRED), not a silent skip. Callers pass the default-layered
+    /// map (WithDefaults), so "absent" is not a case that reaches this helper.
     /// </summary>
     private static void ValidateIntAtLeast(
         Dictionary<string, string> p,

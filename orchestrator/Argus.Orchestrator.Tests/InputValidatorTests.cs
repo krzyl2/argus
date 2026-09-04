@@ -1,4 +1,4 @@
-using Argus.Orchestrator.Config;
+﻿using Argus.Orchestrator.Config;
 using Xunit;
 
 namespace Argus.Orchestrator.Tests;
@@ -444,7 +444,7 @@ public class InputValidatorTests
     }
 
     // -------------------------------------------------------------------------
-    // CR-01 regression: missing/blank/non-numeric detector params must be a hard
+    // CR-01 regression: blank/non-numeric detector params must be a hard
     // error (client parity — detectorParams.ts isBlankOrNonNumeric -> MSG_REQUIRED),
     // never a silent skip that lets malformed values reach ConfigWriter.
     // -------------------------------------------------------------------------
@@ -485,7 +485,7 @@ public class InputValidatorTests
     [InlineData("min_consecutive")]
     [InlineData("frozen_window")]
     [InlineData("frozen_variance_threshold")]
-    public void Validate_HstParamMissingKey_ReturnsError(string paramKey)
+    public void Validate_HstParamMissingKey_UsesTheDefault(string paramKey)
     {
         var p = new Dictionary<string, string>
         {
@@ -503,8 +503,11 @@ public class InputValidatorTests
             [0] = [new DetectorConfig { Name = "hst", Params = p }],
         };
 
+        // Deviation from the earlier CR-01 rule: an omitted key is the default, not an error —
+        // the same rule as rmad, for the same reason (an entity stored with a partial or empty
+        // params block must stay savable). Blank/non-numeric stays an error, above.
         var errors = InputValidator.Validate([], detectors);
-        Assert.NotEmpty(errors);
+        Assert.Empty(errors);
     }
 
     [Theory]
@@ -739,13 +742,66 @@ public class InputValidatorTests
         Assert.Contains(InputValidator.MSG_MIN_SAMPLES, errors);
     }
 
-    [Fact]
-    public void ValidateRmad_MissingKey_IsAnError_NotADefault()
+    /// <summary>
+    /// An absent key means "use the default" — the same thing it means to RmadParams.From, to
+    /// the config loader, and to gen-entities.py, which writes `params: {}` for EVERY entity on
+    /// a fresh install. While the validator disagreed, a brand-new install could not be saved at
+    /// all, and the only way to make it savable was to materialize the whole default table onto
+    /// disk, which pins those entities to today's numbers forever.
+    ///
+    /// Deviation from the earlier rule (ValidateRmad_MissingKey_IsAnError_NotADefault): that
+    /// test encoded "absent == error", which is the behavior being removed. The half of CR-01
+    /// that still holds — a key the operator cleared is an error — is pinned below.
+    /// </summary>
+    [Theory]
+    [InlineData("window")]
+    [InlineData("min_samples")]
+    [InlineData("z_scale")]
+    [InlineData("scale_floor")]
+    [InlineData("high_threshold")]
+    [InlineData("low_threshold")]
+    [InlineData("min_consecutive")]
+    [InlineData("frozen_window")]
+    [InlineData("frozen_variance_threshold")]
+    public void ValidateRmad_MissingKey_UsesTheDefault(string paramKey)
     {
-        // Defaulting at the validation boundary would let an upstream key loss reach disk
-        // looking deliberate — the operator would never learn a value was dropped.
         var p = new Dictionary<string, string>(Argus.Orchestrator.Web.DetectorDefaults.Get("rmad")!);
-        p.Remove("z_scale");
+        p.Remove(paramKey);
+
+        var errors = InputValidator.Validate(["sensor.load_5m"],
+            new Dictionary<int, List<DetectorConfig>>
+            {
+                [0] = [new DetectorConfig { Name = "rmad", Params = p }],
+            });
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void ValidateRmad_EmptyParams_IsTheFreshInstallShape_AndValidates()
+    {
+        // gen-entities.py:52 and the save path's own default both write exactly this.
+        var errors = InputValidator.Validate(["sensor.load_5m"],
+            new Dictionary<int, List<DetectorConfig>>
+            {
+                [0] = [new DetectorConfig { Name = "rmad", Params = new Dictionary<string, string>() }],
+            });
+
+        Assert.Empty(errors);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("abc")]
+    public void ValidateRmad_PresentButBlankOrNonNumeric_IsStillAnError(string value)
+    {
+        // The surviving half of CR-01: a field the operator was looking at and cleared is not
+        // the same thing as a field they never touched, and must not silently become a default.
+        var p = new Dictionary<string, string>(Argus.Orchestrator.Web.DetectorDefaults.Get("rmad")!)
+        {
+            ["z_scale"] = value,
+        };
 
         var errors = InputValidator.Validate(["sensor.load_5m"],
             new Dictionary<int, List<DetectorConfig>>
@@ -754,6 +810,26 @@ public class InputValidatorTests
             });
 
         Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void ValidateRmad_CrossFieldRuleSeesTheDefaultOfAnOmittedKey()
+    {
+        // window 40 alone is in range, and min_samples is absent — but absent means 60, and a
+        // min_samples above its window is never reached, so the entity would sit in "calibrating"
+        // forever. Defaults must be merged BEFORE the cross-field rules, or a partial block could
+        // smuggle in an unreachable combination by omitting one half of the pair.
+        var errors = InputValidator.Validate(["sensor.load_5m"],
+            new Dictionary<int, List<DetectorConfig>>
+            {
+                [0] = [new DetectorConfig
+                {
+                    Name = "rmad",
+                    Params = new Dictionary<string, string> { ["window"] = "40" },
+                }],
+            });
+
+        Assert.Contains(InputValidator.MSG_MIN_SAMPLES_LE_WINDOW, errors);
     }
 
     [Fact]
@@ -803,9 +879,12 @@ public class InputValidatorTests
                 [0] = [new DetectorConfig { Name = "rmad", Params = legacy }],
             });
 
-        // min_samples, z_scale and scale_floor are all absent from the legacy set.
-        Assert.Contains(InputValidator.MSG_MIN_SAMPLES, errors);
+        // Rejected on the HST-only key it carries (n_trees), NOT on the keys it omits: an
+        // omitted key is now a default (see ValidateRmad_MissingKey_UsesTheDefault), so every
+        // other value in the legacy set — window 250, 0.7/0.3, frozen 10/0.001 — is individually
+        // in range for rmad and would validate. The fingerprint has to be rejected on purpose.
         Assert.NotEmpty(errors);
+        Assert.Contains(errors, e => e.Contains("n_trees"));
     }
 
     [Fact]
