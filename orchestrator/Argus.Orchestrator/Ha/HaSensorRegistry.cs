@@ -13,17 +13,53 @@ namespace Argus.Orchestrator.Ha;
 /// Many readers: Kestrel HTTP threads call GetAll/GetFiltered concurrently.
 /// Readers always observe a complete snapshot (no torn reads) — the id index and the sorted
 /// list live in ONE object, so they can never disagree.
+///
+/// The sorted projection is built LAZILY, on the first read of each state version. Upsert runs
+/// on the HA WebSocket receive loop — the same loop that has to deliver a reading to the scoring
+/// pipeline inside the 2 s budget — and it fires on every numeric state_changed event, which on
+/// a busy installation is tens per second against a few hundred entities. Sorting the whole
+/// registry there spent O(N log N) per event to produce a list that only /api/sensors ever reads,
+/// at human speed. Writes now cost only the index copy; the sort is paid once per state version,
+/// by the reader that needs it.
 /// </summary>
 public sealed class HaSensorRegistry : IHaSensorRegistry
 {
-    /// <summary>Index + sorted projection, swapped together so readers never see a half-update.</summary>
-    private sealed record State(
-        Dictionary<string, HaSensorEntry> ById,
-        IReadOnlyList<HaSensorEntry> Sorted);
+    /// <summary>
+    /// Index + its sorted projection, swapped together so readers never see a half-update.
+    ///
+    /// ById is never mutated after construction (every writer builds a fresh dictionary), which
+    /// is what makes the cached projection safe to compute after publication: two readers racing
+    /// produce equal lists, and CompareExchange decides which one everybody keeps.
+    /// </summary>
+    private sealed class State
+    {
+        public State(Dictionary<string, HaSensorEntry> byId) => ById = byId;
 
-    private static readonly State Empty = new(
-        new Dictionary<string, HaSensorEntry>(StringComparer.OrdinalIgnoreCase),
-        Array.Empty<HaSensorEntry>());
+        public Dictionary<string, HaSensorEntry> ById { get; }
+
+        private IReadOnlyList<HaSensorEntry>? _sorted;
+
+        public IReadOnlyList<HaSensorEntry> Sorted
+        {
+            get
+            {
+                // Volatile/Interlocked, not a plain field: without the fences a reader on a weak
+                // memory model could publish the reference before the list's contents.
+                var cached = Volatile.Read(ref _sorted);
+                if (cached is not null)
+                    return cached;
+
+                var built = ById.Values
+                    .OrderBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                return Interlocked.CompareExchange(ref _sorted, built, null) ?? built;
+            }
+        }
+    }
+
+    private static readonly State Empty =
+        new(new Dictionary<string, HaSensorEntry>(StringComparer.OrdinalIgnoreCase));
 
     private readonly object _writeLock = new();
     private volatile State _state = Empty;
@@ -133,8 +169,7 @@ public sealed class HaSensorRegistry : IHaSensorRegistry
         }
     }
 
-    private static State Materialize(Dictionary<string, HaSensorEntry> byId) =>
-        new(byId, byId.Values.OrderBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase).ToList());
+    private static State Materialize(Dictionary<string, HaSensorEntry> byId) => new(byId);
 
     private static string DomainOf(string entityId)
     {

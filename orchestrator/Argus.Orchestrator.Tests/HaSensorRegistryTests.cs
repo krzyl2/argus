@@ -425,4 +425,69 @@ public class HaSensorRegistryTests
 
         Assert.Equal("Salon", registry.GetAll().Single().AreaName);
     }
+
+    // -----------------------------------------------------------------------
+    // Hot path: what Upsert is allowed to cost
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// WHY: Upsert runs on the HA WebSocket receive loop — the same loop that has to get a
+    /// reading into the scoring pipeline within the 2 s budget — and it fires on every numeric
+    /// state_changed, tens per second on a real installation with a few hundred entities. The
+    /// sorted projection it feeds is read only by GET /api/sensors, at human speed. So the rule
+    /// is: a write may pay for recording the new value, and nothing that scales with the whole
+    /// registry beyond that; the ordering is the reader's bill.
+    ///
+    /// The budget is calibrated inside the test against the unavoidable cost — copying the index
+    /// — so it measures the RATIO, not a machine-specific byte count. Sorting on write pushed
+    /// that ratio to roughly 2.4x (a buffer, a key array, an index map and the result list, all
+    /// N-sized, on top of the copy); paying it on read leaves it at about 1x.
+    /// </summary>
+    [Fact]
+    public void Upsert_DoesNotPayForOrderingTheWholeRegistry()
+    {
+        const int entityCount = 4000;
+        const int iterations = 20;
+
+        var registry = new HaSensorRegistry();
+        registry.UpdateSnapshot(
+            Enumerable.Range(0, entityCount)
+                .Select(i => MakeDto($"sensor.s{i:D5}", "1.0"))
+                .ToList(),
+            TrackedEntities);
+
+        // Force the projection once, so the measurement below is not paying for a cold cache.
+        Assert.Equal(entityCount, registry.GetAll().Count);
+
+        var index = registry.GetAll().ToDictionary(e => e.EntityId, StringComparer.OrdinalIgnoreCase);
+        var hit = MakeDto("sensor.s02000", "2.0");
+
+        static long Measure(int times, Action body)
+        {
+            body();                                   // JIT + first-call allocations
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < times; i++)
+                body();
+            return (GC.GetAllocatedBytesForCurrentThread() - before) / times;
+        }
+
+        var indexCopyCost = Measure(iterations, () =>
+            GC.KeepAlive(new Dictionary<string, HaSensorEntry>(index, StringComparer.OrdinalIgnoreCase)));
+        var upsertCost = Measure(iterations, () => registry.Upsert(hit, isTracked: false));
+
+        Assert.True(upsertCost < indexCopyCost * 3 / 2,
+            $"Upsert allocated {upsertCost} B against an index-copy floor of {indexCopyCost} B "
+            + $"({upsertCost / (double)indexCopyCost:F2}x) — a write is doing work proportional to "
+            + "the whole registry on the HA receive loop.");
+
+        // The lazy projection must still be a correct one: a NEW entity has to appear, in order,
+        // on the very next read.
+        registry.Upsert(MakeDto("sensor.s00000_aaa", "3.0"), isTracked: false);
+        var all = registry.GetAll();
+        Assert.Equal(entityCount + 1, all.Count);
+        Assert.Equal(
+            all.Select(e => e.EntityId).OrderBy(id => id, StringComparer.OrdinalIgnoreCase),
+            all.Select(e => e.EntityId));
+        Assert.Contains(all, e => e.EntityId == "sensor.s00000_aaa");
+    }
 }
