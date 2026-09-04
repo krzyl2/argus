@@ -443,6 +443,59 @@ public class HaSensorRegistryTests
     /// that ratio to roughly 2.4x (a buffer, a key array, an index map and the result list, all
     /// N-sized, on top of the copy); paying it on read leaves it at about 1x.
     /// </summary>
+    /// <summary>
+    /// WHY: moving the sort off the write loop only pays off if the READ side does not pay it
+    /// over and over. GetAll() is not a one-per-request call — POST /api/sensors/save resolves
+    /// the tracked set from it and then builds the friendly-name snapshot from it, and
+    /// GroupInputValidator reads it per validation — so "each read re-sorts" would trade a cost
+    /// on the HA receive loop for an unbounded one on the HTTP path.
+    ///
+    /// The rule: the sorted projection is built once per STATE VERSION, not once per read. A
+    /// reader that changes nothing must be able to read again for free.
+    /// </summary>
+    [Fact]
+    public void GetAll_OnAnUnchangedRegistry_DoesNotSortAgain()
+    {
+        const int entityCount = 4000;
+        const int iterations = 20;
+
+        var registry = new HaSensorRegistry();
+        registry.UpdateSnapshot(
+            Enumerable.Range(0, entityCount)
+                .Select(i => MakeDto($"sensor.s{i:D5}", "1.0"))
+                .ToList(),
+            TrackedEntities);
+
+        static long Measure(int times, Action body)
+        {
+            body();                                   // JIT + first-call allocations
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < times; i++)
+                body();
+            return (GC.GetAllocatedBytesForCurrentThread() - before) / times;
+        }
+
+        var hit = MakeDto("sensor.s02000", "2.0");
+
+        // A NEW state version: whatever a first read of one costs, including the sort.
+        var freshVersionCost = Measure(iterations, () =>
+        {
+            registry.Upsert(hit, isTracked: false);
+            GC.KeepAlive(registry.GetAll());
+        });
+
+        // The same version, read again and again — the case an HTTP handler actually makes.
+        var repeatReadCost = Measure(iterations, () => GC.KeepAlive(registry.GetAll()));
+
+        Assert.True(repeatReadCost < freshVersionCost / 100,
+            $"Re-reading an unchanged registry allocated {repeatReadCost} B against "
+            + $"{freshVersionCost} B for a first read of a new version — the projection is being "
+            + "rebuilt per read instead of per state version.");
+
+        // Free, but not stale: the projection still has to be the current one.
+        Assert.Equal(entityCount, registry.GetAll().Count);
+    }
+
     [Fact]
     public void Upsert_DoesNotPayForOrderingTheWholeRegistry()
     {

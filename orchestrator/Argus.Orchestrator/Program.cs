@@ -520,8 +520,15 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         // HA snapshot resolvable. Without it, EVERY save (including one triggered from the pattern
         // textareas in Settings) quietly dropped such an entity from the config.
         var preSaveConfig = liveCfg.Get();
+
+        // Read the registry ONCE for the whole save. GetAll() returns the sorted projection of
+        // the current state version, built lazily by the first reader of that version: a second
+        // call after an intervening state_changed pays for a second sort AND answers from a
+        // different snapshot than the one the entity set was resolved from.
+        var registrySnapshot = registry.GetAll();
+
         var resolvedIds = GlobExpander.Resolve(
-            registry.GetAll(), include, exclude, selectedIds, [],
+            registrySnapshot, include, exclude, selectedIds, [],
             SensorTracking.TrackedIds(preSaveConfig));
 
         // Build parsedDetectors keyed by entity index — index = position in the sorted
@@ -556,7 +563,7 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         }
 
         // Build EntityConfig list: sorted alphabetically by EntityId so ei=0 → first alpha
-        var snapshotById = registry.GetAll()
+        var snapshotById = registrySnapshot
             .ToDictionary(e => e.EntityId, StringComparer.OrdinalIgnoreCase);
 
         var preSaveById = preSaveConfig.Entities
