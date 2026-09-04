@@ -310,8 +310,16 @@ public static class EntitiesSchemaMigrator
     /// ScoreStreamPipeline calls it for every reading — while InputValidator separately rejects
     /// anything below 1, so an entity written that way could never be saved from the UI again.
     /// </summary>
-    private static void DisableFrozen(string entityId, Dictionary<string, string> p, ILogger logger)
+    private static void DisableFrozen(string entityId, Dictionary<string, string>? p, ILogger logger)
     {
+        // A null block cannot be written into, and there is nothing here worth throwing over:
+        // EntitiesConfigLoader.NormalizeParams already turns a YAML `params:` null into an empty
+        // dictionary for every consumer, so reaching this with null means the params came from
+        // somewhere that bypassed the loader. Skipping is then strictly better than an NRE that
+        // MigrateIfNeeded rethrows into an uncaught Program.cs call and stops the boot.
+        if (p is null)
+            return;
+
         if (p.TryGetValue("frozen_variance_threshold", out var current) && current == "0.0")
             return;
 

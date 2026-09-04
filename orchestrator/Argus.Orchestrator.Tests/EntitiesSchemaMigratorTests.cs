@@ -1,4 +1,4 @@
-using Argus.Orchestrator.Config;
+﻿using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Mqtt;
 using Argus.Orchestrator.Web;
 using Microsoft.Extensions.Logging;
@@ -719,5 +719,99 @@ public class EntitiesSchemaMigratorTests : IDisposable
     {
         Assert.False(EntitiesSchemaMigrator.MigrateIfNeeded(
             Path.Combine(_dir, "absent.yaml"), Silent));
+    }
+
+    // -----------------------------------------------------------------------
+    // An explicit YAML null under `params:` — the shape a hand-edited config has
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// `params:` with nothing after it is a VALID YAML null, and YamlDotNet assigns that null
+    /// straight over the property initializer — so `DetectorConfig.Params` comes back null, not
+    /// empty. Every reader of that dictionary then dereferences null, and the first one on the
+    /// boot path is the migrator: the NullReferenceException escapes MigrateIfNeeded (which
+    /// logs and RETHROWS, by design) into Program.cs, which does not catch it. The add-on does
+    /// not start at all — the whole config is unreadable because one operator typed `params:`
+    /// on its own line instead of `params: {}`.
+    ///
+    /// The guarantee pinned here is therefore not "the migrator survives" but "a config the
+    /// YAML spec accepts cannot stop the add-on from booting".
+    /// </summary>
+    [Fact]
+    public void ExplicitNullParams_MigrateInsteadOfCrashingTheBoot()
+    {
+        var yaml = """
+            entities:
+              - entity_id: sensor.load_5m
+                friendly_name: ""
+                detectors:
+                  - name: hst
+                    params:
+            groups: []
+            """;
+        var path = WritePath(yaml);
+
+        Assert.True(EntitiesSchemaMigrator.MigrateIfNeeded(path, Silent));
+
+        // Empty params are the "use all defaults" form, which IS the pristine legacy block —
+        // so this entity takes the ordinary hst -> rmad route rather than being skipped.
+        var det = Assert.Single(Load(path).Entities.Single().Detectors);
+        Assert.Equal("rmad", det.Name);
+        Assert.Equal("0.0", det.Params["frozen_variance_threshold"]);
+    }
+
+    /// <summary>
+    /// Same null, on the branch that walks EVERY detector of a multi-detector entity. This one
+    /// is the wider surface: the loop writes frozen_variance_threshold into each hst/rmad block
+    /// it finds, so a null block anywhere in the list — not only in the first — is enough.
+    /// </summary>
+    [Fact]
+    public void ExplicitNullParams_OnMultiDetectorEntity_MigrateInsteadOfCrashingTheBoot()
+    {
+        var yaml = """
+            entities:
+              - entity_id: sensor.lodowkababcia_power
+                friendly_name: ""
+                detectors:
+                  - name: mad
+                    params:
+                      window: "100"
+                  - name: hst
+                    params:
+            groups: []
+            """;
+        var path = WritePath(yaml);
+
+        Assert.True(EntitiesSchemaMigrator.MigrateIfNeeded(path, Silent));
+
+        var entity = Load(path).Entities.Single();
+        var streaming = entity.Detectors.First(d => d.Name is "rmad" or "hst");
+        Assert.Equal("0.0", streaming.Params["frozen_variance_threshold"]);
+        Assert.Equal("10", streaming.Params["frozen_window"]);
+    }
+
+    /// <summary>
+    /// The normalization has to live at the LOADER, not only in the migrator: the migrator is
+    /// one reader of DetectorConfig.Params out of many (the pipeline's params resolution, the
+    /// save endpoint, the validator), and it runs only until schema_version 2 is stamped. After
+    /// that a hand-edited `params:` null still reaches every other reader, on every boot.
+    /// </summary>
+    [Fact]
+    public void Loader_NormalizesExplicitNullParamsToEmpty()
+    {
+        var path = WritePath("""
+            schema_version: 2
+            entities:
+              - entity_id: sensor.load_5m
+                friendly_name: ""
+                detectors:
+                  - name: rmad
+                    params:
+            groups: []
+            """);
+
+        var det = Assert.Single(Load(path).Entities.Single().Detectors);
+        Assert.NotNull(det.Params);
+        Assert.Empty(det.Params);
     }
 }

@@ -29,6 +29,7 @@ public class EntitiesConfigLoader
         var config = deserializer.Deserialize<EntitiesConfig>(yaml)
             ?? new EntitiesConfig();
 
+        NormalizeParams(config);
         Validate(config, path, logger);
         ValidateGroups(config, path, logger, registry);
 
@@ -36,6 +37,39 @@ public class EntitiesConfigLoader
             "Loaded {EntityCount} entities from {Path}", config.Entities?.Count ?? 0, path);
 
         return config;
+    }
+
+    /// <summary>
+    /// Replaces every null params dictionary with an empty one, ONCE, at the only door every
+    /// consumer comes through.
+    ///
+    /// WHY it cannot be left to the readers: `params:` followed by nothing is a valid YAML null,
+    /// and YamlDotNet assigns that null straight over the C# property initializer — so a
+    /// hand-edited config yields DetectorConfig.Params == null even though EntitiesConfig.cs
+    /// says `= new()`. Every reader then dereferences null. The first one on the boot path is
+    /// EntitiesSchemaMigrator, which logs and RETHROWS by design, into a Program.cs call that
+    /// does not catch: one operator-typed `params:` and the add-on does not start at all.
+    /// Guarding the readers one at a time would fix that call site and leave the next one.
+    ///
+    /// Normalizing on load also stops the shape being REPRODUCED: the migrator serializes the
+    /// typed model back to disk, and a null here comes out as another bare `params:`.
+    /// </summary>
+    private static void NormalizeParams(EntitiesConfig config)
+    {
+        foreach (var entity in config.Entities ?? new List<EntityConfig>())
+        {
+            foreach (var detector in entity?.Detectors ?? new List<DetectorConfig>())
+            {
+                if (detector is not null)
+                    detector.Params ??= new Dictionary<string, string>();
+            }
+        }
+
+        foreach (var group in config.Groups ?? new List<GroupConfig>())
+        {
+            if (group is not null)
+                group.Params ??= new Dictionary<string, string>();
+        }
     }
 
     private static void Validate(EntitiesConfig config, string path, ILogger logger)
