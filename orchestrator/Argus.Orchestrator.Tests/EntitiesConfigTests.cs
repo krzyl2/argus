@@ -327,6 +327,120 @@ entities: []
         Assert.Empty(config.Groups);
     }
 
+    // --- Null LIST ITEMS: the bare "-" an operator leaves behind mid-edit -----
+
+    [Fact]
+    public void Load_BareDashInDetectors_ThrowsReadableValidationError()
+    {
+        // A bare "-" under `detectors:` is VALID YAML for a null list item, and YamlDotNet puts
+        // that null straight into List<DetectorConfig> — so `Detectors.Count` is 1 and the
+        // existing "has no detectors configured" check waves it through. Every reader then
+        // dereferences null, and the first one on the boot path is EntitiesSchemaMigrator, which
+        // logs and RETHROWS by design into a Program.cs call that does not catch: the add-on
+        // does not start at all. Same operator typo, same operational outcome as the `params:`
+        // null this loader already normalizes.
+        //
+        // The guarantee pinned here is what the file already promises for a null ENTITY: the
+        // config is REJECTED with a message naming the shape, never a NullReferenceException.
+        var yaml = @"
+entities:
+  - entity_id: sensor.salon_temperatura
+    friendly_name: Salon temperatura
+    detectors:
+      -
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, _) = CreateCapturingLogger();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => EntitiesConfigLoader.Load(path, logger));
+
+        Assert.Contains("sensor.salon_temperatura", ex.Message);
+        Assert.Contains("-", ex.Message);
+    }
+
+    [Fact]
+    public void Load_BareDashInEntities_ThrowsReadableValidationError()
+    {
+        // The entity-level counterpart, pinned so the two list levels cannot drift apart again:
+        // both are rejected, and both name the bare '-' the operator has to go and find.
+        var yaml = @"
+entities:
+  -
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, _) = CreateCapturingLogger();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => EntitiesConfigLoader.Load(path, logger));
+
+        Assert.Contains("-", ex.Message);
+    }
+
+    [Fact]
+    public void Load_BareDashInGroups_SkipsGroupAndKeepsTheRest()
+    {
+        // Groups follow the OTHER convention of this file (degrade-not-crash, D-14): a bad group
+        // is pruned with a warning so the valid ones — and every entity — still load.
+        var yaml = @"
+entities: []
+groups:
+  -
+  - group_id: valid_group
+    friendly_name: Valid
+    members: [sensor.a, sensor.b]
+    mode: joint
+    detector: pca
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, messages) = CreateCapturingLogger();
+
+        var config = EntitiesConfigLoader.Load(path, logger);
+
+        Assert.Equal("valid_group", Assert.Single(config.Groups).GroupId);
+        Assert.Contains(messages, m => m.Contains("null group entry"));
+    }
+
+    [Fact]
+    public void Load_BareDashInGroupMembers_SkipsGroupAndKeepsTheRest()
+    {
+        // The list one level down. A null member survives the count and the duplicate check, and
+        // then peer-divergence unit resolution does `ResolvedUnits[member] = ...` with a null key
+        // — an ArgumentNullException thrown out of ValidateGroups, breaking the "NEVER throws"
+        // contract that method is built on and that the /api reload path (which is the caller
+        // that passes a registry) depends on. Pruned with a warning, like every other malformed
+        // group.
+        var yaml = @"
+entities: []
+groups:
+  - group_id: holey_members
+    friendly_name: Holey
+    members:
+      - sensor.a
+      -
+      - sensor.b
+    mode: peer_divergence
+    detector: peer_divergence
+  - group_id: valid_group
+    friendly_name: Valid
+    members: [sensor.a, sensor.b]
+    mode: peer_divergence
+    detector: peer_divergence
+";
+        var path = WriteTempYaml(yaml);
+        var (logger, messages) = CreateCapturingLogger();
+        var registry = new FakeHaSensorRegistry(new Dictionary<string, string?>
+        {
+            ["sensor.a"] = "°C",
+            ["sensor.b"] = "°C",
+        });
+
+        var config = EntitiesConfigLoader.Load(path, logger, registry);
+
+        Assert.Equal("valid_group", Assert.Single(config.Groups).GroupId);
+        Assert.Contains(messages, m => m.Contains("holey_members"));
+    }
+
     private static string WriteTempYaml(string content)
     {
         var path = System.IO.Path.GetTempFileName() + ".yaml";

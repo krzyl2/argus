@@ -856,4 +856,39 @@ public class EntitiesSchemaMigratorTests : IDisposable
         Assert.NotNull(det.Params);
         Assert.Empty(det.Params);
     }
+
+    // -----------------------------------------------------------------------
+    // A bare "-" list item — the other half of the same operator typo
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// `detectors:` followed by a bare "-" is a null LIST ITEM, the sibling of the null `params:`
+    /// above and the same operational outcome: EntitiesConfigLoader.Validate only rejects a null
+    /// ENTITY, so a null DetectorConfig reaches MigrateEntity, `detector.Name` throws a
+    /// NullReferenceException, MigrateIfNeeded logs and RETHROWS by design, and Program.cs does
+    /// not catch — the add-on does not start.
+    ///
+    /// Unlike the null `params:` case this is NOT normalized away: there is no defensible
+    /// detector to invent for an empty list item, and this loader already throws for a null
+    /// entity. What is pinned is therefore the diagnosis, not the boot: the operator is told
+    /// which entity and which shape, instead of a bare NRE stack.
+    /// </summary>
+    [Fact]
+    public void BareDashInDetectors_FailsWithAReadableError_NotANullReference()
+    {
+        var path = WritePath("""
+            entities:
+              - entity_id: sensor.load_5m
+                friendly_name: ""
+                detectors:
+                  -
+            groups: []
+            """);
+
+        var ex = Record.Exception(() => EntitiesSchemaMigrator.MigrateIfNeeded(path, Silent));
+
+        Assert.IsNotType<NullReferenceException>(ex);
+        Assert.IsType<InvalidOperationException>(ex);
+        Assert.Contains("sensor.load_5m", ex!.Message);
+    }
 }

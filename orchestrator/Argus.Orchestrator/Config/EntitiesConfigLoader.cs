@@ -95,6 +95,22 @@ public class EntitiesConfigLoader
             if (entity.Detectors == null || entity.Detectors.Count == 0)
                 throw new InvalidOperationException(
                     $"Entity '{entity.EntityId}' has no detectors configured");
+
+            // A bare '-' under `detectors:` is a null LIST ITEM — valid YAML, and YamlDotNet puts
+            // the null straight into List<DetectorConfig>, so the count check above passes with a
+            // hole in the list. Every reader then dereferences it, and the first one on the boot
+            // path is EntitiesSchemaMigrator: `detector.Name` throws, MigrateIfNeeded rethrows by
+            // design, and Program.cs does not catch — the add-on does not start, on the same
+            // class of typo as the `params:` null NormalizeParams answers above.
+            //
+            // Rejected, not dropped: this is the entity side of the file, where a null entry
+            // already throws (above), and there is no detector to invent for an empty item.
+            // Silently dropping it would leave an entity that passed "has detectors" running
+            // with none — a config the operator cannot see is wrong.
+            if (entity.Detectors.Any(d => d is null))
+                throw new InvalidOperationException(
+                    $"Entity '{entity.EntityId}' has a null detector entry in entities.yaml "
+                    + "(check for bare '-' list items)");
         }
     }
 
@@ -147,6 +163,19 @@ public class EntitiesConfigLoader
                 logger.LogWarning(LogEvents.GroupRejected,
                     "Group '{GroupId}' has {MemberCount} member(s), below the minimum of 2 — skipped",
                     group.GroupId, group.Members?.Count ?? 0);
+                continue;
+            }
+
+            // The same bare '-', one level down. A null member survives the count check above
+            // and the duplicate check below, and then peer-divergence unit resolution indexes
+            // ResolvedUnits by it — ArgumentNullException('key'), thrown out of a method whose
+            // entire contract is that it never throws (D-14, degrade-not-crash). Groups degrade,
+            // so the group is skipped here rather than taking every entity down with it.
+            if (group.Members.Any(string.IsNullOrWhiteSpace))
+            {
+                logger.LogWarning(LogEvents.GroupRejected,
+                    "Group '{GroupId}' has an empty member entry (check for bare '-' list items) — skipped",
+                    group.GroupId);
                 continue;
             }
 
