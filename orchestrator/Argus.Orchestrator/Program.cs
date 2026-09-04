@@ -251,8 +251,15 @@ builder.Services.AddSingleton<Argus.Orchestrator.Config.ConfigWriter>();
 if (!string.IsNullOrWhiteSpace(connectionSettings.InfluxUrl))
 {
     // InfluxDBClient is a singleton; QueryApi obtained per-call inside InfluxDbReader
+    // Timeout raised from the client default (10s) — a 24h/30d window over a busy HA bucket
+    // regularly exceeds 10s, and a timeout arrives as TaskCanceledException (see
+    // BatchSchedulerWorker fault isolation).
     builder.Services.AddSingleton<InfluxDBClient>(_ =>
-        new InfluxDBClient(connectionSettings.InfluxUrl, connectionSettings.InfluxToken));
+        new InfluxDBClient(new InfluxDBClientOptions(connectionSettings.InfluxUrl)
+        {
+            Token = connectionSettings.InfluxToken,
+            Timeout = TimeSpan.FromSeconds(60),
+        }));
     builder.Services.AddSingleton<InfluxDbReader>();
     // IInfluxDataSource resolves to the same singleton InfluxDbReader (for BatchSchedulerWorker injection)
     builder.Services.AddSingleton<IInfluxDataSource>(sp => sp.GetRequiredService<InfluxDbReader>());

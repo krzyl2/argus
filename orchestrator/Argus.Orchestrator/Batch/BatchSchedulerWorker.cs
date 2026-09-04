@@ -26,7 +26,9 @@ namespace Argus.Orchestrator.Batch;
 ///
 /// Fault isolation (T-02-04-04):
 ///   Per-entity exceptions are caught and logged; worker never dies from a single entity failure.
-///   OperationCanceledException always rethrown for clean shutdown.
+///   OperationCanceledException is rethrown ONLY when the worker's own token is cancelled
+///   (host shutdown). A foreign cancellation — e.g. the InfluxDB client's request timeout, which
+///   surfaces as TaskCanceledException — is logged like any other fault so the worker survives.
 /// </summary>
 public sealed class BatchSchedulerWorker : BackgroundService
 {
@@ -134,7 +136,10 @@ public sealed class BatchSchedulerWorker : BackgroundService
                     fitRunToday = true;
                 }
             }
-            catch (OperationCanceledException) { throw; }
+            // PROC-03: only host shutdown may kill this worker. A cancellation that did NOT
+            // come from stoppingToken (e.g. InfluxDB client's own request timeout, which surfaces
+            // as TaskCanceledException) is a transient fault — log it and keep the loop alive.
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.LogError(LogEvents.BatchSchedulerError, ex, "Batch tick failed unexpectedly");
@@ -155,7 +160,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
                 {
                     await RunEntityBatchAsync(entity.EntityId, detectorCfg, ct);
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     _logger.LogError(LogEvents.BatchSchedulerError, ex,
@@ -172,7 +177,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
             {
                 await RunGroupBatchAsync(group, ct);
             }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.LogError(LogEvents.GroupSchedulerError, ex,
@@ -540,7 +545,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
                             entity.EntityId, detectorCfg.Name, response.Error);
                     }
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     _logger.LogError(LogEvents.BatchSchedulerError, ex,
@@ -559,7 +564,7 @@ public sealed class BatchSchedulerWorker : BackgroundService
             {
                 await RunGroupFitAsync(group, ct);
             }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.LogError(LogEvents.GroupSchedulerError, ex,

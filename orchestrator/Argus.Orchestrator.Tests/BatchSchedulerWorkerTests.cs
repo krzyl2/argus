@@ -36,6 +36,27 @@ public class BatchSchedulerWorkerTests
             => Task.FromResult(_rows);
     }
 
+    /// <summary>
+    /// Influx source that fails with TaskCanceledException on an *uncancelled* token — exactly what
+    /// InfluxDB.Client raises when its own HTTP request timeout fires. It must NOT be mistaken for
+    /// host shutdown, otherwise a slow query kills the whole orchestrator process (PROC-03).
+    /// </summary>
+    private sealed class CancelThrowingInfluxDbReader : IInfluxDataSource
+    {
+        public int QueryCallCount { get; private set; }
+
+        public Task<IReadOnlyList<(DateTime Timestamp, double Value)>> QueryAsync(
+            string entityId, CancellationToken ct)
+        {
+            QueryCallCount++;
+            throw new TaskCanceledException("simulated InfluxDB request timeout");
+        }
+
+        public Task<IReadOnlyList<(DateTime Timestamp, double Value)>> QueryHistoryAsync(
+            string entityId, string lookback, int limit, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<(DateTime, double)>>(Array.Empty<(DateTime, double)>());
+    }
+
     private sealed class FakeBatchDetectorClient : IBatchDetectorClient
     {
         public int ScoreBatchCallCount { get; private set; }
@@ -189,6 +210,57 @@ public class BatchSchedulerWorkerTests
         Array.Empty<(DateTime, double)>();
 
     // ─── Tests ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RunBatchAsync_InfluxTimesOutAsTaskCanceled_WorkerContinues_NoRethrow()
+    {
+        // Regression: InfluxDB.Client surfaces its request timeout as TaskCanceledException.
+        // A blanket `catch (OperationCanceledException) { throw; }` treated that as shutdown, so
+        // one slow query bubbled out of ExecuteAsync and StopHost killed the container.
+        var entities = new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig { EntityId = "sensor.one", Detectors = [new DetectorConfig { Name = "mad" }] },
+                new EntityConfig { EntityId = "sensor.two", Detectors = [new DetectorConfig { Name = "mad" }] },
+            ],
+        };
+        var influx = new CancelThrowingInfluxDbReader();
+        var worker = new BatchSchedulerWorker(
+            DefaultSettings(),
+            influx,
+            new FakeBatchDetectorClient(),
+            new FakeStatePublisher(),
+            MakeLive(entities),
+            new FakeGroupInfluxDataSource(),
+            NullLogger<BatchSchedulerWorker>.Instance);
+
+        await worker.RunBatchForTestAsync(CancellationToken.None);
+
+        // Second entity still attempted — the fault was isolated, not fatal
+        Assert.Equal(2, influx.QueryCallCount);
+    }
+
+    [Fact]
+    public async Task RunBatchAsync_TokenCancelled_RethrowsForCleanShutdown()
+    {
+        // The other half of the contract: when the worker's own token IS cancelled, cancellation
+        // must still propagate so host shutdown stays prompt and clean.
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var influx = new CancelThrowingInfluxDbReader();
+        var worker = new BatchSchedulerWorker(
+            DefaultSettings(),
+            influx,
+            new FakeBatchDetectorClient(),
+            new FakeStatePublisher(),
+            MakeLive(OneEntityOneDetector()),
+            new FakeGroupInfluxDataSource(),
+            NullLogger<BatchSchedulerWorker>.Instance);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => worker.RunBatchForTestAsync(cts.Token));
+    }
 
     [Fact]
     public async Task RunBatchAsync_EntityHasNoPoints_ScoreBatchNotCalled()
