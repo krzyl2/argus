@@ -1,5 +1,6 @@
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Mqtt;
+using Argus.Orchestrator.Workers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -79,7 +80,7 @@ public class LegacyDiscoveryRetractionTests : IDisposable
             (entities, _) =>
             {
                 retracted.AddRange(entities.Select(e => e.EntityId));
-                return Task.CompletedTask;
+                return Task.FromResult(true);
             },
             Silent, CancellationToken.None));
 
@@ -97,12 +98,12 @@ public class LegacyDiscoveryRetractionTests : IDisposable
         GivenMigrationHappened();
 
         var runs = 0;
-        Assert.True(await Resolve().RunAsync((_, _) => { runs++; return Task.CompletedTask; },
+        Assert.True(await Resolve().RunAsync((_, _) => { runs++; return Task.FromResult(true); },
             Silent, CancellationToken.None));
 
         var next = Resolve();
         Assert.False(next.IsPending);
-        Assert.False(await next.RunAsync((_, _) => { runs++; return Task.CompletedTask; },
+        Assert.False(await next.RunAsync((_, _) => { runs++; return Task.FromResult(true); },
             Silent, CancellationToken.None));
 
         Assert.Equal(1, runs);
@@ -123,6 +124,112 @@ public class LegacyDiscoveryRetractionTests : IDisposable
 
         Assert.False(File.Exists(_entitiesPath + LegacyDiscoveryRetraction.MarkerSuffix));
         Assert.True(Resolve().IsPending);
+    }
+
+    /// <summary>
+    /// THE half of the same rule that a throwing fake cannot reach, and the one the field
+    /// actually hits: the production sink DROPS instead of throwing. MqttConnection.PublishAsync
+    /// logs "MQTT not connected — dropped publish" and returns normally, so a retraction that
+    /// judges itself by "the loop finished" reports success having deleted nothing — and the
+    /// marker it then writes retires the obligation FOREVER, which is worse than never having
+    /// tried. Success has to mean delivery.
+    /// </summary>
+    [Fact]
+    public async Task MarkerIsNotWrittenWhenTheBrokerSilentlyDroppedTheDeletions()
+    {
+        GivenMigrationHappened();
+
+        // No throw anywhere: the deletions were simply dropped on the floor, exactly as an
+        // unreachable broker looks from inside PublishAsync.
+        Assert.False(await Resolve().RunAsync(
+            (_, _) => Task.FromResult(false), Silent, CancellationToken.None));
+
+        Assert.False(File.Exists(_entitiesPath + LegacyDiscoveryRetraction.MarkerSuffix));
+
+        // Still owed on the next boot, and completed once the broker is back.
+        var next = Resolve();
+        Assert.True(next.IsPending);
+        Assert.True(await next.RunAsync((_, _) => Task.FromResult(true), Silent, CancellationToken.None));
+        Assert.True(File.Exists(_entitiesPath + LegacyDiscoveryRetraction.MarkerSuffix));
+    }
+
+    /// <summary>
+    /// The same rule wired to the REAL sink instead of a fake, because the fakes above are only
+    /// as honest as the delegate they stand in for. An MqttConnection that never connected is
+    /// what a down broker gives the retraction on boot: every publish is dropped, so the whole
+    /// retraction must come back false and leave no marker behind.
+    ///
+    /// The production path is asserted through DiscoveryPublisher.RetractLegacyDetectorScopedAsync
+    /// on a live MqttConnection — the exact delegate MqttPublisherWorker passes.
+    /// </summary>
+    [Fact]
+    public async Task RealMqttConnectionWithNoBroker_LeavesTheRetractionOwed()
+    {
+        GivenMigrationHappened();
+
+        await using var mqtt = new MqttConnection(
+            new MqttConnectionTests.FakeCredentialSource(new ConnectionSettings
+            {
+                MqttHost = "localhost",
+                MqttPort = 1883,
+                MqttUser = "u",
+                MqttPassword = "p",
+            }),
+            NullLogger<MqttConnection>.Instance)
+        {
+            PublishConnectionWait = TimeSpan.FromMilliseconds(20),
+        };
+
+        var completed = await Resolve().RunAsync(
+            (entities, ct) => DiscoveryPublisher.RetractLegacyDetectorScopedAsync(mqtt, entities, ct),
+            Silent, CancellationToken.None);
+
+        Assert.False(completed);
+        Assert.False(File.Exists(_entitiesPath + LegacyDiscoveryRetraction.MarkerSuffix));
+        Assert.True(Resolve().IsPending);
+    }
+
+    /// <summary>
+    /// A retraction that fails must not become a boot loop. The obligation is durable now, so a
+    /// deterministic throw would be re-thrown on every start; with StopHost that is start-crash-
+    /// start with PublishAllAsync never running — no discovery in HA AT ALL. A missing retraction
+    /// costs one duplicate entity per sensor; a boot loop costs every entity. So the worker logs
+    /// it and carries on, and — no marker having been written — retries on the next start.
+    /// </summary>
+    [Fact]
+    public async Task AFailedRetractionDoesNotStopTheBoot()
+    {
+        GivenMigrationHappened();
+
+        var completed = await MqttPublisherWorker.RunLegacyRetractionAsync(
+            Resolve(),
+            (_, _) => throw new InvalidOperationException("broker refused the connection"),
+            Silent, CancellationToken.None);
+
+        Assert.False(completed);
+        Assert.False(File.Exists(_entitiesPath + LegacyDiscoveryRetraction.MarkerSuffix));
+        Assert.True(Resolve().IsPending);
+    }
+
+    /// <summary>
+    /// Host shutdown is not a failure to swallow: cancellation must still propagate so the stop
+    /// stays clean (and so a cancelled publish is never mistaken for a completed one).
+    /// </summary>
+    [Fact]
+    public async Task AShutdownDuringTheRetractionStillCancels()
+    {
+        GivenMigrationHappened();
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            MqttPublisherWorker.RunLegacyRetractionAsync(
+                Resolve(),
+                (_, ct) => { ct.ThrowIfCancellationRequested(); return Task.FromResult(true); },
+                Silent, cts.Token));
+
+        Assert.False(File.Exists(_entitiesPath + LegacyDiscoveryRetraction.MarkerSuffix));
     }
 
     /// <summary>

@@ -197,24 +197,42 @@ public class DiscoveryPublisher
     /// Each (slug, detector) pair is retracted exactly once even if the pair repeats in config.
     /// Call once, at the first start after migration, BEFORE the first PublishAllAsync.
     /// </summary>
-    public static Task RetractLegacyDetectorScopedAsync(
+    /// <returns>
+    /// True only when the broker took EVERY deletion. See the delegate overload: the caller
+    /// records a durable "already retracted" marker off this answer, so a dropped publish must
+    /// never read as a completed retraction.
+    /// </returns>
+    public static Task<bool> RetractLegacyDetectorScopedAsync(
         MqttConnection mqtt,
         IReadOnlyList<EntityConfig> preMigration,
         CancellationToken ct)
         => RetractLegacyDetectorScopedAsync(
-            (topic, payload, retain, token) => mqtt.PublishAsync(topic, payload, retain, token),
+            (topic, payload, retain, token) => mqtt.TryPublishAsync(topic, payload, retain, token),
             preMigration,
             ct);
 
     /// <summary>
     /// Testable overload: accepts a publish delegate instead of a live MqttConnection.
+    ///
+    /// The delegate reports DELIVERY, and this method reports it onwards, because
+    /// MqttConnection.PublishAsync does not throw when the broker is unreachable — it logs and
+    /// drops. A retraction built on a non-throwing sink would otherwise "succeed" having deleted
+    /// nothing, the marker would be written, and the stale retained configs would survive every
+    /// later boot: the exact outcome D-G exists to prevent, reached through the ordinary case
+    /// (broker down) rather than the exotic one (process killed).
+    ///
+    /// Every deletion is still ATTEMPTED even after one is dropped — deleting an already-deleted
+    /// retained message is a no-op, so a partial delivery costs nothing on the retry, while
+    /// stopping early would leave topics untried for no gain.
     /// </summary>
-    public static async Task RetractLegacyDetectorScopedAsync(
-        Func<string, string, bool, CancellationToken, Task> publish,
+    /// <returns>True when every publish was accepted by the broker.</returns>
+    public static async Task<bool> RetractLegacyDetectorScopedAsync(
+        Func<string, string, bool, CancellationToken, Task<bool>> publish,
         IReadOnlyList<EntityConfig> preMigration,
         CancellationToken ct)
     {
         var seen = new HashSet<(string EntityId, string Detector)>();
+        var allDelivered = true;
 
         foreach (var entity in preMigration)
         {
@@ -231,15 +249,17 @@ public class DiscoveryPublisher
                 if (!seen.Add((entity.EntityId, detector)))
                     continue;
 
-                await publish(
+                allDelivered &= await publish(
                     $"homeassistant/binary_sensor/{UniqueId.LegacyAnomalyId(entity.EntityId, detector)}/config",
                     string.Empty, true, ct);
 
-                await publish(
+                allDelivered &= await publish(
                     $"homeassistant/sensor/{UniqueId.LegacyScoreId(entity.EntityId, detector)}/config",
                     string.Empty, true, ct);
             }
         }
+
+        return allDelivered;
     }
 
     /// <summary>

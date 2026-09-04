@@ -95,6 +95,21 @@ public sealed class MqttConnection : IAsyncDisposable, IMqttPublishSink
     /// host shutdown remains a clean stop.
     /// </summary>
     public async Task PublishAsync(string topic, string payload, bool retain, CancellationToken ct)
+        => await TryPublishAsync(topic, payload, retain, ct);
+
+    /// <summary>
+    /// Same publish, but SAYS whether the broker took the message.
+    ///
+    /// <see cref="PublishAsync"/> swallowing transport failures is right for state topics — the
+    /// next reading republishes them — but it makes "the call returned" mean nothing to a caller
+    /// whose next step is a DURABLE decision. The legacy discovery retraction (D-G) is exactly
+    /// that caller: it writes a marker that stops the deletions from ever being attempted again,
+    /// so it must distinguish "the broker deleted these retained configs" from "we dropped them
+    /// with a warning while the broker was unreachable". Returning false is not an error path —
+    /// the retraction simply stays owed and runs again next boot.
+    /// </summary>
+    /// <returns>True when the broker accepted the publish; false when it was dropped.</returns>
+    public async Task<bool> TryPublishAsync(string topic, string payload, bool retain, CancellationToken ct)
     {
         var message = new MqttApplicationMessageBuilder()
             .WithTopic(topic)
@@ -107,12 +122,13 @@ public sealed class MqttConnection : IAsyncDisposable, IMqttPublishSink
         {
             _logger.LogWarning(LogEvents.MqttPublishDropped,
                 "MQTT not connected — dropped publish to {Topic}", topic);
-            return;
+            return false;
         }
 
         try
         {
             await _client.PublishAsync(message, ct);
+            return true;
         }
         catch (MqttClientDisconnectedException ex)
         {
@@ -120,11 +136,13 @@ public sealed class MqttConnection : IAsyncDisposable, IMqttPublishSink
             // timed out mid-call). The DisconnectedAsync handler owns reconnecting.
             _logger.LogWarning(LogEvents.MqttPublishDropped, ex,
                 "MQTT disconnected during publish — dropped message to {Topic}", topic);
+            return false;
         }
         catch (MqttCommunicationException ex)
         {
             _logger.LogWarning(LogEvents.MqttPublishDropped, ex,
                 "MQTT communication failure — dropped message to {Topic}", topic);
+            return false;
         }
     }
 

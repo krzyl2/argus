@@ -68,16 +68,27 @@ public sealed record LegacyDiscoveryRetraction(
     }
 
     /// <summary>
-    /// Runs the retraction and records completion — in that order, and only in that order.
+    /// Runs the retraction and records completion — in that order, and only when the broker
+    /// CONFIRMED the deletions.
     ///
-    /// If <paramref name="retract"/> throws (broker down, host shutting down), the marker is NOT
-    /// written and the whole thing is attempted again on the next boot. Republishing empty
-    /// retained payloads for topics that are already gone is a no-op at the broker, so retrying
-    /// is always cheaper than the alternative of leaving an orphaned entity behind.
+    /// <paramref name="retract"/> answers with delivery, not with "the loop finished", because
+    /// the production sink (MqttConnection.PublishAsync) does not throw when the broker is
+    /// unreachable: it logs "MQTT not connected — dropped publish" and returns. A retraction
+    /// judged by "did the call return" would therefore report success having deleted nothing,
+    /// write the marker, and retire the obligation forever — leaving the retained
+    /// argus_{slug}_{det}_* configs, and the orphaned HA entities they create, in place. Broker
+    /// down for one boot is the ORDINARY case, not the exotic one.
+    ///
+    /// A throw (host shutting down mid-publish) has the same consequence as a false: no marker,
+    /// try again next boot. Republishing empty retained payloads for topics that are already
+    /// gone is a no-op at the broker, so retrying is always cheaper than leaving an orphan.
     /// </summary>
-    /// <returns>True when a retraction was performed this boot.</returns>
+    /// <param name="retract">
+    /// Performs the deletions and returns true only when EVERY one of them reached the broker.
+    /// </param>
+    /// <returns>True when a retraction was performed AND confirmed this boot.</returns>
     public async Task<bool> RunAsync(
-        Func<IReadOnlyList<EntityConfig>, CancellationToken, Task> retract,
+        Func<IReadOnlyList<EntityConfig>, CancellationToken, Task<bool>> retract,
         ILogger logger,
         CancellationToken ct)
     {
@@ -87,7 +98,15 @@ public sealed record LegacyDiscoveryRetraction(
         if (!IsPending)
             return false;
 
-        await retract(Entities, ct);
+        if (!await retract(Entities, ct))
+        {
+            logger.LogWarning(LogEvents.MqttPublishDropped,
+                "Legacy detector-scoped discovery was NOT retracted for {Count} pre-migration "
+                + "entities — the broker did not take every deletion. No marker is written; the "
+                + "retraction stays owed and is retried on the next start",
+                Entities.Count);
+            return false;
+        }
 
         logger.LogInformation(LogEvents.MqttDiscoveryPublished,
             "Retracted legacy detector-scoped discovery for {Count} pre-migration entities "

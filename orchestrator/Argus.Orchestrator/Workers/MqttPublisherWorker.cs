@@ -58,6 +58,45 @@ public sealed class MqttPublisherWorker : BackgroundService
         _legacyRetraction = legacyRetraction ?? LegacyDiscoveryRetraction.None;
     }
 
+    /// <summary>
+    /// Runs the D-G retraction as a step that can FAIL WITHOUT TAKING THE ADD-ON WITH IT.
+    ///
+    /// The obligation is durable now (LegacyDiscoveryRetraction resolves it from disk), which
+    /// turns what used to be a one-boot annoyance into a permanent one: an exception escaping
+    /// here stops the host (BackgroundServiceExceptionBehavior.StopHost), and because no marker
+    /// was written the next boot reaches the very same throw — start, crash, start, with
+    /// PublishAllAsync below never running and NO discovery in HA at all. A missing retraction
+    /// costs one duplicate entity; a boot loop costs every entity.
+    ///
+    /// So a failure is logged and the boot continues. The marker is still unwritten, so the
+    /// deletions stay owed and are retried on the next start — the retry channel is the boot,
+    /// not the crash.
+    /// </summary>
+    internal static async Task<bool> RunLegacyRetractionAsync(
+        LegacyDiscoveryRetraction retraction,
+        Func<IReadOnlyList<EntityConfig>, CancellationToken, Task<bool>> retract,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await retraction.RunAsync(retract, logger, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // Host shutting down — a clean stop, not a failure. Still no marker: next boot retries.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(LogEvents.MqttPublishDropped, ex,
+                "Legacy detector-scoped discovery retraction FAILED — discovery publishing "
+                + "continues, and the retraction is retried on the next start (no marker was "
+                + "written). Until then HA may show a duplicate, orphaned entity per sensor");
+            return false;
+        }
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _stoppingToken = stoppingToken;
@@ -152,7 +191,8 @@ public sealed class MqttPublisherWorker : BackgroundService
             // deletions, so a broker that is down here means we try again next boot instead of
             // leaving the old retained configs — and the orphaned HA entities they create — behind
             // forever.
-            await _legacyRetraction.RunAsync(
+            await RunLegacyRetractionAsync(
+                _legacyRetraction,
                 (entities, ct) => DiscoveryPublisher.RetractLegacyDetectorScopedAsync(_mqtt, entities, ct),
                 _logger,
                 stoppingToken);

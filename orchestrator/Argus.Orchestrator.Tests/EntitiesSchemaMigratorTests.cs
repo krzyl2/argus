@@ -546,10 +546,10 @@ public class EntitiesSchemaMigratorTests : IDisposable
     public async Task LegacyDiscoveryTopicsAreRetractedExactlyOnce()
     {
         var calls = new List<(string Topic, string Payload, bool Retain)>();
-        Task Publish(string topic, string payload, bool retain, CancellationToken ct)
+        Task<bool> Publish(string topic, string payload, bool retain, CancellationToken ct)
         {
             calls.Add((topic, payload, retain));
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         }
 
         var preMigration = new List<EntityConfig>
@@ -560,8 +560,8 @@ public class EntitiesSchemaMigratorTests : IDisposable
             new() { EntityId = "sensor.tuned_stl", Detectors = [new DetectorConfig { Name = "stl" }] },
         };
 
-        await DiscoveryPublisher.RetractLegacyDetectorScopedAsync(
-            Publish, preMigration, CancellationToken.None);
+        Assert.True(await DiscoveryPublisher.RetractLegacyDetectorScopedAsync(
+            Publish, preMigration, CancellationToken.None));
 
         foreach (var (id, det) in new[]
                  {
@@ -583,6 +583,40 @@ public class EntitiesSchemaMigratorTests : IDisposable
         Assert.All(calls, c => Assert.True(c.Retain));
         // The new, detector-agnostic ids must never be retracted — those are the live entities.
         Assert.DoesNotContain(calls, c => c.Topic.Contains("argus_sensor_load_5m_anomaly"));
+    }
+
+    /// <summary>
+    /// A retraction is only as good as the delivery it can prove. The production sink drops a
+    /// publish it cannot deliver — it does not throw — so if this loop reported "done" on a
+    /// dropped message, LegacyDiscoveryRetraction would write its durable marker and the stale
+    /// retained configs would survive every later boot.
+    ///
+    /// The second half of the rule is that a drop must not abort the pass: deleting an
+    /// already-deleted retained message is a no-op, so attempting the rest costs nothing, while
+    /// stopping early leaves topics untried for no gain.
+    /// </summary>
+    [Fact]
+    public async Task RetractionReportsFailure_WhenAnyDeletionWasDropped()
+    {
+        var attempted = new List<string>();
+        Task<bool> Publish(string topic, string payload, bool retain, CancellationToken ct)
+        {
+            attempted.Add(topic);
+            // The broker takes the first deletion and is gone for the rest.
+            return Task.FromResult(attempted.Count == 1);
+        }
+
+        var preMigration = new List<EntityConfig>
+        {
+            new() { EntityId = "sensor.load_5m", Detectors = [new DetectorConfig { Name = "hst" }] },
+            new() { EntityId = "sensor.tuned_mad", Detectors = [new DetectorConfig { Name = "mad" }] },
+        };
+
+        Assert.False(await DiscoveryPublisher.RetractLegacyDetectorScopedAsync(
+            Publish, preMigration, CancellationToken.None));
+
+        // Both entities, both topics each — the drop did not cut the pass short.
+        Assert.Equal(4, attempted.Count);
     }
 
     // -----------------------------------------------------------------------
