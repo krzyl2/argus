@@ -753,6 +753,13 @@ details[open] > .argus-disclosure-toggle::before {
   opacity: 0.15;
 }
 
+/* The stretch before the rank channel calibrated: the gate could only fire from the raw
+   channel there. Neutral, not alarming — it is a caveat on the numbers, not an episode. */
+.argus-replay-panel__uncalibrated {
+  fill: var(--color-text-secondary);
+  opacity: 0.08;
+}
+
 .argus-replay-panel__value {
   stroke: var(--color-text-secondary);
   stroke-width: 1;

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'preact/hooks';
-import type { DetectorName, SimulateResponse } from '../api/types';
+import type { DetectorName, ReplayEpisodeSpan, SimulateResponse } from '../api/types';
 import {
   isReplayEnabled,
   replayFor,
@@ -46,52 +46,30 @@ function polyline(values: number[], from: number, min: number, max: number): str
 }
 
 /**
- * Episode bands: the x-ranges where the gate would have been ON, derived from the same
- * high/low thresholds and min_consecutive the server used. Recomputed here only for drawing —
- * the NUMBERS come from the server's ReplaySimulator so the panel can never disagree with the
- * acceptance measurement.
+ * Episode bands: the x-ranges the SERVER's gate held ON, translated to chart coordinates.
+ *
+ * The panel derives nothing here. It used to re-run a hysteresis state machine over `scores`
+ * against an absolute high/low — a third implementation of a gate that only `alert_mode: legacy`
+ * entities ever run, so on the default adaptive path the picture and the numbers came from two
+ * different systems. Both disagreements were reachable and neither was visible: a raw-channel
+ * episode (robust z on the value, which never reaches the browser) printed "1 epizod" over an
+ * unshaded chart, and the uncalibrated opening stretch of every replay printed "0 epizodów"
+ * over a shaded band. summary.episodeSpans is the same array summary.episodes was counted
+ * from, so the two cannot drift.
  */
-function episodeBands(
-  result: SimulateResponse,
-  high: number,
-  low: number,
-  minConsecutive: number,
-): Array<{ x: number; width: number }> {
-  const count = result.scores.length;
+function bandsOf(spans: ReplayEpisodeSpan[], count: number): Array<{ x: number; width: number }> {
   if (count < 2) return [];
   const step = SVG_WIDTH / (count - 1);
 
-  const bands: Array<{ x: number; width: number }> = [];
-  let on = false;
-  let runHigh = 0;
-  let runLow = 0;
-  let startIndex = 0;
-
-  for (let i = result.warmedUpFromIndex; i < count; i++) {
-    const score = result.scores[i];
-    if (score > high) {
-      runHigh++;
-      runLow = 0;
-      if (!on && runHigh >= minConsecutive) {
-        on = true;
-        startIndex = i;
-      }
-    } else if (score < low) {
-      runLow++;
-      runHigh = 0;
-      if (on && runLow >= minConsecutive) {
-        on = false;
-        bands.push({ x: startIndex * step, width: Math.max(1, (i - startIndex) * step) });
-      }
-    } else {
-      runHigh = 0;
-      runLow = 0;
-    }
-  }
-  if (on) {
-    bands.push({ x: startIndex * step, width: Math.max(1, (count - 1 - startIndex) * step) });
-  }
-  return bands;
+  return spans.map((span) => {
+    // endIndex is exclusive and reaches `count` for an episode still open at the end of the
+    // history; the last drawable x is count - 1.
+    const end = Math.min(span.endIndex, count - 1);
+    return {
+      x: span.startIndex * step,
+      width: Math.max(1, (end - span.startIndex) * step),
+    };
+  });
 }
 
 /**
@@ -133,10 +111,6 @@ export function ReplayPanel({ entityId, detector, params }: ReplayPanelProps) {
   const state = replayFor(entityId);
   const enabled = isReplayEnabled(entityId);
 
-  const high = Number(params.high_threshold ?? '0.5') || 0.5;
-  const low = Number(params.low_threshold ?? '0.375') || 0.375;
-  const minConsecutive = Number(params.min_consecutive ?? '3') || 3;
-
   function run() {
     setReplayEnabled(entityId, true);
     scheduleReplay(entityId, { detector, params, lookback: LOOKBACK, maxPoints: MAX_POINTS });
@@ -176,12 +150,7 @@ export function ReplayPanel({ entityId, detector, params }: ReplayPanelProps) {
       )}
 
       {state.kind === 'done' && state.result.ok && state.result.summary && (
-        <ReplayResult
-          result={state.result}
-          high={high}
-          low={low}
-          minConsecutive={minConsecutive}
-        />
+        <ReplayResult result={state.result} />
       )}
     </section>
   );
@@ -189,12 +158,9 @@ export function ReplayPanel({ entityId, detector, params }: ReplayPanelProps) {
 
 interface ReplayResultProps {
   result: SimulateResponse;
-  high: number;
-  low: number;
-  minConsecutive: number;
 }
 
-function ReplayResult({ result, high, low, minConsecutive }: ReplayResultProps) {
+function ReplayResult({ result }: ReplayResultProps) {
   const summary = result.summary!;
 
   if (summary.scorablePoints === 0) {
@@ -210,7 +176,15 @@ function ReplayResult({ result, high, low, minConsecutive }: ReplayResultProps) 
   const min = Math.min(...scored);
   const max = Math.max(...scored);
 
-  const bands = episodeBands(result, high, low, minConsecutive);
+  const bands = bandsOf(summary.episodeSpans ?? [], values.length);
+
+  // The adaptive gate starts every replay COLD: the rank channel needs alert_min_samples
+  // verdicts before it may fire, so the opening stretch was decided by the raw channel alone.
+  // That is faithful to a restarted add-on, but it also means the episode count depends on how
+  // much lookback the operator asked for — a dependency the panel has to state, not hide.
+  const step = values.length > 1 ? SVG_WIDTH / (values.length - 1) : 0;
+  const calibratedFrom = Math.min(summary.calibratedFromIndex ?? 0, values.length - 1);
+  const blindPoints = Math.max(0, calibratedFrom - result.warmedUpFromIndex);
 
   return (
     <>
@@ -233,6 +207,14 @@ function ReplayResult({ result, high, low, minConsecutive }: ReplayResultProps) 
         </div>
       </dl>
 
+      {blindPoints > 0 && (
+        <p class="argus-label">
+          Pierwsze {blindPoints} pkt bez kanału wyniku — polityka startuje zimna (jak po
+          restarcie), więc do kalibracji rangi decyduje wyłącznie kanał surowy. Liczby powyżej
+          obejmują ten odcinek.
+        </p>
+      )}
+
       {/* Inline SVG, no chart library (precedent: AttributionBar). */}
       <svg
         class="argus-replay-panel__chart"
@@ -241,6 +223,15 @@ function ReplayResult({ result, high, low, minConsecutive }: ReplayResultProps) 
         role="img"
         aria-label="Odtworzenie historii: wartość, wynik i pasy epizodów"
       >
+        {blindPoints > 0 && (
+          <rect
+            class="argus-replay-panel__uncalibrated"
+            x={result.warmedUpFromIndex * step}
+            y={0}
+            width={Math.max(1, blindPoints * step)}
+            height={SVG_HEIGHT}
+          />
+        )}
         {bands.map((band) => (
           <rect
             class="argus-replay-panel__band"

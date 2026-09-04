@@ -16,6 +16,11 @@ function response(overrides: Partial<SimulateResponse> = {}): SimulateResponse {
       alertsPerDay: 2,
       scorablePoints: 120,
       transitions: 4,
+      episodeSpans: [
+        { startIndex: 101, endIndex: 120 },
+        { startIndex: 140, endIndex: 160 },
+      ],
+      calibratedFromIndex: 60,
     },
     scores: Array.from({ length: 180 }, (_, i) => (i > 100 ? 0.9 : 0.1)),
     values: Array.from({ length: 180 }, (_, i) => 100 + (i % 5)),
@@ -155,6 +160,8 @@ describe('ReplayPanel', () => {
             alertsPerDay: 0,
             scorablePoints: 0,
             transitions: 0,
+            episodeSpans: [],
+            calibratedFromIndex: 3,
           },
         }),
       },
@@ -163,5 +170,101 @@ describe('ReplayPanel', () => {
     const view = render(<ReplayPanel entityId="sensor.a" detector="rmad" params={{}} />);
 
     expect(view.container.textContent).toMatch(/3\/60 pkt/);
+  });
+
+  // The chart and the header must be ONE statement. The panel used to shade its bands by
+  // re-running a hysteresis state machine over `scores` against an absolute high/low — a gate
+  // only `alert_mode: legacy` entities run — while the header came from the server's real
+  // decision path. On the default adaptive path the two disagreed in both directions, and the
+  // operator has no way to tell which half is lying.
+  it('shades exactly the episodes the header counts when the raw channel fired', () => {
+    // The reproducible case: a score flat at 0.0 (nothing near any threshold) while the raw
+    // value steps 100 -> 500. The live gate fires on robust z, which never reaches the browser,
+    // so a client-side band derivation shades nothing under a header saying "1".
+    replayStates.value = {
+      'sensor.a': {
+        kind: 'done',
+        result: response({
+          scores: Array.from({ length: 180 }, () => 0),
+          values: Array.from({ length: 180 }, (_, i) => (i >= 100 && i < 110 ? 500 : 100)),
+          summary: {
+            episodes: 1,
+            onTimePercent: 5,
+            spanHours: 3,
+            alertsPerDay: 8,
+            scorablePoints: 120,
+            transitions: 2,
+            episodeSpans: [{ startIndex: 100, endIndex: 110 }],
+            calibratedFromIndex: 60,
+          },
+        }),
+      },
+    };
+
+    const view = render(<ReplayPanel entityId="sensor.a" detector="rmad" params={{}} />);
+
+    expect(view.container.querySelectorAll('.argus-replay-panel__band')).toHaveLength(1);
+  });
+
+  it('shades nothing when the gate never fired, however high the scores are', () => {
+    // The mirror image, and the opening stretch of EVERY adaptive replay: scores pegged at 0.9
+    // while the rank channel is still uncalibrated, so the live gate stays silent. A band here
+    // tells the operator the sensor was in alarm during a stretch it would have spent quiet.
+    replayStates.value = {
+      'sensor.a': {
+        kind: 'done',
+        result: response({
+          scores: Array.from({ length: 180 }, () => 0.9),
+          summary: {
+            episodes: 0,
+            onTimePercent: 0,
+            spanHours: 3,
+            alertsPerDay: 0,
+            scorablePoints: 120,
+            transitions: 0,
+            episodeSpans: [],
+            calibratedFromIndex: 60,
+          },
+        }),
+      },
+    };
+
+    const view = render(<ReplayPanel entityId="sensor.a" detector="rmad" params={{}} />);
+
+    expect(view.container.textContent).toMatch(/epizody/);
+    expect(view.container.querySelectorAll('.argus-replay-panel__band')).toHaveLength(0);
+  });
+
+  // The adaptive replay starts the policy cold, exactly like a restarted add-on, so the rank
+  // channel needs alert_min_samples verdicts before it may fire at all. The numbers above the
+  // chart cover that stretch, which means they depend on how much lookback was asked for — a
+  // dependency an operator tuning thresholds has to be able to see.
+  it('marks the stretch that had no score channel', () => {
+    replayStates.value = {
+      'sensor.a': {
+        kind: 'done',
+        result: response({ summary: { ...response().summary!, calibratedFromIndex: 120 } }),
+      },
+    };
+
+    const view = render(<ReplayPanel entityId="sensor.a" detector="rmad" params={{}} />);
+
+    expect(view.container.textContent).toMatch(/bez kanału wyniku/);
+    expect(
+      view.container.querySelectorAll('.argus-replay-panel__uncalibrated'),
+    ).toHaveLength(1);
+  });
+
+  it('says nothing about calibration when the score channel was live throughout', () => {
+    // An invented caveat is as bad as a missing one: on the legacy path there is no
+    // calibration phase, and a permanent warning would train the operator to ignore it.
+    replayStates.value = { 'sensor.a': { kind: 'done', result: response() } };
+
+    const view = render(<ReplayPanel entityId="sensor.a" detector="rmad" params={{}} />);
+
+    expect(view.container.textContent).not.toMatch(/bez kanału wyniku/);
+    expect(
+      view.container.querySelectorAll('.argus-replay-panel__uncalibrated'),
+    ).toHaveLength(0);
   });
 });

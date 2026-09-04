@@ -12,14 +12,25 @@ public sealed record SimulateRequestDto(
     string? Lookback,
     int? MaxPoints);
 
+/// <summary>One ON run of the replayed gate, as indices into Scores/Values/Timestamps.</summary>
+public sealed record ReplayEpisodeDto(int StartIndex, int EndIndex);
+
 /// <summary>The gate reduction, as the panel's number header renders it.</summary>
+/// <param name="EpisodeSpans">The runs behind <paramref name="Episodes"/>. On the wire because
+/// the chart's shaded bands are drawn from them: a panel that re-derived episodes client-side
+/// would be re-implementing the gate a third time, and would disagree with the count printed
+/// beside it whenever the raw channel — which the client cannot see — carried the decision.</param>
+/// <param name="CalibratedFromIndex">First index at which the score channel was calibrated;
+/// before it only the raw channel could fire. The panel marks that region.</param>
 public sealed record SimulateSummaryDto(
     int Episodes,
     double OnTimePercent,
     double SpanHours,
     double AlertsPerDay,
     int ScorablePoints,
-    int Transitions);
+    int Transitions,
+    IReadOnlyList<ReplayEpisodeDto> EpisodeSpans,
+    int CalibratedFromIndex);
 
 /// <summary>
 /// Full response payload. D-07 allowlist boundary: an explicit record, never the raw
@@ -107,7 +118,11 @@ public static class SimulateEndpoint
                     result.Summary.SpanHours,
                     result.Summary.AlertsPerDay,
                     result.Summary.ScorablePoints,
-                    result.Summary.Transitions)
+                    result.Summary.Transitions,
+                    (result.Summary.EpisodeSpans ?? [])
+                        .Select(e => new ReplayEpisodeDto(e.StartIndex, e.EndIndexExclusive))
+                        .ToList(),
+                    result.Summary.CalibratedFromIndex)
                 : null,
             result.Scores,
             result.Values,

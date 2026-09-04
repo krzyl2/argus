@@ -221,6 +221,17 @@ export interface SimulateRequest {
   maxPoints: number;
 }
 
+/**
+ * One ON run of the replayed gate, indexed into scores/values/timestamps.
+ *
+ * `endIndex` is exclusive, and equals the point count for an episode that never closed —
+ * F2's signature, which has to stay drawable.
+ */
+export interface ReplayEpisodeSpan {
+  startIndex: number;
+  endIndex: number;
+}
+
 export interface SimulateSummary {
   episodes: number;
   /** Percentage of WALL-CLOCK time in alarm, not percentage of samples. */
@@ -230,6 +241,20 @@ export interface SimulateSummary {
   scorablePoints: number;
   /** All flag flips, both directions; ON->OFF count is transitions - episodes. */
   transitions: number;
+  /**
+   * The runs `episodes` counts, from the server's own gate pass. The chart's shaded bands are
+   * THESE — the panel deliberately owns no gate of its own. On the adaptive path (the default)
+   * the live decision can come from the raw channel's robust z, which the client cannot see at
+   * all, so any client-side re-derivation from `scores` disagrees with the count printed beside
+   * it: an episode with nothing shaded, or a shaded band over "0 epizodów".
+   */
+  episodeSpans: ReplayEpisodeSpan[];
+  /**
+   * First index at which the SCORE channel was calibrated. Before it only the raw channel could
+   * fire, so episodes counted there came from one half of the evidence — and how long that
+   * stretch lasts depends on the lookback, which is the operator's choice. The panel says so.
+   */
+  calibratedFromIndex: number;
 }
 
 export interface SimulateResponse {

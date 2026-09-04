@@ -49,6 +49,28 @@ public class SimulateEndpointTests
         }
     }
 
+    [Fact]
+    public void Project_CarriesTheEpisodeSpansAndTheCalibrationIndexToTheWire()
+    {
+        // The panel draws its shaded bands from these two fields; dropped in the projection,
+        // the chart falls back to showing nothing while the header still counts episodes —
+        // the same "numbers and picture from different systems" defect, one layer down.
+        var summary = new SimulateSummary(
+            1, 5.0, 24.0, 1.0, 100, 2, DateTimeOffset.UnixEpoch,
+            new[] { new ReplayEpisode(70, 90) }, 65);
+
+        var dto = SimulateEndpoint.Project(new SimulateRunResult(
+            true, null, summary,
+            new double[] { 0.1 }, new double[] { 100.0 },
+            new[] { DateTimeOffset.UnixEpoch }, 60, 60));
+
+        Assert.NotNull(dto.Summary);
+        var span = Assert.Single(dto.Summary!.EpisodeSpans);
+        Assert.Equal(70, span.StartIndex);
+        Assert.Equal(90, span.EndIndex);
+        Assert.Equal(65, dto.Summary.CalibratedFromIndex);
+    }
+
     private static Func<string, bool> Known(params string[] ids)
         => id => ids.Contains(id, StringComparer.OrdinalIgnoreCase);
 

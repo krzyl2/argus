@@ -248,6 +248,131 @@ public class ReplaySimulatorTests
         Assert.Equal(1, summary.Episodes);
     }
 
+    // -----------------------------------------------------------------------------------
+    // EpisodeSpans — the chart's shaded bands.
+    //
+    // The rule: the picture and the numbers come from ONE decision. The panel used to derive
+    // its bands in TypeScript from `score > high_threshold`, which is a third implementation of
+    // a gate the entity does not run — so a raw-channel episode produced a header saying
+    // "1 epizod" over a chart shading nothing, and an uncalibrated stretch above 0.5 produced
+    // "0 epizodow" over a shaded band. Both readings were confident and one of them was always
+    // wrong. Shipping the runs the counter actually counted is what makes disagreement
+    // impossible; these tests pin the agreement, not the shipping mechanism.
+    // -----------------------------------------------------------------------------------
+
+    [Fact]
+    public void EpisodeSpans_MatchTheEpisodeCount_WhenTheRawChannelCarriesTheDecision()
+    {
+        // The fixture from AdaptiveMode_FiresFromTheRawChannelWhenTheScoreNeverCrossesTheThreshold:
+        // the score is flat at 0.0 and every threshold in GateParams is unreachable, so ANY
+        // score-derived band list is empty while the gate genuinely fired once.
+        var values = Enumerable.Range(0, 300)
+            .Select(i => i is >= 200 and < 205 ? 500.0 : Baseline(i))
+            .ToList();
+        var history = Series(values, TimeSpan.FromMinutes(1));
+        var scores = Enumerable.Repeat(0.0, 300).ToList();
+
+        var summary = ReplaySimulator.Run(history, Sim(scores, 0), Defaults, new AlertParams());
+        var spans = summary.EpisodeSpans!;
+
+        Assert.Equal(1, summary.Episodes);
+        Assert.Equal(summary.Episodes, spans.Count);
+
+        // And it is the raw excursion that is marked, not some region the score explains: the
+        // span opens at or after the step and every score inside it is below high_threshold.
+        var span = spans[0];
+        Assert.True(span.StartIndex >= 200, $"span opened at {span.StartIndex}, before the step");
+        Assert.True(span.EndIndexExclusive > span.StartIndex);
+        for (var i = span.StartIndex; i < span.EndIndexExclusive; i++)
+            Assert.True(scores[i] < Defaults.HighThreshold);
+    }
+
+    [Fact]
+    public void EpisodeSpans_AreEmptyWhenTheScoreIsHighButTheGateNeverFired()
+    {
+        // The mirror image, and the first ~240 verdicts of EVERY adaptive replay: scores pegged
+        // at 0.9 while the rank channel is uncalibrated. Zero episodes must mean zero bands —
+        // a shaded region here tells the operator the sensor was in alarm during a stretch the
+        // live entity would have spent silent.
+        var history = History(100, TimeSpan.FromMinutes(1));
+        var scores = Enumerable.Repeat(0.9, 100).ToList();
+
+        var summary = ReplaySimulator.Run(history, Sim(scores, 0), Defaults, new AlertParams());
+
+        Assert.Equal(0, summary.Episodes);
+        Assert.Empty(summary.EpisodeSpans!);
+    }
+
+    [Fact]
+    public void EpisodeSpans_KeepAnEpisodeThatNeverCloses()
+    {
+        // F2's signature series. The episode is counted, so it must be drawable: an open
+        // episode dropped from the span list would hide precisely the defect the panel exists
+        // to show.
+        var history = History(100, TimeSpan.FromMinutes(1));
+        var scores = Enumerable.Repeat(0.9, 100).ToList();
+
+        var summary = ReplaySimulator.Run(history, Sim(scores, 0), Defaults, Legacy);
+        var spans = summary.EpisodeSpans!;
+
+        Assert.Equal(1, summary.Episodes);
+        Assert.Single(spans);
+        Assert.Equal(100, spans[0].EndIndexExclusive);
+    }
+
+    [Fact]
+    public void EpisodeSpans_StartAtTheFirstScorableIndex_NotAtZero()
+    {
+        // The spans index the FULL series the panel draws (scores/values/timestamps), not the
+        // scorable slice — the chart's x-axis runs over all of it. A span expressed in
+        // slice-relative indices would shade the warm-up prefix instead of the episode.
+        var history = History(120, TimeSpan.FromMinutes(1));
+        var scores = Enumerable.Repeat(0.0, 60).Concat(Enumerable.Repeat(0.9, 60)).ToList();
+
+        var summary = ReplaySimulator.Run(history, Sim(scores, 60), Defaults, Legacy);
+        var spans = summary.EpisodeSpans!;
+
+        Assert.Single(spans);
+        Assert.True(spans[0].StartIndex >= 60,
+            $"span must live in full-series indices, got {spans[0].StartIndex}");
+    }
+
+    [Fact]
+    public void CalibratedFromIndex_MarksHowLongTheScoreChannelWasAbsent()
+    {
+        // The adaptive replay starts the policy cold, exactly like a restarted process, so the
+        // rank channel is silent for alert_min_samples verdicts. That is faithful — but it also
+        // means the episode count the operator tunes against covers a stretch where only the
+        // raw channel could speak, and how long that stretch is depends on the lookback. The
+        // panel can only label it if the reduction says where it ends.
+        var history = History(100, TimeSpan.FromMinutes(1));
+        var scores = Enumerable.Repeat(0.9, 100).ToList();
+        var adaptive = new AlertParams();
+
+        var short_ = ReplaySimulator.Run(history, Sim(scores, 0), Defaults, adaptive);
+
+        // 100 verdicts, alert_min_samples 240: the score channel never came up at all, and the
+        // reduction says so instead of implying the whole replay was score-gated.
+        Assert.Equal(100, short_.CalibratedFromIndex);
+        Assert.True(short_.CalibratedFromIndex > 0);
+
+        // Long enough, and it comes up on the alert_min_samples-th verdict — index 240-1,
+        // because OnVerdict counts the verdict it is deciding before asking IsCalibrated().
+        // That index is the first one whose decision could use the score channel, which is
+        // exactly what the marker has to point at.
+        var longHistory = History(400, TimeSpan.FromMinutes(1));
+        var longScores = Enumerable.Repeat(0.1, 400).ToList();
+
+        var long_ = ReplaySimulator.Run(longHistory, Sim(longScores, 0), Defaults, adaptive);
+
+        Assert.Equal(adaptive.AlertMinSamples - 1, long_.CalibratedFromIndex);
+
+        // legacy has no calibration phase: absolute thresholds are live from the first
+        // scorable point, and claiming a blind prefix there would be an invented warning.
+        var legacy = ReplaySimulator.Run(history, Sim(scores, 10), Defaults, Legacy);
+        Assert.Equal(10, legacy.CalibratedFromIndex);
+    }
+
     [Fact]
     public void AdaptiveMode_IsTheDefaultWhenTheEntitySendsNoAlertKeys()
     {

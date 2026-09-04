@@ -40,6 +40,16 @@ public readonly record struct GateParams(
 /// defining symptom is a flag that can never fall back.</param>
 /// <param name="FirstScorableAt">Timestamp of the first gated point; the panel labels the
 /// chart's live region with it.</param>
+/// <param name="EpisodeSpans">The index ranges the gate held ON, in the same indexing as
+/// <c>Scores</c>/<c>Values</c>. These are the very runs <see cref="Episodes"/> counts, shipped
+/// to the panel so the shaded bands on the chart cannot disagree with the number printed above
+/// them: the panel draws this list instead of re-deriving episodes from the scores with a
+/// gate of its own.</param>
+/// <param name="CalibratedFromIndex">First index at which the SCORE channel was usable. On the
+/// adaptive path the rank channel needs <c>alert_min_samples</c> verdicts before it may fire,
+/// so every replay starts with a stretch decided by the raw channel alone; the panel marks that
+/// stretch rather than letting the operator tune against it unknowingly. Equal to the first
+/// scorable index on the legacy path, which has no calibration phase.</param>
 public sealed record SimulateSummary(
     int Episodes,
     double OnTimePercent,
@@ -47,7 +57,19 @@ public sealed record SimulateSummary(
     double AlertsPerDay,
     int ScorablePoints,
     int Transitions,
-    DateTimeOffset FirstScorableAt);
+    DateTimeOffset FirstScorableAt,
+    IReadOnlyList<ReplayEpisode>? EpisodeSpans = null,
+    int CalibratedFromIndex = 0);
+
+/// <summary>
+/// One ON run of the replayed gate, as a half-open index range into the replayed series.
+/// </summary>
+/// <param name="StartIndex">Index of the reading at which the flag went ON.</param>
+/// <param name="EndIndexExclusive">Index of the first reading at which it was OFF again, or the
+/// point count when the episode never closed. F2's signature — a flag that never falls — must
+/// stay visible on the chart, so an open episode is a span that runs to the edge, never a
+/// dropped one.</param>
+public readonly record struct ReplayEpisode(int StartIndex, int EndIndexExclusive);
 
 /// <summary>
 /// Replays a detector's scores through the SAME decision path the live pipeline runs for the
@@ -92,9 +114,13 @@ public static class ReplaySimulator
         }
 
         // Exactly the switch ProcessVerdictAsync makes, on exactly the same key.
-        var flags = string.Equals(alertParams.Mode, "legacy", StringComparison.OrdinalIgnoreCase)
-            ? ReplayLegacy(sim, gate, start, count)
-            : ReplayAdaptive(history, sim, gate, alertParams, start, count);
+        var legacyMode = string.Equals(
+            alertParams.Mode, "legacy", StringComparison.OrdinalIgnoreCase);
+
+        int calibratedFrom;
+        var flags = legacyMode
+            ? ReplayLegacy(sim, gate, start, count, out calibratedFrom)
+            : ReplayAdaptive(history, sim, gate, alertParams, start, count, out calibratedFrom);
 
         var firstAt = history[start].Timestamp;
         var lastAt = history[count - 1].Timestamp;
@@ -104,6 +130,12 @@ public static class ReplaySimulator
         var transitions = 0;
         var onSeconds = 0.0;
         var previous = false;
+        var openedAt = start;
+
+        // The spans are collected from the SAME flag array the counters are read off, in the
+        // same pass. That is the whole point: Episodes and EpisodeSpans cannot drift apart
+        // because there is only one decision behind both of them.
+        var spans = new List<ReplayEpisode>();
 
         for (var i = start; i < count; i++)
         {
@@ -112,7 +144,15 @@ public static class ReplaySimulator
             if (on != previous)
             {
                 transitions++;
-                if (on) episodes++;
+                if (on)
+                {
+                    episodes++;
+                    openedAt = i;
+                }
+                else
+                {
+                    spans.Add(new ReplayEpisode(openedAt, i));
+                }
                 previous = on;
             }
 
@@ -127,21 +167,32 @@ public static class ReplaySimulator
             }
         }
 
+        // An episode still running when the history ends is still an episode: it was counted
+        // in `episodes`, so it has to be drawable too, or the chart would show fewer bands
+        // than the header shows episodes for exactly the series F2 is about.
+        if (previous) spans.Add(new ReplayEpisode(openedAt, count));
+
         var onTimePercent = spanHours > 0.0 ? 100.0 * onSeconds / (spanHours * 3600.0) : 0.0;
         var alertsPerDay = spanHours > 0.0 ? episodes * 24.0 / spanHours : 0.0;
 
         return new SimulateSummary(
-            episodes, onTimePercent, spanHours, alertsPerDay, count - start, transitions, firstAt);
+            episodes, onTimePercent, spanHours, alertsPerDay, count - start, transitions, firstAt,
+            spans, calibratedFrom);
     }
 
     /// <summary>
     /// alert_mode: legacy — the absolute-threshold gate, byte-for-byte the class
     /// <c>ProcessVerdictLegacyAsync</c> applies.
     /// </summary>
-    private static bool[] ReplayLegacy(SimulateResult sim, GateParams gate, int start, int count)
+    private static bool[] ReplayLegacy(
+        SimulateResult sim, GateParams gate, int start, int count, out int calibratedFrom)
     {
         var hysteresis = new HysteresisGate(
             gate.HighThreshold, gate.LowThreshold, gate.MinConsecutive);
+
+        // No calibration phase exists on this path: the thresholds are absolute, so the score
+        // channel is live from the first scorable reading.
+        calibratedFrom = start;
 
         var flags = new bool[count - start];
         for (var i = start; i < count; i++)
@@ -161,7 +212,8 @@ public static class ReplaySimulator
         GateParams gate,
         AlertParams alertParams,
         int start,
-        int count)
+        int count,
+        out int calibratedFrom)
     {
         var policy = new AlertPolicy(alertParams);
         var frozen = new FrozenSensorDetector(gate.FrozenWindow, gate.FrozenVarianceThreshold);
@@ -180,6 +232,13 @@ public static class ReplaySimulator
         }
 
         var flags = new bool[count - start];
+
+        // The policy starts cold, exactly like a freshly restarted process: the rank channel
+        // needs alert_min_samples verdicts (240 by default) before it may fire at all, so the
+        // opening stretch of every replay is decided by the raw channel alone. `count` means
+        // "the score channel never came up in this lookback" — a replay too short to say
+        // anything about the score gate, which the panel has to admit rather than average away.
+        calibratedFrom = count;
 
         for (var i = start; i < count; i++)
         {
@@ -203,6 +262,8 @@ public static class ReplaySimulator
                 now: history[i].Timestamp);
 
             flags[i - start] = decision.FlagOn;
+
+            if (calibratedFrom == count && policy.Calibrated) calibratedFrom = i;
         }
 
         return flags;
