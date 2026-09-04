@@ -277,7 +277,13 @@ public sealed class ScoreStreamPipeline
         {
             // One entry per EVENT, not per verdict — the Dashboard's "Recent anomalies" list
             // counts episodes, and a firing entity produces a verdict every tick.
-            _recentAnomalies?.Record(new RecentAnomaly(reading.EntityId, null, score, "hst", DateTimeOffset.UtcNow));
+            //
+            // The detector name comes from the entity's own state, never from a literal: since
+            // D-A the default detector is rmad, so a hardcoded "hst" labels every card on the
+            // Dashboard with the name of an algorithm the entity is not running — the same
+            // class of lie as F0, and it points the operator at the wrong params to edit.
+            _recentAnomalies?.Record(new RecentAnomaly(
+                reading.EntityId, null, score, entityState.DetectorName, DateTimeOffset.UtcNow));
             _logger.LogInformation(LogEvents.AlertEventStarted,
                 "Alert started for {EntityId}: rank={Rank:F4} z={Z:F2} channel={Channel}",
                 reading.EntityId, decision.Rank, decision.RawZ, decision.Channel);
@@ -334,7 +340,8 @@ public sealed class ScoreStreamPipeline
             entityState.Alert.LastPublishedFlag = isAnomalous;
 
             if (isAnomalous)
-                _recentAnomalies?.Record(new RecentAnomaly(reading.EntityId, null, score, "hst", DateTimeOffset.UtcNow));
+                _recentAnomalies?.Record(new RecentAnomaly(
+                    reading.EntityId, null, score, entityState.DetectorName, DateTimeOffset.UtcNow));
         }
 
         var latencyMs = (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;

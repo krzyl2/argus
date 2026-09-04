@@ -236,6 +236,51 @@ public class ScoreStreamPipelineTests
     }
 
     [Fact]
+    public async Task RecentAnomaly_CarriesTheDetectorTheEntityActuallyRuns()
+    {
+        // The Dashboard names the detector on every "Recent anomalies" card. Since D-A the
+        // default detector is rmad, so a hardcoded "hst" tells the operator that an entity is
+        // running the rarity detector when it is running the deviation one — and sends him to
+        // edit window/n_trees on a sensor whose knobs are min_samples/scale_floor.
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var p = FastAlertParams();
+        var state = new EntityRuntimeState(RmadParams.From(p), AlertParams.From(p));
+
+        var recent = new RecentAnomaliesCache();
+        var pipeline = new ScoreStreamPipeline(
+            publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), recentAnomalies: recent);
+
+        await DriveToFiringAsync(pipeline, state, "sensor.test");
+
+        Assert.Equal("rmad", Assert.Single(recent.GetRecent()).Detector);
+    }
+
+    [Fact]
+    public async Task RecentAnomaly_OnTheLegacyPath_AlsoCarriesTheRealDetector()
+    {
+        // alert_mode: legacy is a GATE rollback, not a detector rollback — an rmad entity can
+        // sit on the HysteresisGate path and is still an rmad entity.
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var p = FastAlertParams();
+        p["alert_mode"] = "legacy";
+        var state = new EntityRuntimeState(RmadParams.From(p), AlertParams.From(p));
+
+        var recent = new RecentAnomaliesCache();
+        var pipeline = new ScoreStreamPipeline(
+            publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), recentAnomalies: recent);
+
+        await pipeline.ProcessVerdictAsync(
+            MakeReading("sensor.test"),
+            MakeVerdict("sensor.test", score: 0.9, warmedUp: true, nSeen: 1, window: 1),
+            state,
+            CancellationToken.None);
+
+        Assert.Equal("rmad", Assert.Single(recent.GetRecent()).Detector);
+    }
+
+    [Fact]
     public async Task OnVerdict_Suppressed_DoesNotRecordRecentAnomaly()
     {
         var publisher = new FakeStatePublisher();
