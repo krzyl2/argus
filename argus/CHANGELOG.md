@@ -6,6 +6,32 @@ upgrade'owych nie niesie.
 
 ---
 
+## 2.1.14 — hotfix: 2.1.13 nie startował (CRLF w skrypcie cont-init)
+
+**Jeśli jesteś na 2.1.13, zaktualizuj.** 2.1.13 wpadał w pętlę restartów zaraz po starcie:
+
+```
+cont-init: info: running /etc/cont-init.d/10-config-gen.sh
+exec: fatal: unable to exec bashio
+: No such file or directory
+cont-init: info: /etc/cont-init.d/10-config-gen.sh exited 127
+```
+
+`argus/rootfs/` jest kopiowane do obrazu wprost z drzewa roboczego, a na stacji wydawniczej
+`core.autocrlf=true` przepisuje je przy checkoucie na CRLF. Shebang stawał się wtedy
+`#!/usr/bin/with-contenv bashio`, s6 próbował uruchomić plik o nazwie `bashio`, nie
+znajdował go i zatrzymywał kontener. Zawartość skryptu była poprawna — zepsute były same
+znaki końca linii.
+
+Naprawione u źródła: `.gitattributes` przypina `argus/rootfs/**` i `*.sh` do LF niezależnie
+od lokalnej konfiguracji gita, więc żaden przyszły build nie może już wyprodukować tego
+obrazu. Obraz 2.1.14 zweryfikowany po wypchnięciu — zero CR we wszystkich skryptach
+`cont-init.d` i `services.d`.
+
+Brak zmian funkcjonalnych względem 2.1.13.
+
+---
+
 ## 2.1.13 — ścieżka InfluxDB (batch + grupy) w ogóle nie znajdowała danych
 
 > **Dotyczy tylko instalacji z ustawionym `influx_url`.** Detekcja strumieniowa

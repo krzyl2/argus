@@ -1,0 +1,10 @@
+# The release build COPYs argus/rootfs/ straight into the add-on image, and
+# core.autocrlf=true on the release workstation rewrites the working tree to CRLF on
+# checkout. A CRLF shebang is fatal in the container: `#!/usr/bin/with-contenv bashio`
+# makes s6 exec a binary named "bashio", cont-init exits 127 and the add-on
+# crash-loops with `exec: fatal: unable to exec bashio` + `: No such file or directory`.
+# Pin the files that RUN inside the container to LF regardless of local git config.
+# (detector/ is deliberately not listed: its .py files ship CRLF today and are started
+# by an explicit `python3 -m`, never by shebang, so normalising them would be churn.)
+argus/rootfs/** text eol=lf
+*.sh text eol=lf
