@@ -125,11 +125,22 @@ public sealed class GroupInfluxReader : IGroupInfluxDataSource
             """;
 
         // Main query: aggregateWindow+pivot matrix. No fill() — gaps surface as Flux null (GRP-02).
+        //
+        // group() before pivot() is load-bearing, not tidying. pivot() splits its output by the
+        // group key minus rowKey/columnKey, and _measurement/_field/domain are still group-key
+        // columns after filter(). Since HA names the measurement after the entity's unit, a
+        // mixed-unit group came back as ONE TABLE PER UNIT — solaredge_3_fazy (V+A+W) produced
+        // three tables of three columns each, comfoairq (°C+%) two of four. Every row then
+        // lacked the other units' members, BuildGroupMatrix's rectangular guard dropped all of
+        // them, and the group was handed a set of empty series forever. Ungrouping first
+        // collapses them into one wide table keyed only by _time, which is what the caller
+        // needs and what a single-unit group was already getting by accident.
         var matrixFlux = $"""
             from(bucket: "{_settings.InfluxBucket}")
               |> range(start: -24h)
               |> filter(fn: (r) => {filterClause})
               |> aggregateWindow(every: {every}, fn: {aggFn}, createEmpty: true)
+              |> group()
               |> pivot(rowKey: ["_time"], columnKey: ["entity_id"], valueColumn: "_value")
               |> sort(columns: ["_time"])
             """;

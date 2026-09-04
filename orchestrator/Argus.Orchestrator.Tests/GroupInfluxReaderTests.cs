@@ -310,6 +310,31 @@ public class GroupInfluxReaderTests
         Assert.Empty(result.LastSeenUtc);
     }
 
+    // BUG B, second half: dropping the _measurement FILTER was not enough, because
+    // _measurement stays a group-key column, and pivot() splits its output by the group key
+    // minus rowKey/columnKey. A mixed-unit group therefore came back as one table per unit
+    // (solaredge V+A+W -> three tables of three columns; comfoairq °C+% -> two of four), every
+    // row missing the other units' members, so BuildGroupMatrix's rectangular guard discarded
+    // all of them. group() must run BEFORE pivot() to collapse them into one wide table.
+    [Fact]
+    public async Task QueryGroupAsync_MatrixQuery_UngroupsBeforePivot()
+    {
+        var api = new SequencedQueryApi();
+        var reader = new GroupInfluxReader(api, ValidSettings(), NullLogger<GroupInfluxReader>.Instance);
+
+        await reader.QueryGroupAsync(
+            new[] { "sensor.a", "sensor.b" }, "5m", "mean", TimeSpan.FromMinutes(30), CancellationToken.None);
+
+        var matrixFlux = api.FluxQueries[0];
+        var groupIdx = matrixFlux.IndexOf("|> group()", StringComparison.Ordinal);
+        var pivotIdx = matrixFlux.IndexOf("|> pivot(", StringComparison.Ordinal);
+        var aggIdx = matrixFlux.IndexOf("|> aggregateWindow(", StringComparison.Ordinal);
+
+        Assert.True(groupIdx >= 0, "matrix query must ungroup before pivoting");
+        Assert.True(groupIdx > aggIdx, "group() must follow aggregateWindow()");
+        Assert.True(pivotIdx > groupIdx, "pivot() must follow group()");
+    }
+
     // ─── Pivot null-cell exclusion tests ─────────────────────────────────────
 
     [Fact]

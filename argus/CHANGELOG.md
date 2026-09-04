@@ -6,6 +6,41 @@ upgrade'owych nie niesie.
 
 ---
 
+## 2.1.15 — grupy o mieszanych jednostkach: pivot rozbijał macierz na tabele per jednostka
+
+Dokończenie 2.1.13. Usunięcie *filtra* `_measurement` nie wystarczyło: `_measurement`
+pozostaje kolumną **klucza grupującego**, a `pivot()` dzieli wynik po kluczu grupującym minus
+`rowKey`/`columnKey`. Grupa o mieszanych jednostkach wracała więc jako **jedna tabela na
+jednostkę**:
+
+| grupa | jednostki | co wracało |
+|---|---|---|
+| `solaredge_3_fazy` | V + A + W | 3 tabele × 3 kolumny |
+| `rekuperator_comfoairq` | °C + % | 2 tabele × 4 kolumny |
+
+W każdym wierszu brakowało członków z pozostałych jednostek, więc gwarancja
+prostokątności macierzy odrzucała **wszystkie** wiersze i detektor dostawał zestaw pustych
+serii. Grupa jednojednostkowa działała tylko przypadkiem — miała jedną tabelę.
+
+Naprawione: `|> group()` przed `pivot()` w zapytaniu macierzowym, co scala je w jedną szeroką
+tabelę kluczowaną wyłącznie po `_time`. Zmierzone na żywych danych (okno 24 h, `every: 5m`):
+
+```
+cwu_zasobnik   4/4 kolumn   289 wierszy   118 bez luk
+rekuperator    8/8 kolumn   289 wierszy    21 bez luk
+solaredge      9/9 kolumn   289 wierszy   160 bez luk
+```
+
+### Uwaga operatorska (nie zmiana kodu)
+
+Grupy w trybie `joint` (`ecod`/`copod`/`pca`/`iforest`) wymagają **dopasowanego modelu** —
+detektor odrzuca scoring z `no fitted model for group …; call FitGroup first`, dopóki nie
+przejdzie nocne dopasowanie o godzinie `nightly_fit_hour`. Po pierwszym włączeniu InfluxDB
+grupy joint pozostaną więc na „Oczekuje" do najbliższego przebiegu nocnego. To zachowanie
+projektowe, nie usterka.
+
+---
+
 ## 2.1.14 — hotfix: 2.1.13 nie startował (CRLF w skrypcie cont-init)
 
 **Jeśli jesteś na 2.1.13, zaktualizuj.** 2.1.13 wpadał w pętlę restartów zaraz po starcie:
@@ -19,7 +54,9 @@ cont-init: info: /etc/cont-init.d/10-config-gen.sh exited 127
 
 `argus/rootfs/` jest kopiowane do obrazu wprost z drzewa roboczego, a na stacji wydawniczej
 `core.autocrlf=true` przepisuje je przy checkoucie na CRLF. Shebang stawał się wtedy
-`#!/usr/bin/with-contenv bashio`, s6 próbował uruchomić plik o nazwie `bashio`, nie
+`#!/usr/bin/with-contenv bashio
+`, s6 próbował uruchomić plik o nazwie `bashio
+`, nie
 znajdował go i zatrzymywał kontener. Zawartość skryptu była poprawna — zepsute były same
 znaki końca linii.
 
