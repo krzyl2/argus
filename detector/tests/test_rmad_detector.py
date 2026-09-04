@@ -494,12 +494,19 @@ class TestWarmUp:
         assert all(s > 0.0 for s in warmed_scores)
 
     def test_restored_checkpoint_is_warmed_from_its_own_window(self):
-        """A pre-upgrade checkpoint has no _warmed_up field; it must not re-warm.
+        """A pre-upgrade checkpoint has no _warmed_up field: derive it, both ways.
 
-        The field is derived from the restored window instead of defaulting to
-        False, because the next score_one really is measured against those
-        values. Defaulting to False would suppress the flag on every entity in
-        the house for one reading after every image upgrade.
+        The field is derived from the RESTORED WINDOW, which is the thing the
+        next score is measured against — not from the reading counter, and not
+        from a blanket False.
+
+        Both directions are asserted because both are wrong in a different way.
+        Defaulting to False would suppress the flag on every entity in the house
+        for one reading after every image upgrade. Falling back to the counter
+        (`_n_seen >= _min_samples`, what this class used to report) claims
+        warm-up for a checkpoint whose window is arithmetically incapable of
+        producing a real score — the entity looks calm while _score_from returns
+        the structural 0.0 forever, which is the failure Rule 12 forbids.
         """
         det = RmadDetector(min_samples=10)
         for i in range(50):
@@ -512,6 +519,23 @@ class TestWarmUp:
         restored.__setstate__(legacy_state)
 
         assert restored.is_warmed_up is True
+
+        # window (5) < min_samples (20): 50 readings seen, 5 retained. The counter
+        # says warm, the window says it can never be — and the window is what the
+        # score comes from.
+        starved = RmadDetector(window=5, min_samples=20)
+        for i in range(50):
+            starved.score_one(20.0 + i)
+        assert starved.n_seen == 50
+
+        starved_state = dict(starved.__dict__)
+        starved_state.pop("_warmed_up")
+
+        restored_starved = RmadDetector(window=5, min_samples=20)
+        restored_starved.__setstate__(starved_state)
+
+        assert restored_starved.is_warmed_up is False
+        assert restored_starved.score_one(500.0) == 0.0
 
     def test_window_smaller_than_min_samples_never_claims_warm_up(self):
         """A window that cannot hold min_samples values produces no real score.
