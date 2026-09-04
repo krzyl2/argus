@@ -194,6 +194,49 @@ describe('DetectorParamGrid (raw <input> -> shared Input, D-07)', () => {
       expect(container.querySelectorAll('.argus-param-field--error')).toHaveLength(0);
     });
 
+    // The mirror image of the two tests above, and the reason the merge cannot be dropped: a
+    // partial block has to be checked AGAINST the defaults that fill its gaps, not on its own.
+    // min_samples and window are compared to each other, so a block that stores only one of
+    // them is validated against a value that lives in the default table -- validate the raw
+    // stored map instead and the grid marks nothing, showing a green form for a configuration
+    // the server rejects.
+    it('marks a stored key that is illegal against the default it is compared to', () => {
+      detectorDefaults.value = { rmad: RMAD_DEFAULTS }; // window 720
+
+      const { container, getByText } = render(
+        <DetectorParamGrid
+          entityIdx={0}
+          detIdx={0}
+          detector={{ name: 'rmad', params: { min_samples: '900' } }}
+          onParamChange={noop}
+        />
+      );
+
+      const minSamples = container.querySelector('#param-0-0-min_samples') as HTMLInputElement;
+      expect(minSamples.getAttribute('aria-invalid')).toBe('true');
+      expect(getByText('Must not be greater than window.')).toBeTruthy();
+      expect(container.querySelectorAll('.argus-param-field--error')).toHaveLength(1);
+    });
+
+    it('marks a stored threshold that crosses the default on the other side of the pair', () => {
+      detectorDefaults.value = { rmad: RMAD_DEFAULTS }; // high_threshold 0.5
+
+      const { container } = render(
+        <DetectorParamGrid
+          entityIdx={0}
+          detIdx={0}
+          detector={{ name: 'rmad', params: { low_threshold: '0.9' } }}
+          onParamChange={noop}
+        />
+      );
+
+      const low = container.querySelector('#param-0-0-low_threshold') as HTMLInputElement;
+      const high = container.querySelector('#param-0-0-high_threshold') as HTMLInputElement;
+      expect(low.getAttribute('aria-invalid')).toBe('true');
+      expect(high.getAttribute('aria-invalid')).toBe('true');
+      expect(container.querySelectorAll('.argus-param-field--error')).toHaveLength(2);
+    });
+
     it('degrades to an empty field, never to an error, when the defaults table is missing', () => {
       const { container } = render(
         <DetectorParamGrid

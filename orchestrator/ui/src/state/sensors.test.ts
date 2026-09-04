@@ -237,6 +237,42 @@ describe('detector hydration (D-N)', () => {
     expect(hasValidationErrors.value).toBe(false);
   });
 
+  // The OTHER half of "validate the EFFECTIVE params": merging the defaults in is not only a
+  // way to stop reporting absent keys, it is what makes a PARTIAL block checkable at all. The
+  // cross-field rules (min_samples <= window, high > low) compare two keys, and a block that
+  // stores one of the pair leaves the other to the default -- so validating the raw stored map
+  // silently skips the comparison and the browser calls a configuration valid that the server
+  // then rejects. These pin the merge itself: drop it and validationErrors goes empty.
+  it('flags a partial block whose stored key is illegal AGAINST the default it is compared to', async () => {
+    // window omitted -> default 720; min_samples 900 can never be reached inside it, so the
+    // entity would sit in "calibrating" forever and never alarm.
+    vi.spyOn(client, 'apiGet').mockResolvedValue({
+      entries: [entry({ detectors: [{ name: 'rmad', params: { min_samples: '900' } }] })],
+    });
+
+    await loadSensors('');
+
+    expect(validationErrors.value['sensor.load_5m'][0]).toEqual({
+      min_samples: 'Must not be greater than window.',
+    });
+    expect(hasValidationErrors.value).toBe(true);
+  });
+
+  it('flags a partial block whose stored threshold crosses the default on the other side', async () => {
+    // high_threshold omitted -> default 0.5; a stored low of 0.9 sits above it, which would
+    // mean an alarm band that can never close.
+    vi.spyOn(client, 'apiGet').mockResolvedValue({
+      entries: [entry({ detectors: [{ name: 'rmad', params: { low_threshold: '0.9' } }] })],
+    });
+
+    await loadSensors('');
+
+    expect(validationErrors.value['sensor.load_5m'][0]).toEqual({
+      high_threshold: 'Must be between 0 and 1, and greater than low threshold.',
+      low_threshold: 'Must be between 0 and 1, and less than high threshold.',
+    });
+  });
+
   // Hydration must not turn into a rewrite in EITHER direction: a stored block round-trips
   // key-for-key. Filling the omissions in would make the next Save materialize today's whole
   // default table onto disk, which pins the entity to today's numbers -- a later change to
