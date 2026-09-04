@@ -24,7 +24,9 @@ namespace Argus.Orchestrator.Detection;
 /// Warm-up suppression (PITFALL 8/D-07): binary_sensor flag is suppressed until
 /// the entity has received at least HstParams.Window readings (HST calibration period).
 /// SuppressBinarySensor=true (post-reconnect cooldown) also suppresses the flag.
-/// Score is always published (allows dashboards to show raw scores during warm-up).
+/// Score is always published on the VERDICT path (dashboards see raw scores during
+/// warm-up); on the frozen path it rides the flag's own gate, so the two topics are
+/// never observed disagreeing.
 ///
 /// Graceful degradation (RES-01): RpcException publishes availability "offline" for
 /// the affected entity; the worker layer is responsible for re-establishing via
@@ -402,10 +404,11 @@ public sealed class ScoreStreamPipeline
     }
 
     /// <summary>
-    /// Score published on the frozen branch. Frozen forces the flag ON, so the paired score
-    /// entity must report a coherent max-anomaly value (a 0.0 would read as a false positive).
-    /// A fixed sentinel is used because no last-known score is retained per entity and an
-    /// entity frozen from the start never produced a verdict-based score.
+    /// Score published on the frozen branch. It goes out with — and only with — the forced-ON
+    /// flag, so the pair HA sees is coherent in both directions: a 0.0 next to an ON flag would
+    /// read as a false positive, and a 1.0 next to an OFF flag is the same lie with the halves
+    /// swapped. A fixed sentinel is used because no last-known score is retained per entity and
+    /// an entity frozen from the start never produced a verdict-based score.
     /// </summary>
     private const double FrozenScore = 1.0;
 
@@ -413,15 +416,32 @@ public sealed class ScoreStreamPipeline
     /// Publishes a frozen sensor detection result: score (max-anomaly) + binary_sensor ON +
     /// availability online (FAULT-02). Called when FrozenSensorDetector.IsFrozen for a reading.
     ///
-    /// Publishes a score here so the "Score is always published" invariant holds on the frozen
-    /// branch too: the frozen branch is the only guaranteed publish path for a frozen entity
-    /// (the verdict path depends on the detector returning a verdict for near-constant input),
-    /// so without this the score entity stays `unknown` in HA while the flag reads ON.
+    /// Everything here is gated on the SAME premises the verdict read loop applies to frozen
+    /// (D-H) — the post-reconnect cooldown, min_consecutive, and the raw channel's readiness.
+    /// Two loops deciding the same frozen state must not answer it differently: the flag topic
+    /// is RETAINED, so a disagreement is not a transient, it is what HA keeps.
+    ///
+    /// Availability is the exception, and deliberately so: it says the sensor is present and
+    /// reporting, which is true throughout, cooldown included.
     /// </summary>
     public async Task PublishFrozenAsync(string entityId, EntityRuntimeState entityState, CancellationToken ct)
     {
-        // Keep the flag/score pair coherent — publish the score before the forced-ON flag
-        await _publisher.PublishScoreAsync(entityId, FrozenScore, ct);
+        // D-07 comes first, because the cooldown's own trigger is what lights this branch: a
+        // reconnect replays a get_states burst of IDENTICAL retained values, a zero-variance
+        // window, i.e. IsFrozen. The read loop honours the cooldown twice over (OnVerdict will
+        // not START an event on a suppressed reading, and ProcessVerdictAsync publishes nothing
+        // while suppressed); the write loop asked nobody, so the one loop that ignored the
+        // cooldown was the one its trigger drives straight into a forced ON. That burst of false
+        // flags out of a snapshot is exactly what D-07 exists to prevent.
+        //
+        // The run is CLEARED rather than merely held, mirroring OnVerdict's
+        // `_consecAbove = fire && !suppressed ? _consecAbove + 1 : 0`: without it the snapshot
+        // burst banks min_consecutive and the first live reading after the cooldown fires
+        // instantly — the same false flag, arriving 60 s late instead of not at all.
+        if (entityState.SuppressBinarySensor)
+        {
+            entityState.Alert.ClearFrozenRun();
+        }
 
         // Frozen raises binary_sensor ON, change-only (F8): repeating ON on every frozen reading
         // was ~4 publishes per 15 s per entity. The invariant this path exists for — a frozen
@@ -443,8 +463,17 @@ public sealed class ScoreStreamPipeline
         // topic. OnFrozenReading is called on EVERY frozen reading (one tick per reading), so
         // the debounce advances even for an entity whose detector returns no verdict at all:
         // the guaranteed publish path of D-H survives, delayed by min_consecutive readings.
-        if (entityState.Alert.OnFrozenReading() && entityState.Alert.RawChannelReady)
+        else if (entityState.Alert.OnFrozenReading() && entityState.Alert.RawChannelReady)
+        {
+            // The score rides the SAME gate rather than standing above it. Its unconditional
+            // position predates D-H, when this branch forced the flag ON and the score was here
+            // to keep that pair coherent; with the forcing gone, an ungated score published 1.0
+            // — the maximum possible anomaly — against a binary_sensor reading OFF for every
+            // reading of the min_consecutive debounce, and for the whole D-07 cooldown. Score
+            // before flag, so the two topics are never observed disagreeing.
+            await _publisher.PublishScoreAsync(entityId, FrozenScore, ct);
             await PublishFlagIfChangedAsync(entityId, entityState, on: true, ct);
+        }
 
         // Sensor is present and reporting (just frozen), so availability stays online
         await _publisher.PublishAvailabilityAsync(entityId, online: true, ct);

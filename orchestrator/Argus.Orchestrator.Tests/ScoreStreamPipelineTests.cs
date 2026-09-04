@@ -1623,6 +1623,112 @@ public class ScoreStreamPipelineTests
         Assert.Equal(2, publisher.Attempts);
         Assert.Equal(new[] { false }, publisher.Published);
     }
+
+    /// <summary>
+    /// Params with frozen LIVE (the hst default, still reachable from the UI) and a real
+    /// min_consecutive, so the write loop's frozen gate is actually exercised.
+    /// </summary>
+    private static Dictionary<string, string> LiveFrozenParams()
+        => new()
+        {
+            ["window"] = "1",
+            ["min_consecutive"] = "3",
+            ["rank_window"] = "200",
+            ["alert_min_samples"] = "50",
+            ["min_duration_sec"] = "0",
+            ["frozen_window"] = "10",
+            ["frozen_variance_threshold"] = "0.001",
+        };
+
+    [Fact]
+    public async Task FrozenDuringReconnectCooldown_WriteLoopDoesNotRaiseTheFlag()
+    {
+        // D-07 belongs to BOTH loops or to neither. The read loop already honours it twice —
+        // OnVerdict refuses to START an event on a suppressed reading, and ProcessVerdictAsync
+        // publishes nothing at all while suppressed — but the write loop's frozen branch asked
+        // nobody. And the cooldown exists for exactly the shape that lights the frozen detector:
+        // a reconnect replays a get_states burst of IDENTICAL retained values, which is a
+        // zero-variance window, which is IsFrozen. So the one loop that ignored the cooldown was
+        // the one the cooldown's own trigger drives straight into a forced ON — a burst of false
+        // flags out of a snapshot, which is precisely what D-07 exists to prevent.
+        //
+        // SuppressBinarySensor is set on entityState by the write loop from the reading
+        // (RunAsync) before it reaches the frozen branch; this test starts from that state.
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(LiveFrozenParams());
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        PrimeRawChannel(state);
+        state.FrozenNow = true;
+        state.SuppressBinarySensor = true;
+
+        // Twice the run length: no amount of cooldown readings may put a flag on the wire.
+        for (int i = 0; i < state.AlertParams.MinConsecutive * 2; i++)
+            await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+
+        Assert.Empty(publisher.FlagHistory);
+        Assert.Null(state.Alert.LastPublishedFlag);
+
+        // ...and the cooldown readings earn no CREDIT either, the same reset OnVerdict applies
+        // to _consecAbove on a suppressed verdict. Otherwise the snapshot burst banks
+        // min_consecutive and the first live reading after the cooldown fires instantly — the
+        // false flag arriving 60 s late instead of not at all.
+        state.SuppressBinarySensor = false;
+        for (int i = 0; i < state.AlertParams.MinConsecutive - 1; i++)
+            await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+
+        Assert.Empty(publisher.FlagHistory);
+
+        // The guaranteed publish path of D-H survives the cooldown: a genuinely frozen entity
+        // still gets its flag, once it has earned it on LIVE readings.
+        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+        Assert.Equal(new[] { true }, publisher.FlagHistory);
+    }
+
+    [Fact]
+    public async Task FrozenPath_ScoreNeverLeadsTheFlagItIsPairedWith()
+    {
+        // FrozenScore = 1.0 exists for ONE reason, stated on the constant: the frozen branch
+        // forces the flag ON, so the paired score entity must not read 0.0 next to it. D-H
+        // removed the forcing — frozen now has to clear min_consecutive and the raw channel —
+        // but the score stayed unconditionally at the top of the method. So for
+        // min_consecutive-1 readings HA showed the maximum possible anomaly score against a
+        // binary_sensor reading OFF: the incoherent pair that constant was introduced to
+        // prevent, with the halves swapped.
+        //
+        // Under the cooldown it is worse than cosmetic — a suppressed entity would still stream
+        // 1.0 onto its score topic for the whole 60 s, which is the same false-positive burst
+        // D-07 removes from the flag topic.
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(LiveFrozenParams());
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        PrimeRawChannel(state);
+        state.FrozenNow = true;
+
+        // Before the gate opens HA learns nothing from EITHER topic.
+        for (int i = 0; i < state.AlertParams.MinConsecutive - 1; i++)
+            await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+
+        Assert.Empty(publisher.FlagHistory);
+        Assert.Empty(publisher.ScoreHistory);
+
+        // The reading that opens it publishes the pair — score first, so the two topics are
+        // never observed disagreeing.
+        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+
+        Assert.Equal(new[] { true }, publisher.FlagHistory);
+        Assert.Equal(new[] { 1.0 }, publisher.ScoreHistory);
+
+        // The flag is change-only (F8); the score is not, so it stays live for as long as the
+        // entity is frozen — the pair keeps agreeing for the rest of the run.
+        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+
+        Assert.Equal(new[] { true }, publisher.FlagHistory);
+        Assert.Equal(new[] { 1.0, 1.0 }, publisher.ScoreHistory);
+    }
 }
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
@@ -1640,6 +1746,9 @@ internal sealed class FakeStatePublisher : IStatePublisher
     public List<bool> FlagHistory { get; } = new();
     public bool ScorePublished { get; private set; }
     public double LastScoreValue { get; private set; }
+
+    /// <summary>Every score published, in order — the score half of the flag/score pair.</summary>
+    public List<double> ScoreHistory { get; } = new();
     public bool AvailabilityPublished { get; private set; }
     public bool LastAvailabilityOnline { get; private set; }
 
@@ -1656,6 +1765,7 @@ internal sealed class FakeStatePublisher : IStatePublisher
     {
         ScorePublished = true;
         LastScoreValue = score;
+        ScoreHistory.Add(score);
         return Task.CompletedTask;
     }
 
