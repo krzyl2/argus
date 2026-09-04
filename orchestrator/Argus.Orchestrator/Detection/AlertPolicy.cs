@@ -156,6 +156,51 @@ public sealed class AlertPolicy
     /// </summary>
     public bool RawChannelReady { get { lock (_gate) return _raw.Count >= RollingRobustZ.MinSamples; } }
 
+    /// <summary>Consecutive frozen READINGS seen by the write loop; the read loop's counterpart
+    /// of this is <c>_consecAbove</c>, counted over verdicts.</summary>
+    private int _consecFrozen;
+
+    /// <summary>
+    /// Counts one frozen reading and answers whether the write loop may raise the flag for it.
+    ///
+    /// D-H puts frozen into the gate as a PREMISE — "podlega min_consecutive, watchdogowi i
+    /// potrafi ZGASNĄĆ" — and <see cref="OnVerdict"/> honours that: its <c>frozen</c> argument
+    /// feeds <c>fire</c>, which then has to survive <c>min_consecutive</c> before the flag goes
+    /// ON. <c>PublishFrozenAsync</c> is the same premise arriving on the other loop, so it must
+    /// clear the same bar; forcing ON there made the two loops publish OPPOSITE values for the
+    /// same readings for min_consecutive-1 verdicts, on a RETAINED topic (ON/OFF/ON). Today's
+    /// rmad default hides it arithmetically (frozen_variance_threshold 0.0 ⇒ this is never
+    /// called), but hst still defaults to 0.001 and the field is editable in the UI.
+    ///
+    /// Counting readings here rather than reusing <c>_consecAbove</c> keeps ONE tick per
+    /// observation: readings and verdicts both arrive per sample, so a shared counter would
+    /// reach the threshold in half the readings and silently halve min_consecutive.
+    ///
+    /// The <c>_firing</c> short-circuit is what keeps the loops agreeing in the other direction:
+    /// once the gate is firing — for any reason, frozen included — the read loop is publishing
+    /// ON, so the write loop must not answer OFF.
+    /// </summary>
+    public bool OnFrozenReading()
+    {
+        lock (_gate)
+        {
+            if (_consecFrozen < int.MaxValue)
+                _consecFrozen++;
+            return _firing || _consecFrozen >= _params.MinConsecutive;
+        }
+    }
+
+    /// <summary>
+    /// Ends a run of frozen readings. Called from the write loop for every reading that is NOT
+    /// frozen, so a sensor that thaws and re-freezes has to earn min_consecutive again — the
+    /// same reset <c>_consecAbove</c> gets on a non-firing verdict.
+    /// </summary>
+    public void ClearFrozenRun()
+    {
+        lock (_gate)
+            _consecFrozen = 0;
+    }
+
     /// <summary>True once the rank channel has enough history to be trusted.</summary>
     public bool Calibrated { get { lock (_gate) return IsCalibrated(); } }
 

@@ -198,6 +198,13 @@ public sealed class ScoreStreamPipeline
                 await PublishFrozenAsync(reading.EntityId, entityState, ct);
                 // Still forward to detector for model continuity (HST keeps learning)
             }
+            else
+            {
+                // The run of frozen readings is over: a sensor that thaws and re-freezes must
+                // earn min_consecutive again, exactly as the read loop's counter is reset by a
+                // non-firing verdict.
+                entityState.Alert.ClearFrozenRun();
+            }
 
             // D-01/WARM-01: warm-up no longer counted here — RecordReading() is gone.
             // The status cache is now written from the verdict read loop
@@ -428,7 +435,15 @@ public sealed class ScoreStreamPipeline
         // with the read loop's OFF for the same readings. The wait is bounded and self-clearing
         // — the write loop feeds ObserveValue on every reading, and backfill priming fills the
         // window before the stream even opens — so a frozen entity still gets its flag.
-        if (entityState.Alert.RawChannelReady)
+        //
+        // ...and only once frozen has held for min_consecutive readings, which is the OTHER
+        // premise OnVerdict applies to it (D-H: frozen "podlega min_consecutive"). Without that
+        // the read loop, counting the same frozen state over verdicts, publishes OFF for
+        // min_consecutive-1 of them while this loop is publishing ON — ON/OFF/ON on a RETAINED
+        // topic. OnFrozenReading is called on EVERY frozen reading (one tick per reading), so
+        // the debounce advances even for an entity whose detector returns no verdict at all:
+        // the guaranteed publish path of D-H survives, delayed by min_consecutive readings.
+        if (entityState.Alert.OnFrozenReading() && entityState.Alert.RawChannelReady)
             await PublishFlagIfChangedAsync(entityId, entityState, on: true, ct);
 
         // Sensor is present and reporting (just frozen), so availability stays online

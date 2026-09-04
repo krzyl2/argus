@@ -1,4 +1,4 @@
-using Argus.Detector.V1;
+﻿using Argus.Detector.V1;
 using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Detection;
@@ -114,6 +114,18 @@ public class ScoreStreamPipelineTests
     {
         for (int i = 0; i < count; i++)
             state.Alert.ObserveValue(value);
+    }
+
+    /// <summary>
+    /// Runs the write loop's frozen branch for a whole min_consecutive run — which is what the
+    /// production write loop does, one call per frozen reading. Frozen is a PREMISE of the gate,
+    /// not an override of it (D-H), so a single frozen reading is not yet a flag.
+    /// </summary>
+    private static async Task DriveFrozenRunAsync(
+        ScoreStreamPipeline pipeline, EntityRuntimeState state, string entityId)
+    {
+        for (int i = 0; i < state.AlertParams.MinConsecutive; i++)
+            await pipeline.PublishFrozenAsync(entityId, state, CancellationToken.None);
     }
 
     private static EntitiesConfig MakeEntitiesConfig(string entityId = "sensor.test")
@@ -332,8 +344,11 @@ public class ScoreStreamPipelineTests
         // loops have to answer it the same way.
         PrimeRawChannel(entityState);
 
-        // Act
-        await pipeline.PublishFrozenAsync("sensor.test", entityState, CancellationToken.None);
+        // Act. min_consecutive frozen readings, because frozen is a premise of the gate and
+        // not an override of it (D-H): the write loop must clear the same bar OnVerdict makes
+        // the same frozen state clear on the read loop, or the two publish opposite values for
+        // the same readings on a retained topic.
+        await DriveFrozenRunAsync(pipeline, entityState, "sensor.test");
 
         // Assert: frozen publishes binary_sensor ON
         Assert.True(publisher.FlagPublished);
@@ -384,7 +399,7 @@ public class ScoreStreamPipelineTests
         // Frozen path — raises the flag for a distinct entity
         var frozenState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
         PrimeRawChannel(frozenState);
-        await pipeline.PublishFrozenAsync("sensor.frozen", frozenState, CancellationToken.None);
+        await DriveFrozenRunAsync(pipeline, frozenState, "sensor.frozen");
 
         // Verdict path — warmed up (window=1), not suppressed, high score → flag ON
         var verdictState = new EntityRuntimeState(HstParams.From(cfg.Entities[0].Detectors[0].Params));
@@ -1490,6 +1505,94 @@ public class ScoreStreamPipelineTests
         // Once the channel IS ready the guaranteed publish path is back — the wait is bounded,
         // not a silent loss of the frozen entity's only flag (D-H).
         PrimeRawChannel(state);
+        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+        Assert.True(state.Alert.LastPublishedFlag);
+    }
+
+    [Fact]
+    public async Task FrozenRun_HstDefaultVarianceThreshold_DoesNotFlapTheRetainedFlag()
+    {
+        // The two loops decide the SAME frozen state independently: the write loop in
+        // PublishFrozenAsync, the verdict read loop in AlertPolicy.OnVerdict. Since D-H put
+        // frozen into the gate as a premise, the read loop makes it earn min_consecutive — so a
+        // write loop that forces ON immediately contradicts it for min_consecutive-1 verdicts,
+        // and the flag topic is RETAINED: ON, OFF, ON, OFF, ON on the wire for one continuous
+        // frozen episode. HA shows the alarm blinking, and every OFF/ON pair is an automation
+        // trigger.
+        //
+        // rmad hides this arithmetically (its default frozen_variance_threshold is 0.0, so
+        // FrozenSensorDetector never latches and PublishFrozenAsync is never called), but the
+        // hst default is still 0.001 (DetectorDefaults) and the field is editable in the UI —
+        // so this is reproduced on exactly that configuration.
+        var publisher = new FakeStatePublisher();
+        var p = new Dictionary<string, string>
+        {
+            ["window"] = "1",
+            ["min_consecutive"] = "3",
+            ["frozen_window"] = "10",
+            ["frozen_variance_threshold"] = "0.001",   // hst default — frozen is LIVE here
+        };
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(p);
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+
+        // The raw channel is full and flat, which is what a frozen sensor's channel looks like:
+        // z is 0, so frozen is the ONLY evidence in play and the flag history below is entirely
+        // attributable to it.
+        PrimeRawChannel(state);
+        state.FrozenNow = true;
+
+        // One frozen episode, driven the way the production loops drive it: the write loop
+        // publishes for the reading, then the verdict for that same reading arrives.
+        for (int i = 0; i < state.AlertParams.MinConsecutive; i++)
+        {
+            await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+            await pipeline.ProcessVerdictAsync(
+                MakeReading(suppress: false), MakeVerdict(score: 0.5), state, CancellationToken.None);
+        }
+
+        // One OFF (the gate's opening position, which clears any retained ON from a previous
+        // run) and then one ON, once frozen has held for min_consecutive. Nothing in between:
+        // the two loops never publish opposite values for the same reading.
+        Assert.Equal(new[] { false, true }, publisher.FlagHistory);
+
+        // ...and the guaranteed publish path of D-H is intact — the flag DOES come up.
+        Assert.True(publisher.LastFlagValue);
+    }
+
+    [Fact]
+    public async Task FrozenRun_InterruptedByAThaw_MustEarnMinConsecutiveAgain()
+    {
+        // The write loop's frozen counter is only honest if it resets. Without the reset a
+        // sensor that freezes for two readings, thaws, and freezes again would raise the flag on
+        // its FIRST frozen reading of the second episode — while the read loop, whose counter
+        // did reset, is still publishing OFF. That is the same contradiction, just reached
+        // through an interrupted run.
+        var publisher = new FakeStatePublisher();
+        var cfg = MakeEntitiesConfig();
+        var state = MakeState(new Dictionary<string, string>
+        {
+            ["window"] = "1",
+            ["min_consecutive"] = "3",
+            ["frozen_window"] = "10",
+            ["frozen_variance_threshold"] = "0.001",
+        });
+        var pipeline = new ScoreStreamPipeline(publisher, NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg));
+        PrimeRawChannel(state);
+
+        // Two frozen readings — one short of the run.
+        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+        Assert.Null(state.Alert.LastPublishedFlag);
+
+        // The sensor thaws. This is what the write loop does for a non-frozen reading.
+        state.Alert.ClearFrozenRun();
+
+        // It freezes again: the first two readings of the NEW episode must still be silent.
+        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+        await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
+        Assert.Null(state.Alert.LastPublishedFlag);
+
         await pipeline.PublishFrozenAsync("sensor.test", state, CancellationToken.None);
         Assert.True(state.Alert.LastPublishedFlag);
     }
