@@ -1,4 +1,4 @@
-﻿using Argus.Orchestrator;
+using Argus.Orchestrator;
 using Argus.Orchestrator.Batch;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Detection;

@@ -1,4 +1,4 @@
-﻿using Argus.Orchestrator.Ha;
+using Argus.Orchestrator.Ha;
 using Xunit;
 
 namespace Argus.Orchestrator.Tests;

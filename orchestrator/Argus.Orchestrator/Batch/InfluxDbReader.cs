@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Logging;
 using InfluxDB.Client;

@@ -1,4 +1,4 @@
-﻿namespace Argus.Orchestrator.Config;
+namespace Argus.Orchestrator.Config;
 
 /// <summary>
 /// Orchestrator connection settings bound from IConfiguration / environment variables.

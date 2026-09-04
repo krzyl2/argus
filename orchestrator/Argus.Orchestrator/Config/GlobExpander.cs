@@ -1,4 +1,4 @@
-﻿using Argus.Orchestrator.Ha;
+using Argus.Orchestrator.Ha;
 using System.IO.Enumeration;
 
 namespace Argus.Orchestrator.Config;

@@ -1,4 +1,4 @@
-﻿using Argus.Orchestrator.Config;
+using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Mqtt;
 using Argus.Orchestrator.Web;
 using Microsoft.Extensions.Logging;

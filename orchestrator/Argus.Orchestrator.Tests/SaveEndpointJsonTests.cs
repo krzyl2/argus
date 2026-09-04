@@ -1,4 +1,4 @@
-﻿using Argus.Orchestrator.Config;
+using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Ha;
 using Argus.Orchestrator.Web;
 using System.Text;

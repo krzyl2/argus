@@ -1,4 +1,4 @@
-﻿using Argus.Orchestrator.Config;
+using Argus.Orchestrator.Config;
 using Argus.Orchestrator.Health;
 using Argus.Orchestrator.Logging;
 using System.Globalization;
