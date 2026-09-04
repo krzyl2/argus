@@ -531,25 +531,17 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
             registrySnapshot, include, exclude, selectedIds, [],
             SensorTracking.TrackedIds(preSaveConfig));
 
-        // Build parsedDetectors keyed by entity index — index = position in the sorted
-        // (alphabetical EntityId) resolvedIds list, exactly like the v3.0 form-parsing path.
-        // Source is now the JSON body's per-entity detectors array, keyed by entityId.
-        var detectorsByEntityId = body.Entities
-            .Where(e => !string.IsNullOrEmpty(e.EntityId))
-            .ToDictionary(
-                e => e.EntityId,
-                e => e.Detectors
-                    .Select(d => new DetectorConfig { Name = d.Name, Params = d.Params })
-                    .ToList(),
-                StringComparer.OrdinalIgnoreCase);
+        // Every step below is a SaveProjection call rather than inline code: the handler is
+        // untestable by construction (no Mvc.Testing, per FIX-PLAN "Czego nie robimy"), so any
+        // decision left here is a decision no test can pin — see SaveProjection's class comment.
+        var detectorsByEntityId = SaveProjection.SubmittedByEntityId(body);
 
-        var sortedIds = resolvedIds
-            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var sortedIds = SaveProjection.SortIds(resolvedIds);
 
-        var parsedDetectors = sortedIds
-            .Select((id, ei) => (ei, dets: detectorsByEntityId.TryGetValue(id, out var d) ? d : new List<DetectorConfig>()))
-            .ToDictionary(x => x.ei, x => x.dets);
+        // parsedDetectors is keyed by entity index — position in the sorted (alphabetical
+        // EntityId) list, exactly like the v3.0 form-parsing path, which is the shape
+        // InputValidator takes.
+        var parsedDetectors = SaveProjection.ByEntityIndex(sortedIds, detectorsByEntityId);
 
         // Phase 4 input validation gate (UI-04 / T-04-01–T-04-05):
         // Validate raw parsedDetectors BEFORE defaulting and BEFORE any write.
@@ -566,32 +558,10 @@ app.MapPost("/api/sensors/save", async (HttpRequest req, IHaSensorRegistry regis
         var snapshotById = registrySnapshot
             .ToDictionary(e => e.EntityId, StringComparer.OrdinalIgnoreCase);
 
-        var preSaveById = preSaveConfig.Entities
-            .GroupBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var preSaveById = SaveProjection.ByEntityId(preSaveConfig);
 
-        var entities = sortedIds
-            .Select(id =>
-            {
-                snapshotById.TryGetValue(id, out var entry);
-                // WS4/F9: an entity HA is not listing has no snapshot friendly-name. Falling back
-                // to the stored one keeps a ghost's label instead of blanking it on every save.
-                preSaveById.TryGetValue(id, out var stored);
-
-                // Detector list for this entity: the submitted row wins, otherwise whatever is
-                // already on disk, otherwise the rmad default (D-A). Keyed by entity id rather
-                // than by index, because the "not submitted at all" case is exactly the one the
-                // index-keyed map cannot express -- see SensorTracking.ResolveDetectors.
-                var detectors = SensorTracking.ResolveDetectors(id, detectorsByEntityId, preSaveById);
-
-                return new EntityConfig
-                {
-                    EntityId = id,
-                    FriendlyName = entry?.FriendlyName ?? stored?.FriendlyName ?? "",
-                    Detectors = detectors,
-                };
-            })
-            .ToList();
+        var entities = SaveProjection.BuildEntities(
+            sortedIds, detectorsByEntityId, snapshotById, preSaveById);
 
         // Serialize BOTH entities and _patterns via a single YamlDotNet SerializerBuilder
         // (never string-format YAML — T-02-08 / CLAUDE.md rule)

@@ -526,8 +526,108 @@ public class SaveEndpointJsonTests
         Assert.Equal("rmad", Assert.Single(resolved).Name);
     }
 
+    /// <summary>
+    /// The save path keys the same detector rows twice: by entity INDEX for InputValidator, by
+    /// entity ID for the detector decision. Nothing pinned that the two agree, so a future edit
+    /// could validate one entity's params and write another's.
+    ///
+    /// The rule: for every entity the body carries, the block at index i is the block stored
+    /// under sortedIds[i] — the SAME list instance, not merely an equal one. For an entity the
+    /// body does not carry, the index map holds an empty list, which is precisely why it cannot
+    /// be used to decide detectors: "absent" and "submitted empty" collapse into one value.
+    /// </summary>
+    [Fact]
+    public void ByEntityIndex_MatchesByEntityId_ForEverySubmittedEntity()
+    {
+        var body = new SaveRequest
+        {
+            Entities =
+            [
+                new SaveEntity
+                {
+                    EntityId = "sensor.zzz_last",
+                    Detectors = [new SaveDetector { Name = "mad", Params = new() { ["threshold"] = "3.5" } }],
+                },
+                new SaveEntity
+                {
+                    EntityId = "sensor.aaa_first",
+                    Detectors = [new SaveDetector { Name = "rmad", Params = new() { ["window"] = "240" } }],
+                },
+            ],
+        };
+
+        // Resolution order is not body order: an id the body never mentioned sorts in between.
+        var sortedIds = SaveProjection.SortIds(
+            ["sensor.zzz_last", "sensor.mmm_absent", "sensor.aaa_first"]);
+        var byId = SaveProjection.SubmittedByEntityId(body);
+        var byIndex = SaveProjection.ByEntityIndex(sortedIds, byId);
+
+        Assert.Equal(sortedIds.Count, byIndex.Count);
+        for (var ei = 0; ei < sortedIds.Count; ei++)
+        {
+            if (byId.TryGetValue(sortedIds[ei], out var submitted))
+                Assert.Same(submitted, byIndex[ei]);
+            else
+                Assert.Empty(byIndex[ei]);
+        }
+
+        // And the pairing really is index -> sorted position, not index -> body position.
+        Assert.Equal("rmad", byIndex[0][0].Name);
+        Assert.Empty(byIndex[1]);
+        Assert.Equal("mad", byIndex[2][0].Name);
+    }
+
+    /// <summary>
+    /// Consequence of the "absent from the body keeps what is on disk" rule, spelled out because
+    /// it changes what a broken entities.yaml does: only the BODY goes through InputValidator, so
+    /// a stored block the validator would reject is written back verbatim instead of being reset
+    /// to rmad. That direction is the intended one — a hand-edited file is preserved rather than
+    /// silently overwritten — and it is safe because the block already passed EntitiesConfigLoader.
+    ///
+    /// The test exists so that flipping it back to "validate everything, drop what fails" cannot
+    /// happen quietly: it would be indistinguishable from the configuration loss this fix removed.
+    /// </summary>
+    [Fact]
+    public void SavePipeline_StoredBlockRejectedByValidator_IsPreservedNotResetToRmad()
+    {
+        // window = 5 is below the rmad floor of 30: InputValidator rejects this in a POST body.
+        var handEdited = new Dictionary<string, string> { ["window"] = "5" };
+
+        var byIndexIfItHadBeenSubmitted = SaveProjection.ByEntityIndex(
+            ["sensor.hand_edited"],
+            new Dictionary<string, List<DetectorConfig>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["sensor.hand_edited"] = [new DetectorConfig { Name = "rmad", Params = handEdited }],
+            });
+        Assert.NotEmpty(InputValidator.Validate(["sensor.hand_edited"], byIndexIfItHadBeenSubmitted));
+
+        // Same block, but reached through the on-disk config with an empty body.
+        var preSaveById = SaveProjection.ByEntityId(new EntitiesConfig
+        {
+            Entities =
+            [
+                new EntityConfig
+                {
+                    EntityId = "sensor.hand_edited",
+                    Detectors = [new DetectorConfig { Name = "rmad", Params = handEdited }],
+                },
+            ],
+        });
+
+        var built = SaveProjection.BuildEntities(
+            ["sensor.hand_edited"],
+            new Dictionary<string, List<DetectorConfig>>(StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, HaSensorEntry>(StringComparer.OrdinalIgnoreCase),
+            preSaveById);
+
+        var written = Assert.Single(built);
+        Assert.Equal("rmad", Assert.Single(written.Detectors).Name);
+        Assert.Equal(handEdited, written.Detectors[0].Params);
+    }
+
     // -----------------------------------------------------------------------
-    // Pipeline harness — mirrors Program.cs's POST /api/sensors/save handler
+    // Pipeline harness — the SaveProjection sequence Program.cs's POST
+    // /api/sensors/save handler runs, around it
     // -----------------------------------------------------------------------
 
     private static async Task<(bool ok, string? kind, int count, bool hasStreaming, int errorCount)> RunSavePipelineAsync(
@@ -542,18 +642,14 @@ public class SaveEndpointJsonTests
         var selectedIds = body.Entities.Select(e => e.EntityId).Where(s => !string.IsNullOrEmpty(s));
         var resolvedIds = GlobExpander.Resolve(registry.GetAll(), include, exclude, selectedIds, []);
 
-        var detectorsByEntityId = body.Entities
-            .Where(e => !string.IsNullOrEmpty(e.EntityId))
-            .ToDictionary(
-                e => e.EntityId,
-                e => e.Detectors.Select(d => new DetectorConfig { Name = d.Name, Params = d.Params }).ToList(),
-                StringComparer.OrdinalIgnoreCase);
+        // Every projection step below is the PRODUCTION method, not a copy of it. A harness that
+        // reimplements the handler cannot fail when the handler changes, which is how the
+        // "entity absent from the body keeps its stored detectors" rule ended up unpinned.
+        var detectorsByEntityId = SaveProjection.SubmittedByEntityId(body);
 
-        var sortedIds = resolvedIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToList();
+        var sortedIds = SaveProjection.SortIds(resolvedIds);
 
-        var parsedDetectors = sortedIds
-            .Select((id, ei) => (ei, dets: detectorsByEntityId.TryGetValue(id, out var d) ? d : new List<DetectorConfig>()))
-            .ToDictionary(x => x.ei, x => x.dets);
+        var parsedDetectors = SaveProjection.ByEntityIndex(sortedIds, detectorsByEntityId);
 
         var validationErrors = InputValidator.Validate(resolvedIds, parsedDetectors);
         if (validationErrors.Count > 0)
@@ -562,25 +658,8 @@ public class SaveEndpointJsonTests
         }
 
         var snapshotById = registry.GetAll().ToDictionary(e => e.EntityId, StringComparer.OrdinalIgnoreCase);
-        var preSaveById = (liveCfg?.Get() ?? new EntitiesConfig()).Entities
-            .GroupBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        var entities = sortedIds
-            .Select(id =>
-            {
-                snapshotById.TryGetValue(id, out var entry);
-                preSaveById.TryGetValue(id, out var stored);
-                // Calls the PRODUCTION decision, not a copy of it -- the whole point of the
-                // finding is that this one branch is where configuration goes missing.
-                var detectors = SensorTracking.ResolveDetectors(id, detectorsByEntityId, preSaveById);
-                return new EntityConfig
-                {
-                    EntityId = id,
-                    FriendlyName = entry?.FriendlyName ?? stored?.FriendlyName ?? "",
-                    Detectors = detectors,
-                };
-            })
-            .ToList();
+        var preSaveById = SaveProjection.ByEntityId(liveCfg?.Get() ?? new EntitiesConfig());
+        var entities = SaveProjection.BuildEntities(sortedIds, detectorsByEntityId, snapshotById, preSaveById);
 
         if (entitiesPathOverride is not null)
         {
