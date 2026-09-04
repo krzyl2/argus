@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { loadSensors, sensors, loading, entityEdits, addDetector, save } from './sensors';
+import {
+  loadSensors,
+  sensors,
+  loading,
+  entityEdits,
+  addDetector,
+  save,
+  validationErrors,
+  hasValidationErrors,
+} from './sensors';
 import { detectorDefaults, resetDetectorDefaults } from './detectorDefaults';
 import * as client from '../api/client';
 
@@ -187,6 +196,52 @@ describe('detector hydration (D-N)', () => {
     };
     expect(body.entities).toHaveLength(1);
     expect(body.entities[0].detectors[0].params).toEqual(tuned);
+  });
+
+  // A fresh install writes `params: {}` for EVERY entity (gen-entities.py), and the server
+  // writes the same block for any entity it had to default. Read back raw, those nine empty
+  // fields are nine MSG_REQUIRED errors, and validationErrors aggregates across ALL tracked
+  // entities -- so one such entity disabled Save for the entire screen, on a brand-new
+  // install, with nothing visibly wrong on any field.
+  it('an entity saved with empty params does not block Save for the whole screen', async () => {
+    vi.spyOn(client, 'apiGet').mockResolvedValue({
+      entries: [
+        entry({ detectors: [{ name: 'rmad', params: {} }] }),
+        entry({
+          entityId: 'sensor.other',
+          detectors: [{ name: 'rmad', params: { ...RMAD_TABLE } }],
+        }),
+      ],
+    });
+
+    await loadSensors('');
+
+    // An omitted key IS the default on the server (RmadParams.From) -- so showing the default
+    // is showing what is in force, not inventing a value.
+    expect(entityEdits.value['sensor.load_5m'].detectors[0].params).toEqual(RMAD_TABLE);
+    expect(validationErrors.value).toEqual({});
+    expect(hasValidationErrors.value).toBe(false);
+  });
+
+  // The merge must not turn into a rewrite: a key the operator actually tuned still wins over
+  // the default, or this fix would reintroduce the silent revert D-N exists to prevent.
+  it('fills only the keys the saved block omits, never the ones it carries', async () => {
+    vi.spyOn(client, 'apiGet').mockResolvedValue({
+      entries: [
+        entry({
+          detectors: [{ name: 'rmad', params: { window: '240', high_threshold: '0.615' } }],
+        }),
+      ],
+    });
+
+    await loadSensors('');
+
+    const params = entityEdits.value['sensor.load_5m'].detectors[0].params;
+    expect(params.window).toBe('240');
+    expect(params.high_threshold).toBe('0.615');
+    expect(params.min_samples).toBe('60');
+    expect(params.z_scale).toBe('5.0');
+    expect(hasValidationErrors.value).toBe(false);
   });
 
   // A tracked entity the server sent no detectors for is a genuinely new selection, and rmad

@@ -60,7 +60,18 @@ function getOrInitEdit(entityId: string, entry?: SensorEntry): EntityEditState {
   if (saved && saved.length > 0) {
     return {
       isTracked,
-      detectors: saved.map((d) => ({ name: d.name, params: { ...d.params } })),
+      // Saved params are layered ON TOP of the server default table, never used raw. A stored
+      // block may legitimately omit keys: `params: {}` is what gen-entities.py writes on a fresh
+      // install and what the server writes for an entity it defaulted, and an omitted key IS the
+      // default on the server side (RmadParams.From). Rendered raw, every omitted key became an
+      // empty field, validateDetectorParams reported MSG_REQUIRED on it, and because
+      // validationErrors aggregates across ALL tracked entities a single such entity disabled
+      // Save for the whole screen -- i.e. a fresh install could not save anything.
+      //
+      // This does not weaken D-N: the spread order puts every key the operator actually tuned
+      // over the default, so the read-back still shows what is really on disk wherever disk
+      // says anything at all.
+      detectors: saved.map((d) => ({ name: d.name, params: { ...defaultsFor(d.name), ...d.params } })),
     };
   }
   return {
