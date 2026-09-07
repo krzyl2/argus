@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/preact';
+import { render, screen, fireEvent } from '@testing-library/preact';
 import { GroupEditorForm } from './GroupEditorForm';
 import * as client from '../api/client';
-import { groups, draftFriendlyName, draftGroupId, draftMembers } from '../state/groups';
+import { groups, draftFriendlyName, draftGroupId, draftMembers, saveState } from '../state/groups';
+import * as groupsState from '../state/groups';
 import type { SensorEntry, GroupConfig } from '../api/types';
 
 function makeSensor(overrides: Partial<SensorEntry> = {}): SensorEntry {
@@ -133,5 +134,68 @@ describe('GroupEditorForm', () => {
     // First Remove corresponds to sensor.a (list order mirrors selectedMembers).
     (removeButtons[0] as HTMLButtonElement).click();
     expect(draftMembers.value).toEqual(['sensor.b']);
+  });
+
+  // Group delete lives here because Phase 14's /groups -> /detectors redirect made
+  // GroupListRow (the old home of this affordance) unreachable. The editor is now the
+  // only screen from which an operator can retire a group.
+  describe('delete group', () => {
+    beforeEach(() => {
+      saveState.value = 'idle';
+    });
+
+    // Intent: /groups/new has no server-side group to retire, and deleteGroup posts a
+    // full-list replace — offering it here would be a delete button with no target.
+    it('offers no delete affordance on a new group', () => {
+      render(<GroupEditorForm groupId={null} sensors={[]} />);
+      expect(screen.queryByText('Delete group')).toBeNull();
+    });
+
+    // Intent (data-loss guard): deleteGroup POSTs the loaded list minus this id. Before
+    // loadGroups() resolves that list is empty, so a click would replace the server's
+    // groups with [] — wiping every other group. Gate the button on the group actually
+    // being loaded, not merely on the route carrying an id.
+    it('offers no delete affordance while the group is not in the loaded list', () => {
+      groups.value = [];
+      render(<GroupEditorForm groupId="living_room" sensors={[]} />);
+      expect(screen.queryByText('Delete group')).toBeNull();
+    });
+
+    // Intent: a destructive, irreversible action must never fire on a single click.
+    it('arms on the first click without deleting', () => {
+      const spy = vi.spyOn(groupsState, 'deleteGroup').mockResolvedValue(undefined);
+      render(<GroupEditorForm groupId="living_room" sensors={[]} />);
+      fireEvent.click(screen.getByText('Delete group'));
+      expect(screen.getByText('Confirm delete')).toBeTruthy();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    // Intent: confirming must delete THIS group and land the operator back on the list
+    // screen — leaving them in an editor for a group that no longer exists is a dead end.
+    it('deletes the group and returns to #/detectors once confirmed', async () => {
+      const spy = vi.spyOn(groupsState, 'deleteGroup').mockImplementation(async () => {
+        saveState.value = { result: { ok: true, count: 0 } };
+      });
+      location.hash = '#/groups/living_room';
+      render(<GroupEditorForm groupId="living_room" sensors={[]} />);
+      fireEvent.click(screen.getByText('Delete group'));
+      fireEvent.click(screen.getByText('Confirm delete'));
+      await vi.waitFor(() => expect(spy).toHaveBeenCalledWith('living_room'));
+      await vi.waitFor(() => expect(location.hash).toBe('#/detectors'));
+    });
+
+    // Intent: a failed delete must NOT read as success. Navigating away would hide
+    // GroupSaveResultBanner's reason and let the operator believe the group is gone.
+    it('stays in the editor when the delete fails', async () => {
+      const spy = vi.spyOn(groupsState, 'deleteGroup').mockImplementation(async () => {
+        saveState.value = { result: { ok: false, kind: 'error', reason: 'disk error' } };
+      });
+      location.hash = '#/groups/living_room';
+      render(<GroupEditorForm groupId="living_room" sensors={[]} />);
+      fireEvent.click(screen.getByText('Delete group'));
+      fireEvent.click(screen.getByText('Confirm delete'));
+      await vi.waitFor(() => expect(spy).toHaveBeenCalledWith('living_room'));
+      expect(location.hash).toBe('#/groups/living_room');
+    });
   });
 });

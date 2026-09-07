@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { SensorEntry } from '../api/types';
 import {
   draftGroupId,
@@ -11,6 +11,7 @@ import {
   loadDraftFromGroup,
   findGroup,
   saveGroup,
+  deleteGroup,
 } from '../state/groups';
 import { MemberPicker, useMemberPickerValidation } from './MemberPicker';
 import { AlgorithmChooser } from './AlgorithmChooser';
@@ -28,6 +29,8 @@ interface GroupEditorFormProps {
   groupId: string | null; // null = /groups/new
   sensors: SensorEntry[];
 }
+
+const DELETE_CONFIRM_WINDOW_MS = 3000;
 
 function slugify(name: string): string {
   return name
@@ -75,6 +78,46 @@ export function GroupEditorForm({ groupId, sensors }: GroupEditorFormProps) {
   // Always-visible list of the draft's current members, so the operator sees which
   // sensors belong to the group without first typing a search query into MemberPicker.
   const selectedMembers = sensors.filter((s) => draftMembers.value.includes(s.entityId));
+
+  // Inline two-step delete confirm — same copywriting contract as GroupListRow
+  // ("Delete group" -> "Confirm delete" on a second click within ~3s, reverting if the
+  // second click never comes; never window.confirm()). It lives on the editor rather than
+  // the list row because Phase 14's D-01 redirect (/groups -> /detectors) made
+  // GroupListRow unreachable, and DetectorListRow deliberately only navigates — so this
+  // is the group's sole reachable delete affordance.
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    },
+    []
+  );
+
+  // deleteGroup POSTs the full groups list minus this id (the backend has no dedicated
+  // delete endpoint), so firing it against a not-yet-loaded — i.e. empty — groups signal
+  // would wipe every other group. Only offer delete once this group is actually present
+  // in the loaded list.
+  const deletable = groupId !== null && findGroup(groupId) !== undefined;
+
+  async function handleDeleteClick() {
+    if (!groupId) return;
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      deleteTimerRef.current = setTimeout(() => setDeleteArmed(false), DELETE_CONFIRM_WINDOW_MS);
+      return;
+    }
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    setDeleteArmed(false);
+    await deleteGroup(groupId);
+    // Leave the editor only on a confirmed server-side delete — on failure the operator
+    // stays put and GroupSaveResultBanner explains why.
+    const state = saveState.value;
+    if (typeof state === 'object' && state.result.ok) {
+      location.hash = '#/detectors';
+    }
+  }
 
   return (
     <div>
@@ -174,6 +217,12 @@ export function GroupEditorForm({ groupId, sensors }: GroupEditorFormProps) {
       <FieldValidationError message={noAlgorithmError ?? undefined} />
 
       {groupId && <AttributionPanel groupId={groupId} />}
+
+      {deletable && (
+        <Button variant="destructive-ghost" size="xs" disabled={saving} onClick={handleDeleteClick}>
+          {deleteArmed ? 'Confirm delete' : 'Delete group'}
+        </Button>
+      )}
 
       <SaveBar saving={saving} disabled={saving || hasErrors} onSave={saveGroup} />
 
