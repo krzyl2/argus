@@ -305,6 +305,43 @@ class TestScoreStreamDetectorSelection:
         assert ctx.aborted is False
 
 
+class TestScoreStreamBand:
+    """WS3/D-E: the Verdict carries the band in sensor units. Without it every
+    warmed-up rmad entity reads "Kalibracja" in the UI forever — the detector
+    was the only link missing between the proto field and the editor."""
+
+    def _stream(self, svc, values, params=None):
+        if params is None:
+            params = {"algorithm": "rmad", "min_samples": "10"}
+        points = iter([_make_point("sensor.b", v, params) for v in values])
+        return list(svc.ScoreStream(points, _FakeContext()))
+
+    def test_no_band_before_the_window_can_score(self, servicer):
+        # A band before min_samples would be a threshold nobody has measured.
+        svc, _, _ = servicer
+        verdicts = self._stream(svc, [20.0] * 5)
+        assert not verdicts[-1].HasField("upper")
+        assert not verdicts[-1].HasField("expected")
+
+    def test_band_is_median_plus_minus_five_robust_sigma(self, servicer):
+        # z=5 is score 0.5 (D-B): a reading outside the band is exactly one
+        # rmad scores above the default threshold.
+        svc, _, _ = servicer
+        values = [100.0, 102.0, 104.0, 106.0, 108.0] * 4
+        v = self._stream(svc, values)[-1]
+        sigma = 1.4826 * 2.0  # MAD of {100..108 step 2} around 104 is 2
+        assert v.expected.value == pytest.approx(104.0)
+        assert v.lower.value == pytest.approx(104.0 - 5 * sigma)
+        assert v.upper.value == pytest.approx(104.0 + 5 * sigma)
+
+    def test_hst_carries_no_band(self, servicer):
+        # hst scores rarity (F4); it has no deviation band to report.
+        svc, _, _ = servicer
+        v = self._stream(svc, [20.0] * 5, params={})[-1]
+        assert v.detector == "hst"
+        assert not v.HasField("upper")
+
+
 class TestScoreStreamCheckpointRestore:
     """WARM-01: an entity restored from a 15-01 checkpoint must report its
     restored n_seen on the very first live Verdict — no reset to 1."""

@@ -270,6 +270,27 @@ public sealed class AlertPolicy
     }
 
     /// <summary>
+    /// Seeds the rank channel with detector scores replayed over history, counting each as a
+    /// verdict, WITHOUT deciding anything on them. The rank-channel counterpart of
+    /// <see cref="SeedHistory"/>: the policy lives in memory only (D-11), so without this every
+    /// restart re-counts alert_min_samples live verdicts — ~10 days on a sensor reporting
+    /// hourly. Callers must pass only scorable scores (the detector's warm-up prefix is a
+    /// structural 0.0 and would skew every rank that follows).
+    /// </summary>
+    public void SeedScores(IEnumerable<double> scores)
+    {
+        if (scores is null) return;
+        lock (_gate)
+        {
+            foreach (var s in scores)
+            {
+                _rank.Push(s);
+                _samples++;
+            }
+        }
+    }
+
+    /// <summary>
     /// Passes one verdict through the event layer and returns what should happen.
     /// </summary>
     /// <param name="score">Detector score for this verdict.</param>

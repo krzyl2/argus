@@ -117,6 +117,12 @@ public static class LogEvents
     public static readonly EventId SensorRegistryUpserted   = new(5025, nameof(SensorRegistryUpserted));
     public static readonly EventId SensorRegistryGhost      = new(5026, nameof(SensorRegistryGhost));
 
+    // Alert-gate rank channel primed from a sandboxed replay of the backfill history. The
+    // receipt is what shows a restart did NOT re-open the ~10-day calibration on a slow sensor;
+    // the failure line is what shows it did (Rule 12).
+    public static readonly EventId AlertRankPrimed          = new(5027, nameof(AlertRankPrimed));
+    public static readonly EventId AlertRankPrimeFailed     = new(5028, nameof(AlertRankPrimeFailed));
+
     // Phase 8 UI — Group config UI + algorithm chooser (7009)
     public static readonly EventId GroupUiValidationBlocked = new(7009, nameof(GroupUiValidationBlocked));
 

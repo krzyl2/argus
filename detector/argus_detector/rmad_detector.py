@@ -442,6 +442,24 @@ class RmadDetector:
         """Size of the rolling median/MAD window, in samples."""
         return self._window
 
+    def band(self, z_fire: float = _Z_SCALE) -> tuple[float, float, float] | None:
+        """(expected, lower, upper) of the current window in SENSOR UNITS, or None.
+
+        expected = median, lower/upper = median -/+ z_fire * sigma, where sigma
+        comes from the same scale ladder score_one uses — so a reading outside
+        the band is exactly a reading scoring above the threshold z_fire maps
+        to. None until the window can score at all (min_samples): the UI must
+        never render a band nobody has measured. A single-constant window
+        (rung 4) yields lower == upper == median, which the UI reads as
+        "czujnik nie zmienia wartości".
+        """
+        if len(self._sorted) < self._min_samples:
+            return None
+        med = _median(self._sorted)
+        sigma = max(0.0, self._scale(self._sorted, med))
+        half = z_fire * sigma
+        return (med, med - half, med + half)
+
     @property
     def scale_floor(self) -> float:
         """Floor on the scale estimate, in sensor units (D-I)."""

@@ -754,6 +754,92 @@ public class ScoreStreamPipelineTests
         Assert.Equal(history.Count, entityState.Alert.RawSampleCount);
     }
 
+    // ─── Alert rank channel primed from a sandboxed replay ───────────────────
+    // Live: every climate sensor reports ~hourly, so 240 live verdicts after a restart is
+    // ~10 days of "calibrating" — observed on the operator's install after 2.1.17.
+
+    private static (ScoreStreamPipeline Pipeline, EntityRuntimeState State, FakeWarmupDetectorClient Client)
+        MakeRankPrimeFixture(int rows, FakeWarmupDetectorClient client, string alertMode = "adaptive")
+    {
+        var cfg = new EntitiesConfig();
+        var p = new Dictionary<string, string> { ["window"] = "720", ["alert_mode"] = alertMode };
+        cfg.Entities.Add(new EntityConfig
+        {
+            EntityId = "sensor.rank",
+            Detectors = new List<DetectorConfig> { new DetectorConfig { Name = "rmad", Params = p } },
+        });
+        var alertParams = AlertParams.From(p);
+        var state = new EntityRuntimeState(RmadParams.From(p), alertParams, new AlertPolicy(alertParams));
+        var pipeline = new ScoreStreamPipeline(
+            new FakeStatePublisher(), NullLogger<ScoreStreamPipeline>.Instance, MakeLive(cfg), MakeGateway(),
+            historySource: new FakeInfluxHistorySource(MakeHistory(rows)), detectorClient: client,
+            connectionSettings: new ConnectionSettings { BackfillEnabled = true, BackfillLookback = "30d" });
+        return (pipeline, state, client);
+    }
+
+    private static SimulateResult Replay(IReadOnlyList<HistoryPoint> h, int warmedFrom)
+        => new(true, null, Enumerable.Range(0, h.Count).Select(i => i < warmedFrom ? 0.0 : 0.1 + i * 1e-4).ToArray(),
+            Array.Empty<double>(), 60, warmedFrom, "fake");
+
+    [Fact]
+    public async Task PrimeFromHistory_SeedsRankChannel_SoARestartIsNotTenDaysOfCalibration()
+    {
+        var client = new FakeWarmupDetectorClient { Simulate = h => Replay(h, warmedFrom: 60) };
+        var (pipeline, state, _) = MakeRankPrimeFixture(360, client);
+
+        await pipeline.PrimeFromHistoryAsync("sensor.rank", state, CancellationToken.None);
+
+        // The warm-up prefix is a structural 0.0 — counting it would skew every later rank.
+        Assert.Equal(300, state.Alert.SampleCount);
+        Assert.True(state.Alert.Calibrated);
+        Assert.Equal("clear", state.Alert.State);
+        Assert.Equal("rmad", client.LastSimulateDetector);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistory_PolicyAlreadyCounting_IsNotSeededTwice()
+    {
+        // A config Save hands back the SAME policy from AlertStateStore; seeding it again would
+        // count the history twice and push stale scores through the rank window.
+        var client = new FakeWarmupDetectorClient { Simulate = h => Replay(h, warmedFrom: 0) };
+        var (pipeline, state, _) = MakeRankPrimeFixture(360, client);
+        state.Alert.SeedScores(new[] { 0.1, 0.2 });
+
+        await pipeline.PrimeFromHistoryAsync("sensor.rank", state, CancellationToken.None);
+
+        Assert.Equal(0, client.SimulateCallCount);
+        Assert.Equal(2, state.Alert.SampleCount);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistory_SimulateFails_DetectorStillPrimed_RankStaysCold()
+    {
+        var client = new FakeWarmupDetectorClient
+        {
+            Simulate = _ => new SimulateResult(false, "Unimplemented", Array.Empty<double>(),
+                Array.Empty<double>(), 0, 0, ""),
+        };
+        var (pipeline, state, _) = MakeRankPrimeFixture(360, client);
+
+        await pipeline.PrimeFromHistoryAsync("sensor.rank", state, CancellationToken.None);
+
+        Assert.Equal(1, client.WarmupCallCount);
+        Assert.Equal(0, state.Alert.SampleCount);
+        Assert.Equal("calibrating", state.Alert.State);
+    }
+
+    [Fact]
+    public async Task PrimeFromHistory_LegacyMode_DoesNotReplay()
+    {
+        // The legacy gate has no rank channel; a replay there is a wasted RPC per entity.
+        var client = new FakeWarmupDetectorClient { Simulate = h => Replay(h, warmedFrom: 0) };
+        var (pipeline, state, _) = MakeRankPrimeFixture(360, client, alertMode: "legacy");
+
+        await pipeline.PrimeFromHistoryAsync("sensor.rank", state, CancellationToken.None);
+
+        Assert.Equal(0, client.SimulateCallCount);
+    }
+
     [Fact]
     public async Task PrimeFromHistory_RequestsWindowRows_Not250()
     {
@@ -1963,15 +2049,22 @@ internal sealed class FakeWarmupDetectorClient : IBatchDetectorClient
         return Task.FromResult(WarmupResponse);
     }
 
-    // WS6: the simulator seam. This fake is not a simulator — it answers a canned
-    // zero-score array of the right length so the classes under test compile and the
-    // 1:1 scores/history contract is preserved.
+    public int SimulateCallCount { get; private set; }
+    public string? LastSimulateDetector { get; private set; }
+
+    /// <summary>Canned replay; default is a zero-score array of the right length (1:1 contract).</summary>
+    public Func<IReadOnlyList<HistoryPoint>, SimulateResult>? Simulate { get; init; }
+
     public Task<SimulateResult> SimulateBatchAsync(
         string entityId, string detector,
         IReadOnlyDictionary<string, string> parameters,
         IReadOnlyList<HistoryPoint> history, CancellationToken ct)
-        => Task.FromResult(new SimulateResult(
+    {
+        SimulateCallCount++;
+        LastSimulateDetector = detector;
+        return Task.FromResult(Simulate?.Invoke(history) ?? new SimulateResult(
             true, null, new double[history.Count], Array.Empty<double>(), 0, 0, "fake"));
+    }
 }
 
 /// <summary>Helper to create IAsyncEnumerable from a fixed set of items.</summary>

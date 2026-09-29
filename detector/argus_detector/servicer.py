@@ -132,6 +132,15 @@ class DetectorServicer(argus_pb2_grpc.DetectorServiceServicer):
                     window=window,
                 )
 
+                # WS3/D-E: the band in sensor units. Without it the UI has nothing to
+                # render but "Kalibracja" — forever, on every warmed-up rmad entity.
+                band = self._registry.get_band(entity_id, algo)
+                if band is not None:
+                    expected, lower, upper = band
+                    verdict.expected.value = expected
+                    verdict.lower.value = lower
+                    verdict.upper.value = upper
+
                 latency_ms = (time.monotonic() - t_start) * 1000
 
                 # T-02-03: log only safe fields

@@ -664,6 +664,8 @@ public sealed class ScoreStreamPipeline
 
             var response = await _detectorClient.WarmupAsync(request, primeCt);
 
+            await SeedRankFromHistoryAsync(entityId, entityState, history, primeCt);
+
             if (response.Skipped)
             {
                 _logger.LogInformation(LogEvents.WarmupSkipped,
@@ -696,6 +698,57 @@ public sealed class ScoreStreamPipeline
             _logger.LogWarning(LogEvents.WarmupFailed, ex,
                 "Backfill priming failed for {EntityId} — proceeding with normal live warm-up", entityId);
         }
+    }
+
+    /// <summary>
+    /// Primes the alert gate's rank channel from the same history rows the detector was just
+    /// primed with. Without it the policy (in memory only, D-11) re-counts alert_min_samples
+    /// LIVE verdicts after every restart — at the hourly cadence most climate sensors report
+    /// at, 240 verdicts is ~10 days of "calibrating".
+    ///
+    /// The scores come from Simulate, never from ScoreBatch: Simulate replays through a
+    /// throwaway instance, so each row is scored against the window as it stood BEFORE that row
+    /// — the same score-then-learn the live stream does. ScoreBatch replays through a copy of
+    /// the live model, which after Warmup already contains these very rows, so every score
+    /// would be deflated and every later live score would rank artificially high.
+    ///
+    /// Only a policy that has seen nothing yet is seeded: after a config Save the store hands
+    /// back the SAME policy, and seeding it again would count history twice. Never throws —
+    /// a failed prime costs the old live calibration, not the stream.
+    /// </summary>
+    private async Task SeedRankFromHistoryAsync(
+        string entityId,
+        EntityRuntimeState entityState,
+        IReadOnlyList<(DateTime Timestamp, double Value)> history,
+        CancellationToken ct)
+    {
+        if (entityState.Alert.SampleCount != 0)
+            return;
+        if (string.Equals(entityState.AlertParams.Mode, "legacy", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var points = history
+            .Select(r => new HistoryPoint(
+                new DateTimeOffset(DateTime.SpecifyKind(r.Timestamp, DateTimeKind.Utc)), r.Value))
+            .ToList();
+
+        var sim = await _detectorClient!.SimulateBatchAsync(
+            entityId, entityState.DetectorName, BuildDetectorParamsMap(entityState), points, ct);
+
+        if (!sim.Ok || sim.Scores.Count != points.Count)
+        {
+            _logger.LogWarning(LogEvents.AlertRankPrimeFailed,
+                "Alert rank channel for {EntityId} not primed ({Error}) — it calibrates on live verdicts only",
+                entityId, sim.Error ?? $"{sim.Scores.Count} scores for {points.Count} points");
+            return;
+        }
+
+        var scorable = sim.Scores.Skip(Math.Max(0, sim.WarmedUpFromIndex)).ToList();
+        entityState.Alert.SeedScores(scorable);
+
+        _logger.LogInformation(LogEvents.AlertRankPrimed,
+            "Primed alert rank channel for {EntityId} with {ScoreCount} replayed scores -> calibrated={Calibrated}",
+            entityId, scorable.Count, entityState.Alert.Calibrated);
     }
 
     /// <summary>

@@ -161,6 +161,24 @@ class DetectorRegistry:
                 return (False, 0, 0)
             return (det.is_warmed_up, det.n_seen, det.window)
 
+    def get_band(
+        self, entity_id: str, detector: str
+    ) -> tuple[float, float, float] | None:
+        """Return (expected, lower, upper) in sensor units, or None.
+
+        None when no entry exists or the detector computes no deviation band
+        (hst scores rarity, F4) — the Verdict then carries no band and the UI
+        says so instead of inventing one.
+        """
+        key = (entity_id, detector)
+        lock = self._entity_lock(key)
+        with lock:
+            det = self._detectors.get(key)
+            band = getattr(det, "band", None)
+            if band is None:
+                return None
+            return band()
+
     # -------------------------------------------------------------------------
     # Batch methods (Phase 2 — MDL-04)
     # -------------------------------------------------------------------------

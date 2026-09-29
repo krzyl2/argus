@@ -6,6 +6,23 @@ upgrade'owych nie niesie.
 
 ---
 
+## 2.1.18 — „Kalibracja" bez końca: pasmo z detektora + bramka primowana z historii
+
+Dwie niezależne przyczyny, obie widoczne jako `Kalibracja` na liście detektorów przez wiele dni:
+
+- **Detektor nie wysyłał pasma.** `Verdict.expected/lower/upper` istniały w proto, ale rmad ich
+  nie wypełniał, więc UI (słusznie) nie miało czego pokazać. Teraz: mediana ± 5·σ (robust, ta
+  sama drabina skali co score) — dokładnie granica, powyżej której score przekracza 0.5.
+  Pasmo pojawia się po `min_samples`, nigdy wcześniej.
+- **Bramka alertów liczyła 240 werdyktów od zera po każdym restarcie.** Stan bramki żyje tylko
+  w pamięci (D-11 bez zmian), a czujniki klimatu raportują co ~godzinę — 240 werdyktów to
+  ~10 dni. Przy primingu z historii orchestrator puszcza teraz tę samą historię przez
+  `Simulate` (instancja-piaskownica, model na żywo nietknięty) i zasila nią kanał rank.
+  Kontrola w logu: `Primed alert rank channel for <encja> with N replayed scores -> calibrated=True`.
+  Porażka: `Alert rank channel for <encja> not primed` (WARN) — wtedy stare zachowanie.
+
+---
+
 ## 2.1.15 — grupy o mieszanych jednostkach: pivot rozbijał macierz na tabele per jednostka
 
 Dokończenie 2.1.13. Usunięcie *filtra* `_measurement` nie wystarczyło: `_measurement`
